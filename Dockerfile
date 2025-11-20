@@ -31,12 +31,14 @@ WORKDIR /app
 RUN npm install -g pnpm
 
 # 从构建阶段复制构建结果
-COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/config ./config
 COPY --from=builder /app/custom-sources ./custom-sources
+
+# 复制public目录（如果存在）
+RUN if [ -d "/app/public" ]; then cp -r /app/public ./public; fi || true
 
 # 创建缓存和数据目录
 RUN mkdir -p /app/data/cache /app/logs
