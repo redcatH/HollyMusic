@@ -72,6 +72,21 @@ export function SearchBar({
         {loading && (
           <div className="w-5 h-5 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
         )}
+        {/* 手机端搜索按钮 */}
+        <button
+          onClick={() => onSearch?.(value)}
+          disabled={loading || !value.trim()}
+          className={`md:hidden p-2 rounded-lg font-medium transition-colors ${
+            loading || !value.trim()
+              ? 'opacity-50 cursor-not-allowed'
+              : isDarkMode
+              ? 'text-white hover:bg-gray-700'
+              : 'text-black hover:bg-gray-200'
+          }`}
+          aria-label="搜索"
+        >
+          <Search className="h-4 w-4" />
+        </button>
       </div>
 
       {/* 音源选择 */}
