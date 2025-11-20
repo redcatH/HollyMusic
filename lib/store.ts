@@ -5,6 +5,9 @@ import { create } from 'zustand'
 import type { StateCreator } from 'zustand'
 import type { MusicInfo } from '@/lib/types/music'
 
+// 播放模式类型定义
+export type PlaybackMode = 'loop' | 'sequence' | 'random'
+
 export interface CurrentMusic {
   id: string
   name: string
@@ -30,6 +33,7 @@ export interface PlayerState {
   volume: number
   playlist: CurrentMusic[]
   playlistIndex: number
+  playbackMode: PlaybackMode              // ✨ 新增：播放模式（默认单曲循环）
   isDarkMode: boolean
   sidebarOpen: boolean
 
@@ -42,6 +46,7 @@ export interface PlayerState {
   setPlaylist: (playlist: CurrentMusic[]) => void
   setPlaylistIndex: (index: number) => void
   removeFromPlaylist: (index: number) => void
+  cyclePlaybackMode: () => void            // ✨ 新增：循环切换播放模式
 
   // ✨ 新增：核心方法 - 加载音乐和 URL
   loadMusicAndUrl: (musicInfo: MusicInfo, quality?: string) => Promise<void>
@@ -64,6 +69,7 @@ const playerStoreCreator: StateCreator<PlayerState> = (set) => ({
   volume: 1,
   playlist: [],
   playlistIndex: -1,
+  playbackMode: 'loop',  // ✨ 默认单曲循环
   isDarkMode: false,
   sidebarOpen: false,
 
@@ -78,6 +84,16 @@ const playerStoreCreator: StateCreator<PlayerState> = (set) => ({
   removeFromPlaylist: (index) => set((state) => {
     const newPlaylist = state.playlist.filter((_, i) => i !== index)
     return { playlist: newPlaylist }
+  }),
+
+  // ✨ 播放模式循环切换：loop → sequence → random → loop
+  cyclePlaybackMode: () => set((state) => {
+    const modes: PlaybackMode[] = ['loop', 'sequence', 'random']
+    const currentIndex = modes.indexOf(state.playbackMode)
+    const nextIndex = (currentIndex + 1) % modes.length
+    const nextMode = modes[nextIndex]
+    console.log('store: 切换播放模式', { from: state.playbackMode, to: nextMode })
+    return { playbackMode: nextMode }
   }),
 
   // ✨ 核心异步方法：加载音乐和 URL

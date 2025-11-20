@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
-import { ChevronDown, Volume2, VolumeX } from 'lucide-react'
+import { ChevronDown, Volume2, VolumeX, Repeat, Shuffle } from 'lucide-react'
 import { usePlayerStore } from '@/lib/store'
 import { useAudio } from '@/hooks/useAudio'
 import { PlayerControls } from '@/components/player/PlayerControls'
@@ -19,10 +19,52 @@ export function BottomPlayer() {
     setIsPlaying,
     playlist,
     removeFromPlaylist,
+    playbackMode,
+    cyclePlaybackMode,
   } = usePlayerStore()
 
   const audio = useAudio(undefined, { volume: 0.7 })
   const [showPlaylist, setShowPlaylist] = useState(false)
+
+  // 当前歌曲索引
+  const currentIndex = useMemo(() => {
+    if (!currentMusic || playlist.length === 0) return -1
+    return playlist.findIndex(
+      (s) => s.id === currentMusic.id && s.source === currentMusic.source
+    )
+  }, [currentMusic, playlist])
+
+  // ✨ 处理歌曲结束（定义在 effect 前面，以便在 effect 中使用）
+  const handleSongEnd = useCallback(() => {
+    const state = usePlayerStore.getState()
+    console.log('BottomPlayer: 歌曲结束，当前播放模式:', state.playbackMode)
+    
+    if (state.playbackMode === 'loop') {
+      // 单曲循环：暂停然后重新播放，或者清空 currentMusicUrl 再重新加载
+      console.log('BottomPlayer: 单曲循环，重新加载')
+      // 临时清空 URL，然后立即恢复，强制 effect 重新触发
+      usePlayerStore.setState({ currentMusicUrl: null }, false)
+      setTimeout(() => {
+        usePlayerStore.setState({ currentMusicUrl: state.currentMusicUrl }, false)
+      }, 0)
+    } else if (state.playbackMode === 'sequence') {
+      // 顺序播放：播放下一首
+      const currentIdx = state.playlist.findIndex(
+        (s) => s.id === state.currentMusic?.id && s.source === state.currentMusic?.source
+      )
+      if (currentIdx >= 0 && currentIdx < state.playlist.length - 1) {
+        console.log('BottomPlayer: 顺序播放，切换到下一首')
+        usePlayerStore.setState({ currentMusic: state.playlist[currentIdx + 1] })
+      }
+    } else if (state.playbackMode === 'random') {
+      // 随机播放：随机选择一首歌
+      if (state.playlist.length > 0) {
+        const randomIndex = Math.floor(Math.random() * state.playlist.length)
+        console.log('BottomPlayer: 随机播放，切换到索引:', randomIndex)
+        usePlayerStore.setState({ currentMusic: state.playlist[randomIndex] })
+      }
+    }
+  }, [])
 
   // 统一处理 URL 和播放状态变化
   useEffect(() => {
@@ -49,7 +91,7 @@ export function BottomPlayer() {
     console.log('BottomPlayer: 加载音频', currentMusicUrl)
     let isMounted = true
 
-    audio.load(currentMusicUrl, false).then(() => {
+    audio.load(currentMusicUrl, false, handleSongEnd).then(() => {
       if (!isMounted) return
       console.log('BottomPlayer: 音频加载完成')
       // 加载完成后，根据 isPlaying 决定是否播放
@@ -66,15 +108,7 @@ export function BottomPlayer() {
       isMounted = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentMusicUrl, isFetchingUrl, isPlaying])
-
-  // 当前歌曲索引
-  const currentIndex = useMemo(() => {
-    if (!currentMusic || playlist.length === 0) return -1
-    return playlist.findIndex(
-      (s) => s.id === currentMusic.id && s.source === currentMusic.source
-    )
-  }, [currentMusic, playlist])
+  }, [currentMusicUrl, isFetchingUrl, isPlaying, handleSongEnd])
 
   // 处理播放/暂停
   const handlePlayPause = useCallback(() => {
@@ -233,6 +267,34 @@ export function BottomPlayer() {
               className="w-20 hidden sm:block"
               title="音量"
             />
+          </div>
+
+          {/* 播放模式按钮 */}
+          <div className="relative">
+            <button
+              onClick={cyclePlaybackMode}
+              className={`p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors ${
+                playbackMode === 'random' ? 'text-blue-500' : 
+                playbackMode === 'sequence' ? 'text-purple-500' :
+                playbackMode === 'loop' ? 'text-green-500' : ''
+              }`}
+              title={
+                playbackMode === 'loop' ? '单曲循环 (点击切换)' :
+                playbackMode === 'sequence' ? '顺序播放 (点击切换)' :
+                playbackMode === 'random' ? '随机播放 (点击切换)' : ''
+              }
+            >
+              {playbackMode === 'random' ? (
+                <Shuffle className="h-4 w-4" />
+              ) : (
+                <Repeat className="h-4 w-4" />
+              )}
+            </button>
+            {playbackMode === 'loop' && (
+              <span className="absolute -top-1 -right-1 text-xs font-bold text-green-500 bg-white dark:bg-gray-950 rounded-full w-4 h-4 flex items-center justify-center">
+                1
+              </span>
+            )}
           </div>
 
           {/* 播放列表按钮 */}
