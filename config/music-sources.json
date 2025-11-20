@@ -1,0 +1,12 @@
+{
+  "sources": [
+    {
+      "path": "custom-sources/lx-music-source.js",
+      "enabled": true,
+      "priority": 1,
+      "timeout": 15000,
+      "name": "野花🌷",
+      "description": "Flower 自定义源"
+    }
+  ]
+}

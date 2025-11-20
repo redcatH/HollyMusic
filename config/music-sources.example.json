@@ -1,0 +1,21 @@
+{
+  "$schema": "音乐源配置示例",
+  "sources": [
+    {
+      "path": "custom-sources/your-source.js",
+      "enabled": true,
+      "priority": 1,
+      "timeout": 15000,
+      "name": "音源名称",
+      "description": "音源描述"
+    }
+  ],
+  "_comments": {
+    "path": "自定义源脚本文件的相对路径，相对于项目根目录",
+    "enabled": "是否启用该音源，false 将跳过加载",
+    "priority": "优先级，数字越小优先级越高，获取播放URL时按优先级尝试",
+    "timeout": "请求超时时间（毫秒），默认15000ms",
+    "name": "音源名称，用于日志和管理界面显示",
+    "description": "音源描述，用于说明音源的特点和用途"
+  }
+}

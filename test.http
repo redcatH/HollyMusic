@@ -1,0 +1,45 @@
+POST http://localhost:3000/api/music-url HTTP/1.1
+Content-Type: application/json
+Accept: application/json
+
+{
+    "musicInfo": {
+        "name": "晴天",
+        "singer": "周杰伦",
+        "source": "kw",
+        "songmid": "228908",
+        "albumId": "1293",
+        "albumName": "叶惠美",
+        "interval": "04:29",
+        "img": null,
+        "types": [
+          {
+            "type": "128k",
+            "size": "4.12Mb"
+          },
+          {
+            "type": "320k",
+            "size": "10.29Mb"
+          },
+          {
+            "type": "flac",
+            "size": "52.83Mb"
+          }
+        ],
+        "_types": {
+          "flac": {
+            "size": "52.83MB"
+          },
+          "320k": {
+            "size": "10.29MB"
+          },
+          "128k": {
+            "size": "4.12MB"
+          }
+        },
+        "typeUrl": {
+
+        }
+      },
+    "quality": "320k"
+}
