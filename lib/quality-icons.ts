@@ -2,7 +2,7 @@
  * 音乐品质和音源图标配置
  */
 
-export type QualityType = 'flac24bit' | 'flac' | '320k' | '128k' | 'unknown'
+export type QualityType = 'flac24bit' | 'flac' | '320k' | '192k' | '128k' | 'unknown'
 export type SourceType = 'kw' | 'kg' | 'tx' | 'wy' | 'mg' | 'unknown'
 
 // 品质信息映射表
@@ -21,6 +21,11 @@ export const QUALITY_MAP: Record<QualityType, { icon: string; label: string; col
     icon: '◆',
     label: '320K',
     color: 'text-blue-500',
+  },
+  '192k': {
+    icon: '◇',
+    label: '192K',
+    color: 'text-cyan-500',
   },
   '128k': {
     icon: '●',

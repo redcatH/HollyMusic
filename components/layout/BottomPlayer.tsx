@@ -1,36 +1,148 @@
 'use client'
 
-import { Play, Pause, SkipBack, SkipForward, Volume2 } from 'lucide-react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { ChevronDown, Volume2, VolumeX } from 'lucide-react'
 import { usePlayerStore } from '@/lib/store'
-
-function formatTime(seconds: number): string {
-  if (!seconds || !isFinite(seconds)) return '0:00'
-  const minutes = Math.floor(seconds / 60)
-  const secs = Math.floor(seconds % 60)
-  return `${minutes}:${secs.toString().padStart(2, '0')}`
-}
+import { useAudio } from '@/hooks/useAudio'
+import { PlayerControls } from '@/components/player/PlayerControls'
+import { ProgressBar } from '@/components/player/ProgressBar'
+import { PlaylistView } from '@/components/player/PlaylistView'
 
 export function BottomPlayer() {
   const {
     isDarkMode,
     currentMusic,
     isPlaying,
-    currentTime,
-    duration,
-    volume,
     setIsPlaying,
-    setCurrentTime,
-    setVolume,
+    playlist,
+    removeFromPlaylist,
   } = usePlayerStore()
+
+  const audio = useAudio(undefined, { volume: 0.7 })
+  const [showPlaylist, setShowPlaylist] = useState(false)
+  const previousUrlRef = useRef<string | undefined>(undefined)
+  const urlJustChangedRef = useRef(false)
+
+  // 只处理 URL 变化
+  useEffect(() => {
+    console.log('BottomPlayer effect1: 检查 currentMusic', {
+      originUrl: currentMusic?.originUrl,
+      previousUrl: previousUrlRef.current
+    })
+    
+    if (!currentMusic?.originUrl) {
+      console.log('BottomPlayer effect1: originUrl 为空，返回')
+      return
+    }
+    
+    const hasUrlChanged = previousUrlRef.current !== currentMusic.originUrl
+    console.log('BottomPlayer effect1: hasUrlChanged =', hasUrlChanged)
+    previousUrlRef.current = currentMusic.originUrl
+    
+    if (!hasUrlChanged) {
+      console.log('BottomPlayer effect1: URL 未变，返回')
+      return
+    }
+    
+    console.log('BottomPlayer: URL 改变，加载新音频', currentMusic.originUrl)
+    urlJustChangedRef.current = true
+    audio.pause()
+    audio.load(currentMusic.originUrl, false).then(() => {
+      // 加载完成后，检查是否需要播放
+      console.log('BottomPlayer: 音频加载完成，检查 isPlaying')
+      if (isPlaying) {
+        console.log('BottomPlayer: 调用 audio.play()')
+        audio.play()
+      }
+      urlJustChangedRef.current = false
+    }).catch((err) => {
+      console.error('BottomPlayer: 音频加载失败', err)
+      urlJustChangedRef.current = false
+    })
+    
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentMusic?.originUrl])
+
+  // 处理播放状态变化：只在 URL 没刚改变时调用（用户点击播放/暂停按钮）
+  useEffect(() => {
+    console.log('BottomPlayer effect2: isPlaying 改变', {
+      isPlaying,
+      urlJustChangedRef: urlJustChangedRef.current,
+      hasOriginUrl: !!currentMusic?.originUrl
+    })
+    
+    if (!currentMusic?.originUrl) {
+      console.log('BottomPlayer effect2: originUrl 为空，返回')
+      return
+    }
+    
+    // 如果 URL 刚改变，不处理（上面的 effect 已经处理了）
+    if (urlJustChangedRef.current) {
+      console.log('BottomPlayer effect2: URL 刚改变，跳过播放状态同步')
+      return
+    }
+    
+    console.log('BottomPlayer effect2: 仅播放状态改变（URL未变），同步状态', isPlaying ? '播放' : '暂停')
+    if (isPlaying) {
+      audio.play()
+    } else {
+      audio.pause()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPlaying])
+
+  // 当前歌曲索引
+  const currentIndex = useMemo(() => {
+    if (!currentMusic || playlist.length === 0) return -1
+    return playlist.findIndex(
+      (s) => s.id === currentMusic.id && s.source === currentMusic.source
+    )
+  }, [currentMusic, playlist])
+
+  // 处理播放/暂停
+  const handlePlayPause = useCallback(() => {
+    if (!currentMusic) return
+    setIsPlaying(!isPlaying)
+  }, [currentMusic, isPlaying, setIsPlaying])
+
+  // 处理上一首
+  const handlePrevious = useCallback(() => {
+    if (currentIndex > 0) {
+      usePlayerStore.setState({ currentMusic: playlist[currentIndex - 1] })
+    }
+  }, [currentIndex, playlist])
+
+  // 处理下一首
+  const handleNext = useCallback(() => {
+    if (currentIndex >= 0 && currentIndex < playlist.length - 1) {
+      usePlayerStore.setState({ currentMusic: playlist[currentIndex + 1] })
+    }
+  }, [currentIndex, playlist])
+
+  // 处理音量
+  const handleVolumeChange = (vol: number) => {
+    audio.setVolume(vol)
+  }
+
+  // 处理选择歌曲
+  const handleSelectSong = (songId: string, index: number) => {
+    const song = playlist[index]
+    if (song) {
+      usePlayerStore.setState({ 
+        currentMusic: song
+      })
+      // 不要直接调用 audio.play()，通过 setIsPlaying 来控制
+      // 这样会触发第二个 effect，自动同步到 audio
+      setIsPlaying(true)
+    }
+  }
 
   if (!currentMusic) {
     return (
       <div
-        className={`fixed bottom-0 left-0 right-0 h-24 border-t ${
-          isDarkMode
-            ? 'border-gray-800 bg-gray-950'
-            : 'border-gray-200 bg-white'
-        } flex items-center justify-center`}
+        className={`fixed bottom-0 left-0 right-0 h-24 border-t flex items-center justify-center z-50 ${
+          isDarkMode ? 'border-gray-800 bg-gray-950' : 'border-gray-200 bg-white'
+        }`}
       >
         <p className="text-sm text-gray-500">选择一首歌曲开始播放</p>
       </div>
@@ -39,96 +151,115 @@ export function BottomPlayer() {
 
   return (
     <div
-      className={`fixed bottom-0 left-0 right-0 h-24 border-t ${
-        isDarkMode
-          ? 'border-gray-800 bg-gray-950'
-          : 'border-gray-200 bg-white'
-      }`}
+      className={`fixed bottom-0 left-0 right-0 border-t transition-all z-50 ${
+        isDarkMode ? 'border-gray-800 bg-gray-950' : 'border-gray-200 bg-white'
+      } ${showPlaylist ? 'h-96' : 'h-24'}`}
     >
       {/* 进度条 */}
-      <div className="h-1 bg-gray-300 dark:bg-gray-700 w-full">
-        <div
-          className="h-full bg-purple-500 transition-all duration-100"
-          style={{
-            width: duration ? `${(currentTime / duration) * 100}%` : '0%',
-          }}
+      <div className="px-4 pt-2">
+        <ProgressBar
+          currentTime={audio.currentTime}
+          duration={audio.duration}
+          onSeek={audio.seek}
+          isLoading={audio.isLoading}
+          showTime={true}
         />
       </div>
 
-      <div className="flex items-center justify-between px-4 py-3 h-full">
+      {/* 主控制区 */}
+      <div className="flex items-center justify-between px-4 py-3 h-16">
         {/* 左侧 - 歌曲信息 */}
-        <div className="flex-1 min-w-0 mr-4">
-          <p className={`text-sm font-medium truncate ${
-            isDarkMode ? 'text-white' : 'text-black'
-          }`}>
+        <div className="flex-1 min-w-0 mr-4 flex-shrink-0">
+          <p
+            className={`text-sm font-medium truncate ${
+              isDarkMode ? 'text-white' : 'text-black'
+            }`}
+          >
             {currentMusic.name}
           </p>
-          <p className={`text-xs truncate ${
-            isDarkMode ? 'text-gray-400' : 'text-gray-600'
-          }`}>
+          <p
+            className={`text-xs truncate ${
+              isDarkMode ? 'text-gray-400' : 'text-gray-600'
+            }`}
+          >
             {currentMusic.artist}
           </p>
         </div>
 
         {/* 中央 - 播放控制 */}
-        <div className="flex items-center gap-4">
-          <button
-            className={`p-2 rounded-full transition-colors ${
-              isDarkMode
-                ? 'hover:bg-gray-800'
-                : 'hover:bg-gray-100'
-            }`}
-            aria-label="上一首"
-          >
-            <SkipBack className="h-4 w-4" />
-          </button>
-
-          <button
-            onClick={() => setIsPlaying(!isPlaying)}
-            className="p-2 rounded-full bg-purple-500 text-white hover:bg-purple-600 transition-colors"
-            aria-label={isPlaying ? '暂停' : '播放'}
-          >
-            {isPlaying ? (
-              <Pause className="h-5 w-5" />
-            ) : (
-              <Play className="h-5 w-5 ml-0.5" />
-            )}
-          </button>
-
-          <button
-            className={`p-2 rounded-full transition-colors ${
-              isDarkMode
-                ? 'hover:bg-gray-800'
-                : 'hover:bg-gray-100'
-            }`}
-            aria-label="下一首"
-          >
-            <SkipForward className="h-4 w-4" />
-          </button>
+        <div className="flex-shrink-0">
+          <PlayerControls
+            isPlaying={audio.isPlaying}
+            onPlay={handlePlayPause}
+            onPause={handlePlayPause}
+            onPrevious={handlePrevious}
+            onNext={handleNext}
+            disabled={audio.isLoading}
+            hasPrevious={currentIndex > 0}
+            hasNext={currentIndex >= 0 && currentIndex < playlist.length - 1}
+          />
         </div>
 
-        {/* 右侧 - 时间和音量 */}
-        <div className="flex items-center gap-4 ml-4 min-w-fit">
-          <span className={`text-xs hidden sm:block ${
-            isDarkMode ? 'text-gray-400' : 'text-gray-600'
-          }`}>
-            {formatTime(currentTime)} / {formatTime(duration)}
-          </span>
-
+        {/* 右侧 - 音量和播放列表 */}
+        <div className="flex items-center gap-4 ml-4 flex-shrink-0">
+          {/* 音量控制 */}
           <div className="flex items-center gap-2">
-            <Volume2 className="h-4 w-4" />
+            <button
+              onClick={audio.toggleMute}
+              className={`p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors ${
+                audio.isMuted ? 'text-red-500' : ''
+              }`}
+              title={audio.isMuted ? '取消静音' : '静音'}
+            >
+              {audio.isMuted ? (
+                <VolumeX className="h-4 w-4" />
+              ) : (
+                <Volume2 className="h-4 w-4" />
+              )}
+            </button>
+
             <input
               type="range"
               min="0"
               max="1"
               step="0.01"
-              value={volume}
-              onChange={(e) => setVolume(parseFloat(e.target.value))}
+              value={audio.isMuted ? 0 : audio.volume}
+              onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
               className="w-20 hidden sm:block"
+              title="音量"
             />
           </div>
+
+          {/* 播放列表按钮 */}
+          <button
+            onClick={() => setShowPlaylist(!showPlaylist)}
+            className={`p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors ${
+              showPlaylist ? 'text-purple-500' : ''
+            }`}
+            title="播放列表"
+          >
+            <ChevronDown
+              className={`h-4 w-4 transition-transform ${
+                showPlaylist ? 'rotate-180' : ''
+              }`}
+            />
+          </button>
         </div>
       </div>
+
+      {/* 播放列表展开 */}
+      {showPlaylist && (
+        <div
+          className={`border-t ${
+            isDarkMode ? 'border-gray-800 bg-gray-900' : 'border-gray-200 bg-gray-50'
+          } p-4 overflow-y-auto max-h-72`}
+        >
+          <PlaylistView
+            onSongSelect={handleSelectSong}
+            onRemoveSong={(index) => removeFromPlaylist(index)}
+          />
+        </div>
+      )}
     </div>
   )
 }

@@ -34,11 +34,11 @@ export function Sidebar() {
 
       {/* Sidebar */}
       <aside
-        className={`fixed left-0 top-16 bottom-24 z-40 w-64 overflow-y-auto transition-transform lg:relative lg:top-0 lg:translate-x-0 lg:bottom-0 ${
+        className={`fixed left-0 top-16 bottom-24 z-40 w-64 overflow-y-auto transition-transform lg:fixed lg:bottom-0 lg:w-64 ${
           isDarkMode ? 'bg-gray-950 border-gray-800' : 'bg-gray-50 border-gray-200'
         } border-r ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        } lg:translate-x-0`}
       >
         <nav className="space-y-1 p-4">
           {menuItems.map((item) => (
