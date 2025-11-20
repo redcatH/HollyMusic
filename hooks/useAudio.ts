@@ -9,6 +9,7 @@ interface UseAudioOptions {
   loop?: boolean
   mute?: boolean
   rate?: number
+  onEnd?: () => void  // ✨ 新增：歌曲结束回调
 }
 
 interface AudioState {
@@ -33,6 +34,7 @@ export function useAudio(url?: string, options: UseAudioOptions = {}) {
     loop = false,
     mute = false,
     rate = 1,
+    onEnd,  // ✨ 新增
   } = options
 
   // 使用 dynamic import 避免 SSR 问题
@@ -75,7 +77,7 @@ export function useAudio(url?: string, options: UseAudioOptions = {}) {
    * 加载音频文件
    */
   const load = useCallback(
-    (audioUrl: string, autoplayOnLoad = autoplay): Promise<void> => {
+    (audioUrl: string, autoplayOnLoad = autoplay, onEndCallback?: () => void): Promise<void> => {
       console.log('useAudio.load: 开始加载', { audioUrl, autoplayOnLoad })
       
       return new Promise((resolve, reject) => {
@@ -134,7 +136,15 @@ export function useAudio(url?: string, options: UseAudioOptions = {}) {
             },
             onend: () => {
               console.log('useAudio.load: onend 触发，音频播放完毕')
-              setState((prev) => ({ ...prev, isPlaying: false }))
+              setState((prev) => ({ ...prev, isPlaying: false, currentTime: 0 }))
+              // ✨ 优先调用通过 load 参数传递的回调，其次调用 options 中的回调
+              if (onEndCallback) {
+                console.log('useAudio.load: 调用 onEndCallback')
+                onEndCallback()
+              } else if (onEnd) {
+                console.log('useAudio.load: 调用 onEnd 回调')
+                onEnd()
+              }
             },
             onerror: (error: unknown) => {
               console.error('useAudio.load: onerror 触发，音频加载失败:', error)
@@ -159,7 +169,7 @@ export function useAudio(url?: string, options: UseAudioOptions = {}) {
       })
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [loop, autoplay]
+    [loop, autoplay, onEnd]
   )
 
   /**
