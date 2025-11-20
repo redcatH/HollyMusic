@@ -33,7 +33,7 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
         <Header />
         <div className="flex">
           <Sidebar />
-          <main className="flex-1 lg:ml-64 pb-24">
+          <main className="flex-1 w-full lg:ml-64 pb-24 overflow-x-hidden">
             {children}
           </main>
         </div>

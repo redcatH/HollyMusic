@@ -105,44 +105,46 @@ export default function Home() {
                 </span>
               )}
             </div>
-            <MusicList
-              songs={songs}
-              loading={loading}
-              error={error}
-              onSongPlay={handleSongPlay}
-              onSongAddToPlaylist={handleSongPlay}
-              onSongFavorite={(song) => {
-                console.log('收藏:', song)
-              }}
-            />
+            <div className="w-full max-w-full overflow-x-hidden">
+              <MusicList
+                songs={songs}
+                loading={loading}
+                error={error}
+                onSongPlay={handleSongPlay}
+                onSongAddToPlaylist={handleSongPlay}
+                onSongFavorite={(song) => {
+                  console.log('收藏:', song)
+                }}
+              />
+            </div>
           </div>
         )}
 
         {/* 默认内容 */}
         {!query && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 p-6 h-48 flex items-end text-white cursor-pointer hover:shadow-lg transition-shadow">
+          <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-2 md:gap-4">
+            <div className="rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 p-3 md:p-6 h-32 md:h-48 flex items-end text-white cursor-pointer hover:shadow-lg transition-shadow">
               <div>
-                <p className="text-sm opacity-75">浏览</p>
-                <h3 className="text-xl font-bold">热门歌曲</h3>
+                <p className="text-xs md:text-sm opacity-75">浏览</p>
+                <h3 className="text-base md:text-xl font-bold">热门歌曲</h3>
               </div>
             </div>
-            <div className="rounded-lg bg-gradient-to-br from-pink-500 to-orange-500 p-6 h-48 flex items-end text-white cursor-pointer hover:shadow-lg transition-shadow">
+            <div className="rounded-lg bg-gradient-to-br from-pink-500 to-orange-500 p-3 md:p-6 h-32 md:h-48 flex items-end text-white cursor-pointer hover:shadow-lg transition-shadow">
               <div>
-                <p className="text-sm opacity-75">浏览</p>
-                <h3 className="text-xl font-bold">推荐歌单</h3>
+                <p className="text-xs md:text-sm opacity-75">浏览</p>
+                <h3 className="text-base md:text-xl font-bold">推荐歌单</h3>
               </div>
             </div>
-            <div className="rounded-lg bg-gradient-to-br from-green-500 to-teal-500 p-6 h-48 flex items-end text-white cursor-pointer hover:shadow-lg transition-shadow">
+            <div className="rounded-lg bg-gradient-to-br from-green-500 to-teal-500 p-3 md:p-6 h-32 md:h-48 flex items-end text-white cursor-pointer hover:shadow-lg transition-shadow">
               <div>
-                <p className="text-sm opacity-75">浏览</p>
-                <h3 className="text-xl font-bold">新歌速递</h3>
+                <p className="text-xs md:text-sm opacity-75">浏览</p>
+                <h3 className="text-base md:text-xl font-bold">新歌速递</h3>
               </div>
             </div>
-            <div className="rounded-lg bg-gradient-to-br from-indigo-500 to-purple-500 p-6 h-48 flex items-end text-white cursor-pointer hover:shadow-lg transition-shadow">
+            <div className="rounded-lg bg-gradient-to-br from-indigo-500 to-purple-500 p-3 md:p-6 h-32 md:h-48 flex items-end text-white cursor-pointer hover:shadow-lg transition-shadow">
               <div>
-                <p className="text-sm opacity-75">浏览</p>
-                <h3 className="text-xl font-bold">排行榜</h3>
+                <p className="text-xs md:text-sm opacity-75">浏览</p>
+                <h3 className="text-base md:text-xl font-bold">排行榜</h3>
               </div>
             </div>
           </div>

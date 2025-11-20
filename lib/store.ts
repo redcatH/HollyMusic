@@ -51,7 +51,7 @@ const playerStoreCreator: StateCreator<PlayerState> = (set) => ({
   playlist: [],
   playlistIndex: -1,
   isDarkMode: false,
-  sidebarOpen: true,
+  sidebarOpen: false,
 
   setCurrentMusic: (music) => set({ currentMusic: music }),
   setIsPlaying: (playing) => set({ isPlaying: playing }),

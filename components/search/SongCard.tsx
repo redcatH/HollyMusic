@@ -42,7 +42,7 @@ export function SongCard({
 
   return (
     <div
-      className={`group flex items-center gap-4 rounded-lg p-3 transition-all hover:shadow-md ${
+      className={`group flex items-center gap-3 md:gap-4 rounded-lg p-2 md:p-3 transition-all hover:shadow-md ${
         isDarkMode
           ? 'hover:bg-gray-800 bg-gray-900/50'
           : 'hover:bg-gray-100 bg-gray-50'
@@ -56,13 +56,13 @@ export function SongCard({
           <span className="text-white text-lg">♪</span>
         )}
         
-        {/* 播放按钮 - 悬停显示 */}
+        {/* 播放按钮 - 手机端固定显示，桌面端 hover 显示 */}
         <button
           onClick={() => {
             console.log('SongCard: 点击播放按钮', name)
             onPlay?.()
           }}
-          className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity"
+          className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
           aria-label="播放"
         >
           <Play className="h-5 w-5 text-white fill-white ml-0.5" />
@@ -81,8 +81,9 @@ export function SongCard({
         }`}>
           {singer}
         </p>
+        {/* 手机端隐藏专辑名 */}
         {albumName && (
-          <p className={`text-xs truncate ${
+          <p className={`text-xs truncate hidden md:block ${
             isDarkMode ? 'text-gray-500' : 'text-gray-500'
           }`}>
             {albumName}
@@ -90,8 +91,8 @@ export function SongCard({
         )}
       </div>
 
-      {/* 品质和音源图标 */}
-      <div className="flex items-center gap-1.5 flex-shrink-0">
+      {/* 品质和音源图标 - 手机端隐藏 */}
+      <div className="items-center gap-1.5 flex-shrink-0 hidden md:flex">
         {/* 品质图标 */}
         <div
           className={`flex items-center justify-center w-6 h-6 rounded text-xs font-bold ${
@@ -113,15 +114,15 @@ export function SongCard({
         </div>
       </div>
 
-      {/* 时长 */}
-      <div className={`text-xs font-medium min-w-fit ${
+      {/* 时长 - 手机端隐藏 */}
+      <div className={`text-xs font-medium min-w-fit hidden md:block ${
         isDarkMode ? 'text-gray-400' : 'text-gray-600'
       }`}>
         {formatDuration(interval)}
       </div>
 
-      {/* 操作按钮 */}
-      <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+      {/* 操作按钮 - 手机端隐藏，桌面端 hover 显示 */}
+      <div className="items-center gap-1 flex-shrink-0 hidden md:flex opacity-0 group-hover:opacity-100 transition-opacity">
         <button
           onClick={onAddToPlaylist}
           className={`p-1.5 rounded transition-colors ${
