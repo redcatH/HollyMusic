@@ -93,7 +93,7 @@ export default function Home() {
         </div>
 
         {/* 搜索结果 */}
-        {query && (
+        {results && (
           <div>
             <div className="flex items-center gap-2 mb-4">
               <h2 className="text-xl font-bold">
