@@ -1,0 +1,89 @@
+version: '3.8'
+
+services:
+  # 主应用服务
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # 使用 BuildKit 加速构建
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    image: lx-music-app:latest
+    container_name: lx-music-app
+    ports:
+      - "3099:3000"
+    environment:
+      - NODE_ENV=production
+    volumes:
+      # 本地目录映射（方便编辑）
+      - ./custom-sources:/app/custom-sources
+      - ./config:/app/config
+      # 持久化缓存目录
+      - cache_data:/app/data/cache
+      # 日志目录（可选）
+      - app_logs:/app/logs
+    networks:
+      - redcat-network
+    # depends_on:
+    #   - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  # # Redis 缓存服务（可选）
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: lx-music-redis
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis_data:/data
+  #   command: redis-server --appendonly yes --requirepass redis_password
+  #   networks:
+  #     - music_network
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "ping"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+
+  # # PostgreSQL 数据库（可选，用于扩展功能）
+  # postgres:
+  #   image: postgres:16-alpine
+  #   container_name: lx-music-postgres
+  #   environment:
+  #     POSTGRES_DB: music_db
+  #     POSTGRES_USER: music_user
+  #     POSTGRES_PASSWORD: music_password
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   networks:
+  #     - music_network
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U music_user -d music_db"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+
+volumes:
+  cache_data:
+    driver: local
+  app_logs:
+    driver: local
+  redis_data:
+    driver: local
+  postgres_data:
+    driver: local
+
+networks:
+  redcat-network:
+    external: true

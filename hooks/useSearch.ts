@@ -1,21 +1,12 @@
 'use client'
 
+import { MusicInfo } from '@/lib/types/music'
 import { useState, useCallback, useRef } from 'react'
 
 export interface SearchResponse {
   success: boolean
   data?: {
-    list: Array<{
-      id: string
-      name: string
-      artist: string
-      album?: string
-      duration: number
-      quality?: string
-      source: string
-      pic?: string
-      originUrl?: string
-    }>
+    list: MusicInfo[]
     total: number
   }
   error?: {
@@ -35,7 +26,7 @@ interface SearchCache {
 }
 
 export function useSearch(options: UseSearchOptions = {}) {
-  const { debounceMs = 300, cacheMs = 1000 * 60 * 30 } = options
+  const { cacheMs = 1000 * 60 * 30 } = options
   
   const [query, setQuery] = useState('')
   const [source, setSource] = useState('kw')
@@ -43,7 +34,6 @@ export function useSearch(options: UseSearchOptions = {}) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   
-  const debounceTimer = useRef<NodeJS.Timeout>()
   const cacheRef = useRef<Map<string, SearchCache>>(new Map())
 
   const search = useCallback(
@@ -103,24 +93,26 @@ export function useSearch(options: UseSearchOptions = {}) {
   const handleSearch = useCallback(
     (keyword: string, selectedSource?: string) => {
       setQuery(keyword)
-      
-      // 清除之前的防抖定时器
-      if (debounceTimer.current) {
-        clearTimeout(debounceTimer.current)
-      }
-
       if (!keyword.trim()) {
         setResults(null)
         setError(null)
         return
       }
-
-      // 防抖搜索
-      debounceTimer.current = setTimeout(() => {
-        search(keyword, selectedSource || source, 1)
-      }, debounceMs)
+      // 立即执行搜索，不防抖
+      search(keyword, selectedSource || source, 1)
     },
-    [search, source, debounceMs]
+    [search, source]
+  )
+
+  const handleSourceChange = useCallback(
+    (newSource: string) => {
+      setSource(newSource)
+      // 如果已有查询词，用新音源重新搜索
+      if (query.trim()) {
+        search(query, newSource, 1)
+      }
+    },
+    [query, search]
   )
 
   const clearCache = useCallback(() => {
@@ -131,7 +123,7 @@ export function useSearch(options: UseSearchOptions = {}) {
     query,
     setQuery,
     source,
-    setSource,
+    setSource: handleSourceChange,
     results,
     loading,
     error,

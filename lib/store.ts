@@ -12,6 +12,7 @@ export interface CurrentMusic {
   duration: number
   cover?: string
   source: string
+  originUrl?: string
 }
 
 export interface PlayerState {
@@ -33,6 +34,7 @@ export interface PlayerState {
   setVolume: (volume: number) => void
   setPlaylist: (playlist: CurrentMusic[]) => void
   setPlaylistIndex: (index: number) => void
+  removeFromPlaylist: (index: number) => void
 
   // UI 操作
   toggleDarkMode: () => void
@@ -58,6 +60,10 @@ const playerStoreCreator: StateCreator<PlayerState> = (set) => ({
   setVolume: (volume) => set({ volume: Math.max(0, Math.min(1, volume)) }),
   setPlaylist: (playlist) => set({ playlist }),
   setPlaylistIndex: (index) => set({ playlistIndex: index }),
+  removeFromPlaylist: (index) => set((state) => {
+    const newPlaylist = state.playlist.filter((_, i) => i !== index)
+    return { playlist: newPlaylist }
+  }),
 
   toggleDarkMode: () => set((state) => ({ isDarkMode: !state.isDarkMode })),
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),

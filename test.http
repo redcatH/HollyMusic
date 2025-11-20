@@ -43,3 +43,22 @@ Accept: application/json
       },
     "quality": "320k"
 }
+
+### 获取
+GET http://97.64.37.235/flower/v1/url/kw/3453727/128k HTTP/1.1
+Host: 97.64.37.235
+User-Agent: lx-music/desktop
+ver: 2.0.0
+source-ver: 1
+tag: 5b0a2022333435333732222c0a20223132386b220a5d
+
+
+###
+GET http://97.64.37.235/flower/v1/url/kw/3453727/128k HTTP/1.1
+accept: */*
+user-agent: lx-music/desktop
+ver: 2.0.0
+source-ver: 1
+tag: 5b0a2022333435333732222c0a20223132386b220a5d
+host: 97.64.37.235
+Connection: close

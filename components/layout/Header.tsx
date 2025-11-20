@@ -41,7 +41,7 @@ export function Header() {
                 isDarkMode ? 'text-white' : 'text-black'
               }`}
             >
-              LX Music
+              Holly Music
             </h1>
           </div>
         </div>

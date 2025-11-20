@@ -1,0 +1,43 @@
+# 开发环境 Docker Compose
+# 使用: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+version: '3.8'
+
+services:
+  app:
+    # 开发模式下使用 npm run dev
+    command: pnpm dev
+    # 热重载：挂载源代码
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_URL=http://localhost:3000
+
+  # 开发工具
+  adminer:
+    image: adminer:latest
+    container_name: lx-music-adminer
+    ports:
+      - "8080:8080"
+    networks:
+      - music_network
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  # Redis 管理工具
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: lx-music-redis-commander
+    environment:
+      - REDIS_HOSTS=local:redis:6379:0:redis_password
+    ports:
+      - "8081:8081"
+    networks:
+      - music_network
+    depends_on:
+      - redis
+    restart: unless-stopped

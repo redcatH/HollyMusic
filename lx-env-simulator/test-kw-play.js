@@ -30,7 +30,7 @@ async function testKWPlay() {
     const keyword = '以父之名'
     console.log(`\n正在搜索: "${keyword}"`)
     
-    const searchResult = await musicSearch.kw.search(keyword, 1, 5)
+    const searchResult = await musicSearch.tx.search(keyword, 1, 5)
     
     if (!searchResult || !searchResult.list || searchResult.list.length === 0) {
       console.error('❌ 搜索失败: 没有找到结果')

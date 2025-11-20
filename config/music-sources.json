@@ -5,7 +5,23 @@
       "enabled": true,
       "priority": 1,
       "timeout": 15000,
-      "name": "野花🌷",
+      "name": "lx-music-source.js",
+      "description": "Flower 自定义源"
+    },
+    {
+      "path": "custom-sources/flower-v1.js",
+      "enabled": true,
+      "priority": 10,
+      "timeout": 15000,
+      "name": "flower-v1.js",
+      "description": "Flower 自定义源"
+    },
+    {
+      "path": "custom-sources/render_api.js",
+      "enabled": true,
+      "priority": 0,
+      "timeout": 15000,
+      "name": "render_api.js",
       "description": "Flower 自定义源"
     }
   ]

@@ -1,0 +1,67 @@
+# Dependencies
+node_modules
+npm-debug.log
+
+# Build output
+.next
+out
+build
+dist
+
+# Development
+.env.local
+.env.*.local
+.vscode
+.idea
+*.swp
+*.swo
+.editorconfig
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# CI/CD
+.github
+.gitlab-ci.yml
+.travis.yml
+
+# OS
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+
+# Testing
+.coverage
+.nyc_output
+jest.config.js
+*.test.ts
+*.spec.ts
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Documentation
+docs
+*.md
+!README.md
+
+# Logs
+*.log
+logs/
+
+# Other
+*.tmp
+.cache
+.turbo
+dist-ssr
+coverage
+lx-env-simulator/
+META-INF/
+public/
+.next/
+.pnpm-store/

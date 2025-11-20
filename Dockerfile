@@ -1,0 +1,52 @@
+# 构建阶段
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# 使用 pnpm 作为包管理器
+RUN npm install -g pnpm
+
+# 先只复制 package 文件（利用 Docker 分层缓存）
+# 如果 package.json 和 pnpm-lock.yaml 没有变化，此层会被缓存
+COPY package.json pnpm-lock.yaml ./
+
+# 安装依赖（此步骤会被缓存，除非 lock 文件变化）
+RUN pnpm install --frozen-lockfile
+
+# 再复制源代码和配置文件（源码变化不会重新执行 npm install）
+COPY . .
+
+# 确保必要的目录存在
+RUN mkdir -p custom-sources config
+
+# 构建应用
+RUN pnpm build
+
+# 运行阶段
+FROM node:20-alpine
+
+WORKDIR /app
+
+# 安装 pnpm
+RUN npm install -g pnpm
+
+# 从构建阶段复制构建结果
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/config ./config
+COPY --from=builder /app/custom-sources ./custom-sources
+
+# 创建缓存和数据目录
+RUN mkdir -p /app/data/cache /app/logs
+
+# 暴露端口
+EXPOSE 3000
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:3000/api/health', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
+
+# 启动应用
+CMD ["pnpm", "start"]
