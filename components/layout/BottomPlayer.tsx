@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { ChevronDown, Volume2, VolumeX } from 'lucide-react'
 import { usePlayerStore } from '@/lib/store'
 import { useAudio } from '@/hooks/useAudio'
@@ -12,6 +12,8 @@ export function BottomPlayer() {
   const {
     isDarkMode,
     currentMusic,
+    currentMusicUrl,
+    isFetchingUrl,
     isPlaying,
     setIsPlaying,
     playlist,
@@ -20,76 +22,50 @@ export function BottomPlayer() {
 
   const audio = useAudio(undefined, { volume: 0.7 })
   const [showPlaylist, setShowPlaylist] = useState(false)
-  const previousUrlRef = useRef<string | undefined>(undefined)
-  const urlJustChangedRef = useRef(false)
 
-  // 只处理 URL 变化
+  // 统一处理 URL 和播放状态变化
   useEffect(() => {
-    console.log('BottomPlayer effect1: 检查 currentMusic', {
-      originUrl: currentMusic?.originUrl,
-      previousUrl: previousUrlRef.current
+    console.log('BottomPlayer: URL 或加载状态变化', {
+      currentMusicUrl,
+      isFetchingUrl,
+      isPlaying,
     })
-    
-    if (!currentMusic?.originUrl) {
-      console.log('BottomPlayer effect1: originUrl 为空，返回')
+
+    if (!currentMusicUrl) {
+      console.log('BottomPlayer: URL 为空，暂停')
+      audio.pause()
       return
     }
-    
-    const hasUrlChanged = previousUrlRef.current !== currentMusic.originUrl
-    console.log('BottomPlayer effect1: hasUrlChanged =', hasUrlChanged)
-    previousUrlRef.current = currentMusic.originUrl
-    
-    if (!hasUrlChanged) {
-      console.log('BottomPlayer effect1: URL 未变，返回')
+
+    // URL 还在获取中，暂停
+    if (isFetchingUrl) {
+      console.log('BottomPlayer: 正在获取 URL，暂停')
+      audio.pause()
       return
     }
-    
-    console.log('BottomPlayer: URL 改变，加载新音频', currentMusic.originUrl)
-    urlJustChangedRef.current = true
-    audio.pause()
-    audio.load(currentMusic.originUrl, false).then(() => {
-      // 加载完成后，检查是否需要播放
-      console.log('BottomPlayer: 音频加载完成，检查 isPlaying')
+
+    // URL 已准备好，加载音频
+    console.log('BottomPlayer: 加载音频', currentMusicUrl)
+    let isMounted = true
+
+    audio.load(currentMusicUrl, false).then(() => {
+      if (!isMounted) return
+      console.log('BottomPlayer: 音频加载完成')
+      // 加载完成后，根据 isPlaying 决定是否播放
       if (isPlaying) {
-        console.log('BottomPlayer: 调用 audio.play()')
+        console.log('BottomPlayer: 自动播放')
         audio.play()
       }
-      urlJustChangedRef.current = false
     }).catch((err) => {
+      if (!isMounted) return
       console.error('BottomPlayer: 音频加载失败', err)
-      urlJustChangedRef.current = false
     })
-    
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentMusic?.originUrl])
 
-  // 处理播放状态变化：只在 URL 没刚改变时调用（用户点击播放/暂停按钮）
-  useEffect(() => {
-    console.log('BottomPlayer effect2: isPlaying 改变', {
-      isPlaying,
-      urlJustChangedRef: urlJustChangedRef.current,
-      hasOriginUrl: !!currentMusic?.originUrl
-    })
-    
-    if (!currentMusic?.originUrl) {
-      console.log('BottomPlayer effect2: originUrl 为空，返回')
-      return
-    }
-    
-    // 如果 URL 刚改变，不处理（上面的 effect 已经处理了）
-    if (urlJustChangedRef.current) {
-      console.log('BottomPlayer effect2: URL 刚改变，跳过播放状态同步')
-      return
-    }
-    
-    console.log('BottomPlayer effect2: 仅播放状态改变（URL未变），同步状态', isPlaying ? '播放' : '暂停')
-    if (isPlaying) {
-      audio.play()
-    } else {
-      audio.pause()
+    return () => {
+      isMounted = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPlaying])
+  }, [currentMusicUrl, isFetchingUrl, isPlaying])
 
   // 当前歌曲索引
   const currentIndex = useMemo(() => {
