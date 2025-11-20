@@ -14,6 +14,7 @@ export function BottomPlayer() {
     currentMusic,
     currentMusicUrl,
     isFetchingUrl,
+    urlFetchError,
     isPlaying,
     setIsPlaying,
     playlist,
@@ -144,22 +145,50 @@ export function BottomPlayer() {
 
       {/* 主控制区 */}
       <div className="flex items-center justify-between px-4 py-3 h-16">
-        {/* 左侧 - 歌曲信息 */}
+        {/* 左侧 - 歌曲信息 / 加载状态 / 错误信息 */}
         <div className="flex-1 min-w-0 mr-4 flex-shrink-0">
-          <p
-            className={`text-sm font-medium truncate ${
-              isDarkMode ? 'text-white' : 'text-black'
-            }`}
-          >
-            {currentMusic.name}
-          </p>
-          <p
-            className={`text-xs truncate ${
-              isDarkMode ? 'text-gray-400' : 'text-gray-600'
-            }`}
-          >
-            {currentMusic.artist}
-          </p>
+          {isFetchingUrl ? (
+            // 加载状态
+            <div className="flex items-center gap-2">
+              <div className="animate-spin">
+                <svg className="h-4 w-4 text-purple-500" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              </div>
+              <p className={`text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                加载中...
+              </p>
+            </div>
+          ) : urlFetchError ? (
+            // 错误状态
+            <div>
+              <p className="text-sm font-medium text-red-500 truncate">
+                加载失败
+              </p>
+              <p className={`text-xs truncate ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                {urlFetchError}
+              </p>
+            </div>
+          ) : (
+            // 正常显示歌曲信息
+            <>
+              <p
+                className={`text-sm font-medium truncate ${
+                  isDarkMode ? 'text-white' : 'text-black'
+                }`}
+              >
+                {currentMusic.name}
+              </p>
+              <p
+                className={`text-xs truncate ${
+                  isDarkMode ? 'text-gray-400' : 'text-gray-600'
+                }`}
+              >
+                {currentMusic.artist}
+              </p>
+            </>
+          )}
         </div>
 
         {/* 中央 - 播放控制 */}
@@ -170,7 +199,7 @@ export function BottomPlayer() {
             onPause={handlePlayPause}
             onPrevious={handlePrevious}
             onNext={handleNext}
-            disabled={audio.isLoading}
+            disabled={audio.isLoading || isFetchingUrl || !!urlFetchError}
             hasPrevious={currentIndex > 0}
             hasNext={currentIndex >= 0 && currentIndex < playlist.length - 1}
           />
