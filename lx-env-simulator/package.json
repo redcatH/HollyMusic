@@ -1,0 +1,23 @@
+{
+  "name": "lx-env-simulator",
+  "version": "1.0.0",
+  "description": "LX Music 自定义源环境模拟器",
+  "main": "index.js",
+  "scripts": {
+    "test": "node example.js",
+    "start": "node example.js",
+    "test:flower": "node test-flower.js",
+    "test:flower:debug": "node test-flower-debug.js"
+  },
+  "keywords": [
+    "lx-music",
+    "custom-source",
+    "simulator"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "needle": "^3.2.0",
+    "tunnel": "^0.0.6"
+  }
+}
