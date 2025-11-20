@@ -5,15 +5,12 @@ import { MainLayout } from '@/components/layout/MainLayout'
 import { SearchBar } from '@/components/search/SearchBar'
 import { MusicList } from '@/components/search/MusicList'
 import { useSearch } from '@/hooks/useSearch'
-import { useMusicUrl } from '@/hooks/useMusicUrl'
 import { usePlayerStore } from '@/lib/store'
 import { toast } from '@/lib/toast'
 import type { MusicInfo } from '@/lib/types/music'
 
 export default function Home() {
   const { query, setQuery, source, results, loading, error, search, setSource } = useSearch()
-  const { getMusicUrl } = useMusicUrl()
-  const { setCurrentMusic, setPlaylist, setIsPlaying } = usePlayerStore()
 
   const handleSearch = (keyword: string) => {
     search(keyword, source)
@@ -25,53 +22,25 @@ export default function Home() {
 
   const handleSongPlay = useCallback(
     async (song: MusicInfo) => {
-      console.log('点击播放歌曲:', song)
-      
-      // 从 song.types 中选择最后一个（最高质量）
-      const quality = song.types?.[song.types.length - 1]?.type || '128k'
-      
-      console.log('开始请求 URL，传递的数据:', {
-        name: song.name,
-        singer: song.singer,
-        source: song.source,
-        songmid: song.songmid,
-        quality,
-      })
-      
-      const musicUrl = await getMusicUrl(song, quality)
-      console.log('获取到的 URL:', musicUrl)
-
-      if (!musicUrl) {
-        console.error('无法获取音乐 URL')
-        toast.error(`请切换源或选择其他歌曲,无法播放 "${song.name}" - ${song.singer} `)
-        return
+      try {
+        console.log('page: 点击播放歌曲:', song)
+        
+        // 从 song.types 中选择最后一个（最高质量）
+        const quality = song.types?.[song.types.length - 1]?.type || '128k'
+        
+        console.log('page: 调用 store.loadMusicAndUrl', { songName: song.name, quality })
+        
+        // 直接调用 store 的核心方法，所有逻辑都在 store 中处理
+        await usePlayerStore.getState().loadMusicAndUrl(song, quality)
+        
+        console.log('page: 歌曲加载并播放成功')
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : '无法播放歌曲'
+        console.error('page: 音乐加载失败', errorMsg)
+        toast.error(`请切换源或选择其他歌曲,无法播放 "${song.name}" - ${song.singer}`)
       }
-
-      // 设置当前歌曲和播放列表
-      setCurrentMusic({
-        id: song.songmid,
-        name: song.name,
-        artist: song.singer,
-        album: song.albumName || '',
-        duration: song.interval ? parseInt(song.interval) : 0,
-        cover: song.img || undefined,
-        source: song.source,
-        originUrl: musicUrl,
-      })
-
-      setPlaylist([{
-        id: song.songmid,
-        name: song.name,
-        artist: song.singer,
-        album: song.albumName || '',
-        duration: song.interval ? parseInt(song.interval) : 0,
-        cover: song.img || undefined,
-        source: song.source,
-        originUrl: musicUrl,
-      }])
-      setIsPlaying(true)
     },
-    [getMusicUrl, setCurrentMusic, setPlaylist, setIsPlaying]
+    []
   )
 
   const songs = results?.data?.list || []
