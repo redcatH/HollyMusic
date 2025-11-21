@@ -1,11 +1,11 @@
 {
   "sources": [
     {
-      "path": "custom-sources/聚合API接口.js",
+      "path": "custom-sources/长青SVIP音源v1.0.0（支持无损）.js",
       "enabled": true,
       "priority": 20,
       "timeout": 15000,
-      "name": "聚合API接口.js",
+      "name": "长青SVIP音源v1.0.0（支持无损）.js",
       "description": "flower-v1.js"
     }
   ]
