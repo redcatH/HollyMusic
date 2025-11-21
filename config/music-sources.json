@@ -1,28 +1,12 @@
 {
   "sources": [
     {
-      "path": "custom-sources/lx-music-source.js",
+      "path": "custom-sources/聚合API接口.js",
       "enabled": true,
-      "priority": 1,
+      "priority": 20,
       "timeout": 15000,
-      "name": "lx-music-source.js",
-      "description": "Flower 自定义源"
-    },
-    {
-      "path": "custom-sources/flower-v1.js",
-      "enabled": true,
-      "priority": 10,
-      "timeout": 15000,
-      "name": "flower-v1.js",
-      "description": "Flower 自定义源"
-    },
-    {
-      "path": "custom-sources/render_api.js",
-      "enabled": true,
-      "priority": 0,
-      "timeout": 15000,
-      "name": "render_api.js",
-      "description": "Flower 自定义源"
+      "name": "聚合API接口.js",
+      "description": "flower-v1.js"
     }
   ]
 }
