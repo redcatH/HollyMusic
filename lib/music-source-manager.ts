@@ -1,9 +1,12 @@
 /**
  * 音源管理服务
  * 管理多个 LXEnvironmentSimulator 实例，提供智能 URL 获取
+ * 支持配置文件热重载
  */
 
 import path from 'path'
+import fs from 'fs'
+import crypto from 'crypto'
 import type { MusicInfo, QualityType, HealthStatus, SourceInfo } from './types/music'
 import { ConfigValidator } from './config-validator'
 import { logger } from './logger'
@@ -28,16 +31,58 @@ interface SimulatorInstance {
   error?: string
 }
 
+/**
+ * 计算文件的 MD5 哈希值
+ */
+function getFileHash(filePath: string): string | null {
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8')
+    return crypto.createHash('md5').update(content).digest('hex')
+  } catch {
+    return null
+  }
+}
+
 class MusicSourceManager {
   private instances: SimulatorInstance[] = []
   private initialized: boolean = false
+  private configPath: string = ''
+  private configHash: string | null = null
+
+  /**
+   * 检测配置文件是否改变
+   */
+  private checkConfigChanged(): boolean {
+    const configPath = path.resolve(process.cwd(), 'config/music-sources.json')
+    const currentHash = getFileHash(configPath)
+    
+    if (currentHash === null) {
+      logger.warn('无法读取配置文件 hash')
+      return false
+    }
+
+    const changed = this.configHash !== currentHash
+    if (changed) {
+      logger.info('检测到配置文件变更，将重新加载')
+      this.configHash = currentHash
+    }
+    return changed
+  }
+
+  /**
+   * 重置实例（清空旧实例以便重新初始化）
+   */
+  private resetInstances(): void {
+    this.instances = []
+    this.initialized = false
+  }
 
   /**
    * 初始化音源管理器
    */
   async initialize(): Promise<void> {
     if (this.initialized) {
-      logger.warn('音源管理器已初始化，跳过')
+      logger.debug('音源管理器已初始化')
       return
     }
 
@@ -45,6 +90,9 @@ class MusicSourceManager {
 
     // 读取配置文件
     const configPath = path.resolve(process.cwd(), 'config/music-sources.json')
+    this.configPath = configPath
+    this.configHash = getFileHash(configPath)
+    
     let config
 
     try {
@@ -111,16 +159,31 @@ class MusicSourceManager {
   /**
    * 获取音乐 URL（智能降级）
    * 依次尝试所有音源，支持音质降级
+   * 支持配置文件热重载
    */
   async getMusicUrl(musicInfo: MusicInfo, requestedQuality: QualityType = '320k'): Promise<string> {
+    // 在获取 URL 时检查配置是否变更
+    if (this.initialized && this.checkConfigChanged()) {
+      logger.info('配置文件已变更，重新加载音源...')
+      this.resetInstances()
+    }
+
     if (!this.initialized) {
       await this.initialize()
     }
 
-    const availableInstances = this.instances.filter(i => i.initialized)
-    
+    let availableInstances = this.instances.filter(i => i.initialized)
+
+    // 如果当前没有可用实例，尝试重新加载配置并初始化一次
     if (availableInstances.length === 0) {
-      throw new Error('没有可用的音源')
+      logger.warn('当前没有已初始化的音源，尝试重新加载配置并初始化...')
+      this.resetInstances()
+      await this.initialize()
+
+      availableInstances = this.instances.filter(i => i.initialized)
+      if (availableInstances.length === 0) {
+        throw new Error('没有可用的音源')
+      }
     }
 
     // 音质降级顺序

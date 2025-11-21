@@ -106,7 +106,7 @@ export function useAudio(url?: string, options: UseAudioOptions = {}) {
           SoundRef.current = new Howl({
             src: [audioUrl],
             html5: true,
-            // format: ['mp3', 'aac', 'flac', 'opus', 'ogg', 'wav', 'm4a'],
+            format: ['mp3', 'aac', 'flac', 'opus', 'ogg', 'wav', 'm4a'],
             mute: state.isMuted,
             volume: state.volume,
             rate: state.rate,

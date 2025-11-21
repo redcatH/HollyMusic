@@ -12,8 +12,8 @@ import type { SearchResult, SourceType } from '@/lib/types/music'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const musicSearch = require('@/lib/music-core/music-search')
 
-// 搜索缓存时间：30 分钟
-const SEARCH_CACHE_TTL = 30 * 60 * 1000
+// 搜索缓存时间：210 分钟
+const SEARCH_CACHE_TTL = 210 * 60 * 1000
 
 export async function GET(request: NextRequest) {
   try {

@@ -11,8 +11,8 @@ import { logger } from '@/lib/logger'
 import { musicSourceManager } from '@/lib/music-source-manager'
 import type { MusicInfo, QualityType } from '@/lib/types/music'
 
-// URL 缓存时间：10 分钟
-const URL_CACHE_TTL = 10 * 60 * 1000
+// URL 缓存时间：210 分钟
+const URL_CACHE_TTL = 210 * 60 * 1000
 
 export async function POST(request: NextRequest) {
   try {
