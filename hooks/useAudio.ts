@@ -77,7 +77,12 @@ export function useAudio(url?: string, options: UseAudioOptions = {}) {
    * 加载音频文件
    */
   const load = useCallback(
-    (audioUrl: string, autoplayOnLoad = autoplay, onEndCallback?: () => void): Promise<void> => {
+    (
+      audioUrl: string,
+      autoplayOnLoad = autoplay,
+      onEndCallback?: () => void,
+      loadOptions?: { useHtml5?: boolean }
+    ): Promise<void> => {
       console.log('useAudio.load: 开始加载', { audioUrl, autoplayOnLoad })
       
       return new Promise((resolve, reject) => {
@@ -103,9 +108,13 @@ export function useAudio(url?: string, options: UseAudioOptions = {}) {
 
           const { Howl } = HowlerRef.current
 
+          const useHtml5 = !!(loadOptions && loadOptions.useHtml5)
+
           SoundRef.current = new Howl({
             src: [audioUrl],
-            html5: true,
+            // 根据调用时传入的 loadOptions.useHtml5 决定是否使用 HTML5 audio。
+            // 默认不强制使用 HTML5（优先 WebAudio），当某些设备/格式需要时可传 { useHtml5: true } 回退。
+            html5: useHtml5,
             format: ['mp3', 'aac', 'flac', 'opus', 'ogg', 'wav', 'm4a'],
             mute: state.isMuted,
             volume: state.volume,
