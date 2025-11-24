@@ -1,6 +1,7 @@
 'use client'
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { ChevronDown, Volume2, VolumeX, Repeat, Shuffle } from 'lucide-react'
 import { usePlayerStore } from '@/lib/store'
 import { useAudio } from '@/hooks/useAudio'
@@ -25,6 +26,56 @@ export function BottomPlayer() {
 
   const audio = useAudio(undefined, { volume: 0.7 })
   const [showPlaylist, setShowPlaylist] = useState(false)
+  const unlockedRef = useRef(false)
+
+  // 尝试在用户手势下解锁浏览器音频（优先使用 AudioContext，无声播放）
+  const tryUnlockAudio = useCallback(async () => {
+    if (typeof window === 'undefined' || unlockedRef.current) return
+
+    // safer typed access to window AudioContext
+    type WindowAudio = { AudioContext?: any; webkitAudioContext?: any }
+    const win = window as unknown as WindowAudio
+
+    try {
+      const AudioCtxCtor = win.AudioContext || win.webkitAudioContext
+      if (AudioCtxCtor) {
+        const ac = new AudioCtxCtor()
+        if (ac.state === 'suspended') {
+          await ac.resume().catch(() => {})
+        }
+        try {
+          const buffer = ac.createBuffer(1, 1, ac.sampleRate)
+          const src = ac.createBufferSource()
+          src.buffer = buffer
+          src.connect(ac.destination)
+          src.start(0)
+          src.stop(0)
+        } catch {
+          // ignore
+        }
+        unlockedRef.current = true
+        return
+      }
+    } catch {
+      // ignore
+    }
+
+    // 回退方法：创建一个静音的 HTMLAudio 并 play()，多数浏览器会将其视为用户手势解锁
+    try {
+      const a = new Audio()
+      a.muted = true
+      const p = a.play()
+      if (p && typeof (p as Promise<unknown>).then === 'function') {
+        await (p as Promise<unknown>).catch(() => {})
+      }
+      try { a.pause() } catch {
+        // ignore
+      }
+      unlockedRef.current = true
+    } catch {
+      // ignore
+    }
+  }, [])
 
   // 当前歌曲索引
   const currentIndex = useMemo(() => {
@@ -110,11 +161,12 @@ export function BottomPlayer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentMusicUrl, isFetchingUrl, isPlaying, handleSongEnd])
 
-  // 处理播放/暂停
-  const handlePlayPause = useCallback(() => {
+  // 处理播放/暂停（先尝试解锁音频）
+  const handlePlayPause = useCallback(async () => {
     if (!currentMusic) return
+    await tryUnlockAudio()
     setIsPlaying(!isPlaying)
-  }, [currentMusic, isPlaying, setIsPlaying])
+  }, [currentMusic, isPlaying, setIsPlaying, tryUnlockAudio])
 
   // 处理上一首
   const handlePrevious = useCallback(() => {
@@ -136,7 +188,7 @@ export function BottomPlayer() {
   }
 
   // 处理选择歌曲
-  const handleSelectSong = (songId: string, index: number) => {
+  const handleSelectSong = async (songId: string, index: number) => {
     const song = playlist[index]
     if (song) {
       usePlayerStore.setState({ 
@@ -144,6 +196,7 @@ export function BottomPlayer() {
       })
       // 不要直接调用 audio.play()，通过 setIsPlaying 来控制
       // 这样会触发第二个 effect，自动同步到 audio
+      await tryUnlockAudio()
       setIsPlaying(true)
     }
   }
