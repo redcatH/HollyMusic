@@ -120,3 +120,22 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Prevent mobile browsers (especially iOS Safari) from auto-zooming inputs when focused.
+   iOS will zoom the page when an input's font-size is below ~16px. Setting inputs to 16px
+   prevents this while keeping accessibility. We scope to small screens to avoid layout
+   regressions on desktop. */
+@media (max-width: 768px) {
+  input,
+  textarea,
+  select,
+  button {
+    font-size: 16px;
+    -webkit-text-size-adjust: 100%;
+  }
+}
+
+/* Also ensure text-size-adjust is not interfering globally on mobile */
+html, body {
+  -webkit-text-size-adjust: 100%;
+}
