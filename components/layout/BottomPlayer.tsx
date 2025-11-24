@@ -165,8 +165,37 @@ export function BottomPlayer() {
   const handlePlayPause = useCallback(async () => {
     if (!currentMusic) return
     await tryUnlockAudio()
+
+    // if not loaded yet, load with autoplay. decide whether to use HTML5 based on platform
+    const shouldUseHtml5 = ((): boolean => {
+      if (typeof navigator === 'undefined') return false
+      const ua = navigator.userAgent || ''
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(ua)
+      // Prefer HTML5 on iOS Safari or Android WebView where streaming might be required
+      const isSafari = /Version\/\d+.*Safari/.test(ua) && !/Chrome|CriOS|Android/.test(ua)
+      return isMobile && isSafari
+    })()
+
+    // if currently not playing and nothing is loaded (duration 0), load and autoplay with chosen backend
+    if (!audio.isPlaying && !audio.isLoading && (!audio.duration || audio.duration === 0) && currentMusicUrl) {
+      try {
+        await audio.load(currentMusicUrl, true, handleSongEnd, { useHtml5: shouldUseHtml5 })
+        setIsPlaying(true)
+      } catch (err) {
+        console.error('BottomPlayer: 自动加载并播放失败，尝试默认加载', err)
+        // fallback: try loading without forcing html5
+        try {
+          await audio.load(currentMusicUrl, true, handleSongEnd)
+          setIsPlaying(true)
+        } catch (e) {
+          console.error('BottomPlayer: 回退加载也失败', e)
+        }
+      }
+      return
+    }
+
     setIsPlaying(!isPlaying)
-  }, [currentMusic, isPlaying, setIsPlaying, tryUnlockAudio])
+  }, [currentMusic, isPlaying, setIsPlaying, tryUnlockAudio, audio, currentMusicUrl, handleSongEnd])
 
   // 处理上一首
   const handlePrevious = useCallback(() => {
@@ -245,6 +274,18 @@ export function BottomPlayer() {
               </div>
               <p className={`text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                 加载中...
+              </p>
+            </div>
+          ) : audio.isLoading ? (
+            <div className="flex items-center gap-2">
+              <div className="animate-spin">
+                <svg className="h-4 w-4 text-purple-500" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              </div>
+              <p className={`text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                缓冲中...
               </p>
             </div>
           ) : urlFetchError ? (
