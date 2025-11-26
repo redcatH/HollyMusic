@@ -62,6 +62,7 @@ dist-ssr
 coverage
 lx-env-simulator/
 META-INF/
-public/
+.next/
+.pnpm-store/
 .next/
 .pnpm-store/
