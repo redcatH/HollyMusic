@@ -37,8 +37,8 @@ COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/config ./config
 COPY --from=builder /app/custom-sources ./custom-sources
 
-# 复制public目录（如果存在）
-RUN if [ -d "/app/public" ]; then cp -r /app/public ./public; fi || true
+# 复制 builder 中的 public 目录到运行镜像，确保静态资源可访问
+COPY --from=builder /app/public ./public
 
 # 创建缓存和数据目录
 RUN mkdir -p /app/data/cache /app/logs
