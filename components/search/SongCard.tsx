@@ -13,14 +13,6 @@ export interface SongCardProps extends MusicInfo {
   onDownload?: () => void
 }
 
-function formatDuration(seconds: number | string): string {
-  const sec = typeof seconds === 'string' ? parseInt(seconds) : seconds
-  if (!sec || !isFinite(sec)) return '0:00'
-  const mins = Math.floor(sec / 60)
-  const secs = Math.floor(sec % 60)
-  return `${mins}:${secs.toString().padStart(2, '0')}`
-}
-
 export function SongCard({
   name,
   singer,
@@ -120,7 +112,7 @@ export function SongCard({
       <div className={`text-xs font-medium min-w-fit hidden md:block ${
         isDarkMode ? 'text-gray-400' : 'text-gray-600'
       }`}>
-        {formatDuration(interval)}
+        {interval}
       </div>
 
       {/* 操作按钮 - 手机端隐藏，桌面端 hover 显示 */}
