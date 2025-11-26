@@ -59,6 +59,7 @@ export function useAudio(url?: string, options: UseAudioOptions = {}) {
       if (typeof window !== 'undefined' && !HowlerRef.current) {
         try {
           const { Howl, Howler } = await import('howler')
+          Howler.autoUnlock = true;
           HowlerRef.current = { Howl, Howler }
         } catch (err) {
           console.error('Failed to load Howler:', err)
