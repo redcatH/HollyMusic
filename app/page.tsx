@@ -5,12 +5,14 @@ import { MainLayout } from '@/components/layout/MainLayout'
 import { SearchBar } from '@/components/search/SearchBar'
 import { MusicList } from '@/components/search/MusicList'
 import { useSearch } from '@/hooks/useSearch'
+import { useDownload } from '@/hooks/useDownload'
 import { usePlayerStore } from '@/lib/store'
 import { toast } from '@/lib/toast'
 import type { MusicInfo } from '@/lib/types/music'
 
 export default function Home() {
   const { query, setQuery, source, results, loading, error, search, setSource } = useSearch()
+  const { startDownload } = useDownload()
 
   const handleSearch = (keyword: string) => {
     search(keyword, source)
@@ -41,6 +43,26 @@ export default function Home() {
       }
     },
     []
+  )
+
+  const handleSongDownload = useCallback(
+    async (song: MusicInfo) => {
+      try {
+        console.log('page: 点击下载歌曲:', song)
+        const quality = song.types?.[song.types.length - 1]?.type || '128k'
+        const success = await startDownload(song, quality)
+        if (success) {
+          toast.success(`${song.name} 开始下载`)
+        } else {
+          toast.error(`${song.name} 下载失败，请稍后重试`)
+        }
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : '下载失败'
+        console.error('page: 下载失败', errorMsg)
+        toast.error(`下载失败: ${errorMsg}`)
+      }
+    },
+    [startDownload]
   )
 
   const songs = results?.data?.list || []
@@ -84,6 +106,7 @@ export default function Home() {
                 onSongFavorite={(song) => {
                   console.log('收藏:', song)
                 }}
+                onSongDownload={handleSongDownload}
               />
             </div>
           </div>
