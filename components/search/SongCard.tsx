@@ -1,6 +1,6 @@
 'use client'
 
-import { Play, Plus, Heart } from 'lucide-react'
+import { Play, Plus, Heart, Download } from 'lucide-react'
 import { getQualityInfo, getSourceInfo, parseSource } from '@/lib/quality-icons'
 import { getBestQuality } from '@/lib/quality-utils'
 import { usePlayerStore } from '@/lib/store'
@@ -10,6 +10,7 @@ export interface SongCardProps extends MusicInfo {
   onPlay?: () => void
   onAddToPlaylist?: () => void
   onFavorite?: () => void
+  onDownload?: () => void
 }
 
 function formatDuration(seconds: number | string): string {
@@ -31,6 +32,7 @@ export function SongCard({
   onPlay,
   onAddToPlaylist,
   onFavorite,
+  onDownload,
 }: SongCardProps) {
   const { isDarkMode } = usePlayerStore()
   
@@ -123,6 +125,17 @@ export function SongCard({
 
       {/* 操作按钮 - 手机端隐藏，桌面端 hover 显示 */}
       <div className="items-center gap-1 flex-shrink-0 hidden md:flex opacity-0 group-hover:opacity-100 transition-opacity">
+        <button
+          onClick={onDownload}
+          className={`p-1.5 rounded transition-colors ${
+            isDarkMode
+              ? 'hover:bg-gray-700'
+              : 'hover:bg-gray-200'
+          }`}
+          aria-label="下载"
+        >
+          <Download className="h-4 w-4" />
+        </button>
         <button
           onClick={onAddToPlaylist}
           className={`p-1.5 rounded transition-colors ${

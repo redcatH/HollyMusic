@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Ignore simulator and legacy folders that use CommonJS and tests
+    "lx-env-simulator/**",
   ]),
 ]);
 

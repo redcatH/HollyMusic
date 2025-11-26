@@ -12,6 +12,7 @@ interface MusicListProps {
   onSongPlay?: (song: MusicInfo) => void
   onSongAddToPlaylist?: (song: MusicInfo) => void
   onSongFavorite?: (song: MusicInfo) => void
+  onSongDownload?: (song: MusicInfo) => void
 }
 
 export function MusicList({
@@ -21,6 +22,7 @@ export function MusicList({
   onSongPlay,
   onSongAddToPlaylist,
   onSongFavorite,
+  onSongDownload,
 }: MusicListProps) {
   const { isDarkMode } = usePlayerStore()
 
@@ -81,6 +83,7 @@ export function MusicList({
           onPlay={() => onSongPlay?.(song)}
           onAddToPlaylist={() => onSongAddToPlaylist?.(song)}
           onFavorite={() => onSongFavorite?.(song)}
+          onDownload={() => onSongDownload?.(song)}
         />
       ))}
     </div>
