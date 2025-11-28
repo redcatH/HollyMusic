@@ -42,3 +42,7 @@ next-env.d.ts
 
 # lx
 /lx-music-desktop-master
+/lib/generated/prisma
+/.cache
+
+*.mp3

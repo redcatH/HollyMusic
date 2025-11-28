@@ -1,0 +1,133 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import crypto from 'crypto'
+import { PrismaClient } from './generated/prisma'
+import type { MusicInfo } from './types/music'
+
+const prisma = new PrismaClient()
+
+function stableStringify(obj: any): string {
+  if (obj === null || typeof obj !== 'object') return JSON.stringify(obj)
+  if (Array.isArray(obj)) return '[' + obj.map(v => stableStringify(v)).join(',') + ']'
+  const keys = Object.keys(obj).sort()
+  return '{' + keys.map(k => JSON.stringify(k) + ':' + stableStringify(obj[k])).join(',') + '}'
+}
+
+function computeChecksum(mi: MusicInfo) {
+  const payload = {
+    name: mi.name,
+    singer: mi.singer,
+    source: mi.source,
+    songmid: mi.songmid,
+    albumId: mi.albumId || null,
+    albumName: mi.albumName || null,
+    interval: mi.interval,
+    types: mi.types || [],
+    _types: mi._types || {},
+    typeUrl: mi.typeUrl || {},
+    img: mi.img || null,
+    hash: (mi as any).hash || null,
+    copyrightId: (mi as any).copyrightId || null,
+    songId: (mi as any).songId || null,
+    strMediaMid: (mi as any).strMediaMid || null,
+    albumMid: (mi as any).albumMid || null,
+    lrc: mi.lrc || null,
+    lrcUrl: mi.lrcUrl || null,
+    mrcUrl: mi.mrcUrl || null,
+    trcUrl: mi.trcUrl || null,
+  }
+  const s = stableStringify(payload)
+  return crypto.createHash('md5').update(s).digest('hex')
+}
+
+export async function getMusicInfo(source: string, songmid: string): Promise<MusicInfo | null> {
+  try {
+    const row = await prisma.musicInfo.findUnique({
+      where: {
+        source_songmid: {
+          source,
+          songmid,
+        },
+      },
+    })
+    if (!row || !row.data) return null
+    return JSON.parse(row.data) as MusicInfo
+  } catch (e) {
+    console.warn('getMusicInfo error', e)
+    return null
+  }
+}
+
+export async function getMusicInfoBySongmid(songmid: string): Promise<MusicInfo | null> {
+  try {
+    const row = await prisma.musicInfo.findFirst({
+      where: {
+        songmid,
+      },
+    })
+    if (!row || !row.data) return null
+    return JSON.parse(row.data) as MusicInfo
+  } catch (e) {
+    console.warn('getMusicInfoBySongmid error', e)
+    return null
+  }
+}
+
+export async function upsertMusicInfo(mi: MusicInfo): Promise<{ action: 'insert' | 'update' | 'noop' }> {
+  try {
+    const checksum = computeChecksum(mi)
+    const dataJson = JSON.stringify(mi)
+
+    const existing = await prisma.musicInfo.findUnique({
+      where: {
+        source_songmid: {
+          source: mi.source,
+          songmid: mi.songmid,
+        },
+      },
+      select: {
+        checksum: true,
+      },
+    })
+
+    if (!existing) {
+      await prisma.musicInfo.create({
+        data: {
+          source: mi.source,
+          songmid: mi.songmid,
+          data: dataJson,
+          checksum,
+        },
+      })
+      return { action: 'insert' }
+    }
+
+    if (existing.checksum === checksum) {
+      return { action: 'noop' }
+    }
+
+    await prisma.musicInfo.update({
+      where: {
+        source_songmid: {
+          source: mi.source,
+          songmid: mi.songmid,
+        },
+      },
+      data: {
+        data: dataJson,
+        checksum,
+      },
+    })
+    return { action: 'update' }
+  } catch (e) {
+    console.error('upsertMusicInfo error', e)
+    return { action: 'noop' }
+  }
+}
+
+const dbAPI = {
+  getMusicInfo,
+  getMusicInfoBySongmid,
+  upsertMusicInfo,
+}
+
+export default dbAPI
