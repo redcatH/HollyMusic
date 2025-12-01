@@ -5,6 +5,7 @@ import { handleStar, handleUnstar } from '@/lib/subsonic-favorites'
 import { handleCoverArtAsync, handleGetLyricsAsync } from '@/lib/subsonic-metadata'
 import { handleGetSongAsync } from '@/lib/subsonic-song'
 import { handleGetStarred } from '@/lib/subsonic-getstarred'
+import { handleGetPlaylists, handleGetPlaylist, handleCreatePlaylist, handleDeletePlaylist } from '@/lib/subsonic-playlist'
 import { formatSubsonicXML, createSubsonicResponse } from '@/lib/subsonic'
 import { handleStream } from '@/lib/subsonic-stream'
 import auth, { type AuthResult } from '@/lib/auth'
@@ -78,6 +79,14 @@ async function handleMethod(request: NextRequest, method: string) {
       return handleGetSongAsync(request, authRes)
     case 'getStarred':
       return handleGetStarred(request, authRes)
+    case 'getPlaylists':
+      return handleGetPlaylists(request, authRes)
+    case 'getPlaylist':
+      return handleGetPlaylist(request, authRes)
+    case 'createPlaylist':
+      return handleCreatePlaylist(request, authRes)
+    case 'deletePlaylist':
+      return handleDeletePlaylist(request, authRes)
     default: {
       // console.log("404 url", method)
       // return new Response(null, {

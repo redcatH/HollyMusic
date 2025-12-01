@@ -157,19 +157,33 @@ function serveDefaultCoverArt(): Response {
  */
 async function fetchCoverFromAPI(title: string, album: string, artist: string): Promise<Response | null> {
   try {
-    // 构建参数对象 - 按优先级只传一个参数
+    // 构建参数对象 - 优化：信息越全越好
+    // 规则：
+    // - 如果同时有 title/album/artist，则一并传递（获取歌曲封面）
+    // - 如果没有 title，但有 album，则以 album 为主（获取专辑封面），可同时传 artist
+    // - 如果只有 artist，则只传 artist（获取歌手图片）
     const params: Record<string, string> = {}
-    
+
     const titleTrimmed = title.trim()
     const albumTrimmed = album.trim()
     const artistTrimmed = artist.trim()
-    
-    // 优先级：title > album > artist
-    if (titleTrimmed) {
+
+    if (titleTrimmed && albumTrimmed && artistTrimmed) {
+      // 最完整的信息：传全部参数以提高命中率（歌曲封面）
       params.title = titleTrimmed
-    } else if (albumTrimmed) {
       params.album = albumTrimmed
+      params.artist = artistTrimmed
+    } else if (titleTrimmed) {
+      // 有歌曲标题（优先以歌曲信息搜索），同时如果有 artist/album，也可以一并传
+      params.title = titleTrimmed
+      if (albumTrimmed) params.album = albumTrimmed
+      if (artistTrimmed) params.artist = artistTrimmed
+    } else if (albumTrimmed) {
+      // 没有标题，以专辑为主（可带 artist）
+      params.album = albumTrimmed
+      if (artistTrimmed) params.artist = artistTrimmed
     } else if (artistTrimmed) {
+      // 只有歌手名，搜索歌手图片
       params.artist = artistTrimmed
     } else {
       // 没有有效参数
@@ -179,7 +193,7 @@ async function fetchCoverFromAPI(title: string, album: string, artist: string): 
     const searchParams = new URLSearchParams(params)
     const url = `https://api.lrc.cx/cover?${searchParams.toString()}`
     
-    console.log('[fetchCoverFromAPI] Request URL:', url)
+    logger.info('[fetchCoverFromAPI] Request URL: %s', url)
     
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 5000) // 5秒超时
