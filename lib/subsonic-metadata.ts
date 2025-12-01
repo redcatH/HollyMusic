@@ -120,7 +120,7 @@ async function fetchCoverFromAPI(title: string, album: string, artist: string): 
     const searchParams = new URLSearchParams(params)
     const url = `https://api.lrc.cx/cover?${searchParams.toString()}`
     
-    logger.info('[fetchCoverFromAPI] Fetching from:', url)
+    console.log('[fetchCoverFromAPI] Request URL:', url)
     
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 5000) // 5秒超时
@@ -137,6 +137,19 @@ async function fetchCoverFromAPI(title: string, album: string, artist: string): 
     clearTimeout(timeoutId)
 
     if (!response.ok) {
+      // 即使不是 200，也可能是重定向后的成功响应
+      console.log('[fetchCoverFromAPI] Response status:', response.status)
+      
+      // 如果是 3xx 状态码但跟随重定向失败，检查 Location 头
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get('location')
+        if (location) {
+          console.log('[fetchCoverFromAPI] Got redirect location:', location)
+          // 尝试获取重定向后的资源
+          return fetchImageFromUrl(location)
+        }
+      }
+      
       logger.warn('[fetchCoverFromAPI] API returned status:', response.status)
       return null
     }
@@ -169,6 +182,61 @@ async function fetchCoverFromAPI(title: string, album: string, artist: string): 
     })
   } catch (err) {
     logger.warn('[fetchCoverFromAPI] Error fetching cover:', err)
+    return null
+  }
+}
+
+/**
+ * 从 URL 获取图片
+ */
+async function fetchImageFromUrl(imageUrl: string): Promise<Response | null> {
+  try {
+    console.log('[fetchImageFromUrl] Fetching image from URL:', imageUrl)
+    
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 5000)
+
+    const response = await fetch(imageUrl, {
+      method: 'GET',
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      },
+      redirect: 'follow'
+    })
+    
+    clearTimeout(timeoutId)
+
+    if (!response.ok) {
+      logger.warn('[fetchImageFromUrl] Failed to fetch image, status:', response.status)
+      return null
+    }
+
+    const contentType = response.headers.get('content-type')
+    if (!contentType || !contentType.startsWith('image/')) {
+      logger.warn('[fetchImageFromUrl] Response is not an image, Content-Type:', contentType)
+      return null
+    }
+
+    const buffer = await response.arrayBuffer()
+    
+    if (!buffer || buffer.byteLength === 0) {
+      logger.warn('[fetchImageFromUrl] Empty image response')
+      return null
+    }
+
+    console.log('[fetchImageFromUrl] Got image, size:', buffer.byteLength)
+    
+    return new Response(buffer, {
+      status: 200,
+      headers: {
+        'Content-Type': contentType,
+        'Content-Length': String(buffer.byteLength),
+        'Cache-Control': 'public, max-age=86400'
+      }
+    })
+  } catch (err) {
+    logger.warn('[fetchImageFromUrl] Error fetching image:', err)
     return null
   }
 }
@@ -326,7 +394,7 @@ async function fetchLyricsFromAPI(title: string, album: string, artist: string):
     const searchParams = new URLSearchParams(params)
     const url = `https://api.lrc.cx/lyrics?${searchParams.toString()}`
     
-    console.log('[fetchLyricsFromAPI] Request URL:', url)
+    logger.info('[fetchLyricsFromAPI] Fetching from:', url)
     
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 5000) // 5秒超时
