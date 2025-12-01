@@ -52,7 +52,7 @@ COPY .env.example .env.example
 RUN mkdir -p /app/data /app/logs
 
 # 创建启动脚本
-RUN cat > /app/start.sh << 'EOF'
+RUN cat > /app/start.sh <<EOF
 #!/bin/sh
 set -e
 
