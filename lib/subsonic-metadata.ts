@@ -3,11 +3,62 @@ import { readFileSync } from 'fs'
 import { resolve } from 'path'
 import { formatSubsonicXML, createSubsonicResponse } from './subsonic'
 import { type AuthResult } from './auth'
+import * as dbAPI from './db'
+import { logger } from './logger'
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function handleCoverArt(request: NextRequest, authRes: AuthResult): Response {
+export async function handleCoverArtAsync(request: NextRequest, authRes: AuthResult): Promise<Response> {
   try {
-    // 固定路径读取 PNG 文件，例如从 public 目录或本地路径
+    // 获取请求中的 id 参数
+    const url = new URL(request.url)
+    const id = url.searchParams.get('id')
+    
+    if (!id) {
+      // 如果没有 id，直接返回默认图片
+      return serveDefaultCoverArt()
+    }
+
+    // 根据 id（songmid）获取 MusicInfo
+    const musicInfo = await dbAPI.getMusicInfoBySongmid(id)
+    
+    if (!musicInfo) {
+      // 无 MusicInfo，返回默认图片
+      return serveDefaultCoverArt()
+    }
+
+    const { name, singer, albumName } = musicInfo
+    const title = name || ''
+    const artist = singer || ''
+    const album = albumName || ''
+
+    // 调用第三方封面 API 获取图片
+    const coverResponse = await fetchCoverFromAPI(title, album, artist)
+    
+    if (coverResponse) {
+      return coverResponse
+    }
+
+    // API 获取失败，返回默认图片
+    return serveDefaultCoverArt()
+  } catch (err) {
+    logger.error('[getCoverArt] Error:', err)
+    // 出错时也返回默认图片
+    return serveDefaultCoverArt()
+  }
+}
+
+// 同步版本 - 保持签名一致
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function handleCoverArt(request: NextRequest, authRes: AuthResult): Response {
+  // 此函数应该在路由中被替换为异步调用
+  return serveDefaultCoverArt()
+}
+
+/**
+ * 返回默认封面图片
+ */
+function serveDefaultCoverArt(): Response {
+  try {
     const coverPath = resolve(process.cwd(), 'public/icons/OIP-C.png')
     const buffer = readFileSync(coverPath)
     
@@ -20,8 +71,8 @@ export function handleCoverArt(request: NextRequest, authRes: AuthResult): Respo
       }
     })
   } catch (err) {
-    console.error('[getCoverArt] Error reading cover art:', err)
-    // 返回 Subsonic 风格的错误
+    logger.warn('[serveDefaultCoverArt] Error reading default cover:', err)
+    // 如果默认图片也不存在，返回 XML 错误
     const xml = formatSubsonicXML({
       status: 'failed',
       error: { code: 70, message: 'Cover art not found' }
@@ -30,18 +81,215 @@ export function handleCoverArt(request: NextRequest, authRes: AuthResult): Respo
   }
 }
 
+/**
+ * 调用第三方封面 API 获取图片
+ * API: https://api.lrc.cx/cover
+ * 参数说明：
+ * - title: 歌曲标题（三个参数都传时获取歌曲封面）
+ * - album: 专辑名（不传title时获取专辑封面）
+ * - artist: 作者（只传artist时获取歌手图片）
+ * 
+ * 响应可能是：
+ * 1. 直接返回图片文件（Content-Type: image/jpeg 等）
+ * 2. Location 重定向到图片 URL
+ */
+async function fetchCoverFromAPI(title: string, album: string, artist: string): Promise<Response | null> {
+  try {
+    // 构建参数对象
+    const params: Record<string, string> = {}
+    
+    const titleTrimmed = title.trim()
+    const albumTrimmed = album.trim()
+    const artistTrimmed = artist.trim()
+    
+    // 优先级：三个都有 > title + album > title + artist > album + artist > 单个
+    if (titleTrimmed && albumTrimmed && artistTrimmed) {
+      // 获取歌曲封面
+      params.title = titleTrimmed
+      params.album = albumTrimmed
+      params.artist = artistTrimmed
+    } else if (titleTrimmed && albumTrimmed) {
+      params.title = titleTrimmed
+      params.album = albumTrimmed
+    } else if (titleTrimmed && artistTrimmed) {
+      params.title = titleTrimmed
+      params.artist = artistTrimmed
+    } else if (albumTrimmed && artistTrimmed) {
+      params.album = albumTrimmed
+      params.artist = artistTrimmed
+    } else if (titleTrimmed) {
+      params.title = titleTrimmed
+    } else if (albumTrimmed) {
+      params.album = albumTrimmed
+    } else if (artistTrimmed) {
+      params.artist = artistTrimmed
+    } else {
+      // 没有有效参数
+      return null
+    }
+    
+    const searchParams = new URLSearchParams(params)
+    const url = `https://api.lrc.cx/cover?${searchParams.toString()}`
+    
+    logger.info('[fetchCoverFromAPI] Fetching from:', url)
+    
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 5000) // 5秒超时
+
+    const response = await fetch(url, {
+      method: 'GET',
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      },
+      redirect: 'follow' // 自动跟随重定向
+    })
+    
+    clearTimeout(timeoutId)
+
+    if (!response.ok) {
+      logger.warn('[fetchCoverFromAPI] API returned status:', response.status)
+      return null
+    }
+
+    // 检查响应的 Content-Type，确保是图片
+    const contentType = response.headers.get('content-type')
+    if (!contentType || !contentType.startsWith('image/')) {
+      logger.warn('[fetchCoverFromAPI] Response is not an image, Content-Type:', contentType)
+      return null
+    }
+
+    // 获取图片 buffer
+    const buffer = await response.arrayBuffer()
+    
+    if (!buffer || buffer.byteLength === 0) {
+      logger.warn('[fetchCoverFromAPI] Empty image response')
+      return null
+    }
+
+    logger.info('[fetchCoverFromAPI] Got cover image, size:', buffer.byteLength)
+    
+    // 返回图片响应
+    return new Response(buffer, {
+      status: 200,
+      headers: {
+        'Content-Type': contentType,
+        'Content-Length': String(buffer.byteLength),
+        'Cache-Control': 'public, max-age=86400'
+      }
+    })
+  } catch (err) {
+    logger.warn('[fetchCoverFromAPI] Error fetching cover:', err)
+    return null
+  }
+}
+
+// 异步版本 - 供路由中调用
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function handleGetLyricsAsync(request: NextRequest, authRes: AuthResult): Promise<Response> {
+  try {
+    // 获取请求中的 id 和可选参数
+    const url = new URL(request.url)
+    const id = url.searchParams.get('id')
+    
+    if (!id) {
+      const xml = formatSubsonicXML({
+        status: 'failed',
+        error: { code: 10, message: 'Missing required parameter: id' }
+      })
+      return createSubsonicResponse(xml)
+    }
+
+    // 根据 id（songmid）获取 MusicInfo
+    const musicInfo = await dbAPI.getMusicInfoBySongmid(id)
+    
+    if (!musicInfo) {
+      // 无歌词
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.15.1">
+  <lyrics>
+    <artist></artist>
+    <title></title>
+    <line time="0">无歌词</line>
+  </lyrics>
+</subsonic-response>`
+      return new Response(xml, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/xml',
+          'Content-Length': String(Buffer.byteLength(xml)),
+          'Cache-Control': 'public, max-age=3600'
+        }
+      })
+    }
+
+    const { name, singer, albumName } = musicInfo
+    const artist = singer || ''
+    const title = name || ''
+
+    // 调用第三方歌词 API: https://api.lrc.cx/lyrics
+    const lyricsText = await fetchLyricsFromAPI(title, albumName || title, artist)
+    
+    if (!lyricsText) {
+      // 无歌词
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.15.1">
+  <lyrics>
+    <artist>${escapeXml(artist)}</artist>
+    <title>${escapeXml(title)}</title>
+    <line time="0">无歌词</line>
+  </lyrics>
+</subsonic-response>`
+      return new Response(xml, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/xml',
+          'Content-Length': String(Buffer.byteLength(xml)),
+          'Cache-Control': 'public, max-age=3600'
+        }
+      })
+    }
+
+    // 将 LRC 格式歌词转换为 Subsonic XML 格式
+    const lyricsXmlLines = parseLrcToXml(lyricsText)
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.15.1">
+  <lyrics>
+    <artist>${escapeXml(artist)}</artist>
+    <title>${escapeXml(title)}</title>
+${lyricsXmlLines}
+  </lyrics>
+</subsonic-response>`
+
+    return new Response(xml, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/xml',
+        'Content-Length': String(Buffer.byteLength(xml)),
+        'Cache-Control': 'public, max-age=86400'
+      }
+    })
+  } catch (err) {
+    logger.error('[getLyrics] Error:', err)
+    const xml = formatSubsonicXML({
+      status: 'failed',
+      error: { code: 50, message: 'Internal server error' }
+    })
+    return createSubsonicResponse(xml)
+  }
+}
+
+// 同步版本 - 保持 handleGetLyrics 签名一致（内部调用异步，但返回 Response）
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function handleGetLyrics(request: NextRequest, authRes: AuthResult): Response {
-  // 返回固定的歌词 XML
+  // 注：此函数应该在路由中被替换为异步调用
+  // 临时返回固定响应，避免签名不匹配
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.15.1">
   <lyrics>
-    <artist>示例歌手</artist>
-    <title>示例歌曲</title>
-    <line time="0">歌词第一行</line>
-    <line time="3000">歌词第二行</line>
-    <line time="6000">歌词第三行</line>
-    <line time="9000">歌词第四行</line>
+    <artist></artist>
+    <title></title>
+    <line time="0">无歌词</line>
   </lyrics>
 </subsonic-response>`
   
@@ -50,7 +298,128 @@ export function handleGetLyrics(request: NextRequest, authRes: AuthResult): Resp
     headers: {
       'Content-Type': 'application/xml',
       'Content-Length': String(Buffer.byteLength(xml)),
-      'Cache-Control': 'public, max-age=86400'
+      'Cache-Control': 'public, max-age=3600'
     }
   })
+}
+
+/**
+ * 调用第三方歌词 API 获取 LRC 格式歌词
+ * API 参数说明：
+ * - title: 歌曲标题（必需）
+ * - album: 专辑名称（可留空，[Unknown Album]视为空）
+ * - artist: 作者（可留空，支持多种分隔方式）
+ */
+async function fetchLyricsFromAPI(title: string, album: string, artist: string): Promise<string | null> {
+  try {
+    // 构建参数对象
+    const params: Record<string, string> = {
+      title: title.trim()
+    }
+    
+    // album 处理：如果不为空且不是 [Unknown Album]，才加入参数
+    const albumTrimmed = album.trim()
+    if (albumTrimmed && albumTrimmed !== '[Unknown Album]') {
+      params.album = albumTrimmed
+    }
+    
+    // artist 处理：如果不为空，加入参数（支持多种分隔方式的artist）
+    const artistTrimmed = artist.trim()
+    if (artistTrimmed) {
+      params.artist = artistTrimmed
+    }
+    
+    const searchParams = new URLSearchParams(params)
+    const url = `https://api.lrc.cx/lyrics?${searchParams.toString()}`
+    
+    logger.info('[fetchLyricsFromAPI] Fetching from:', url)
+    
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 5000) // 5秒超时
+
+    const response = await fetch(url, {
+      method: 'GET',
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+    })
+    
+    clearTimeout(timeoutId)
+
+    if (!response.ok) {
+      logger.warn('[fetchLyricsFromAPI] API returned status:', response.status)
+      return null
+    }
+
+    const text = await response.text()
+    
+    if (!text || text.trim().length === 0) {
+      logger.warn('[fetchLyricsFromAPI] Empty response from API')
+      return null
+    }
+
+    logger.info('[fetchLyricsFromAPI] Got lyrics, length:', text.length)
+    return text
+  } catch (err) {
+    logger.warn('[fetchLyricsFromAPI] Error fetching lyrics:', err)
+    return null
+  }
+}
+
+/**
+ * 将 LRC 格式歌词解析为 Subsonic XML 行格式
+ * LRC 格式: [时间戳]歌词文本
+ * 时间戳格式: [mm:ss.ms] 或 [mm:ss]
+ */
+function parseLrcToXml(lrcText: string): string {
+  const lines: string[] = []
+  
+  try {
+    const lrcLines = lrcText.split('\n')
+    
+    for (const line of lrcLines) {
+      const trimmedLine = line.trim()
+      if (!trimmedLine) continue
+      
+      // 匹配 LRC 时间戳格式: [mm:ss.ms] 或 [mm:ss]
+      const timeMatch = trimmedLine.match(/\[(\d+):(\d+)(?:\.(\d+))?\](.*)/)
+      
+      if (!timeMatch) continue
+      
+      const minutes = parseInt(timeMatch[1], 10)
+      const seconds = parseInt(timeMatch[2], 10)
+      const milliseconds = timeMatch[3] ? parseInt(timeMatch[3].padEnd(3, '0'), 10) : 0
+      const lyricText = timeMatch[4] || ''
+      
+      // 转换为毫秒
+      const timeMs = minutes * 60000 + seconds * 1000 + milliseconds
+      
+      if (lyricText.trim()) {
+        lines.push(`    <line time="${timeMs}">${escapeXml(lyricText)}</line>`)
+      }
+    }
+  } catch (err) {
+    logger.warn('[parseLrcToXml] Error parsing LRC:', err)
+  }
+  
+  // 如果没有解析出任何行，返回占位符
+  if (lines.length === 0) {
+    lines.push(`    <line time="0">无歌词</line>`)
+  }
+  
+  return lines.join('\n')
+}
+
+/**
+ * 转义 XML 特殊字符
+ */
+function escapeXml(text: string): string {
+  if (!text) return ''
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
 }
