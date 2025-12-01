@@ -48,6 +48,10 @@ class MusicSourceManager {
   private initialized: boolean = false
   private configPath: string = ''
   private configHash: string | null = null
+  // 简单内存缓存，降低重复请求频率
+  private lyricCache: Map<string, { value: string; expires: number }> = new Map()
+  private picCache: Map<string, { value: Buffer | string; expires: number }> = new Map()
+  private defaultCacheTtl = 60 * 60 * 1000 // 1 hour
 
   /**
    * 检测配置文件是否改变
@@ -252,6 +256,152 @@ class MusicSourceManager {
 
     // 所有音源都失败
     throw new Error(`无法获取播放链接: 所有音源均失败 (歌曲: ${musicInfo.name})`)
+  }
+
+  /**
+   * 从已加载的音源按优先级尝试获取歌词（返回 LRC 文本或 null）
+   */
+  async getLyric(musicInfo: MusicInfo, timeoutMs = 5000): Promise<string | null> {
+    try {
+      if (this.initialized && this.checkConfigChanged()) {
+        this.resetInstances()
+      }
+      if (!this.initialized) await this.initialize()
+
+      const key = `lyric:${musicInfo.songmid || musicInfo.name}`
+      const now = Date.now()
+      const cached = this.lyricCache.get(key)
+      if (cached && cached.expires > now) return cached.value
+
+      const available = this.instances.filter(i => i.initialized)
+      if (available.length === 0) return null
+
+      const candidateNames = ['getLyric', 'getLyricInfo', 'lyrics', 'lyric']
+      type AnyFunction = (...args: unknown[]) => unknown
+
+      for (const instance of available) {
+        if (!instance.sourceInfo?.sources[musicInfo.source]) continue
+
+        for (const fnName of candidateNames) {
+          const simRec = instance.simulator as unknown as Record<string, unknown>
+          const fn = simRec[fnName] as AnyFunction | undefined
+          if (typeof fn !== 'function') continue
+
+          try {
+            // 支持两种调用签名： (musicInfo) 或 (source, musicInfo)
+            const attempt1 = Promise.resolve(fn.call(instance.simulator, musicInfo))
+            const attempt2 = Promise.resolve(fn.call(instance.simulator, musicInfo.source, musicInfo))
+
+            const raced = await Promise.race([
+              attempt1,
+              attempt2,
+              new Promise((_res, rej) => setTimeout(() => rej(new Error('timeout')), timeoutMs))
+            ]) as unknown
+            const result = raced as unknown
+
+            if (result && typeof result === 'string' && result.trim().length > 0) {
+              const value = result.trim()
+              this.lyricCache.set(key, { value, expires: Date.now() + this.defaultCacheTtl })
+              logger.info(`getLyric: 从 ${instance.config.name}.${fnName} 获取到歌词，len=${value.length}`)
+              return value
+            }
+          } catch (err) {
+            logger.debug(`getLyric: ${instance.config.name}.${fnName} 调用失败:`, err instanceof Error ? err.message : err)
+          }
+        }
+      }
+
+      return null
+    } catch (err) {
+      logger.warn('getLyric error:', err)
+      return null
+    }
+  }
+
+  /**
+   * 从已加载的音源按优先级尝试获取封面（返回 Buffer | URL string | null）
+   */
+  async getPic(musicInfo: MusicInfo, timeoutMs = 5000): Promise<Buffer | string | null> {
+    try {
+      if (this.initialized && this.checkConfigChanged()) {
+        this.resetInstances()
+      }
+      if (!this.initialized) await this.initialize()
+
+      const key = `pic:${musicInfo.songmid || musicInfo.name}`
+      const now = Date.now()
+      const cached = this.picCache.get(key)
+      if (cached && cached.expires > now) return cached.value
+
+      const available = this.instances.filter(i => i.initialized)
+      if (available.length === 0) return null
+
+      const candidateNames = ['getPic', 'getPicPath', 'pic', 'cover']
+      type AnyFunction = (...args: unknown[]) => unknown
+
+      for (const instance of available) {
+        if (!instance.sourceInfo?.sources[musicInfo.source]) continue
+
+        for (const fnName of candidateNames) {
+          const simRec = instance.simulator as unknown as Record<string, unknown>
+          const fn = simRec[fnName] as AnyFunction | undefined
+          if (typeof fn !== 'function') continue
+
+          try {
+            const attempt1 = Promise.resolve(fn.call(instance.simulator, musicInfo))
+            const attempt2 = Promise.resolve(fn.call(instance.simulator, musicInfo.source, musicInfo))
+
+            const raced = await Promise.race([
+              attempt1,
+              attempt2,
+              new Promise((_res, rej) => setTimeout(() => rej(new Error('timeout')), timeoutMs))
+            ]) as unknown
+            const result = raced as unknown
+
+            if (!result) continue
+
+            // Buffer-like
+            if (Buffer.isBuffer(result)) {
+              this.picCache.set(key, { value: result, expires: Date.now() + this.defaultCacheTtl })
+              logger.info(`getPic: 从 ${instance.config.name}.${fnName} 获取到 Buffer，size=${result.length}`)
+              return result
+            }
+
+            if (typeof result === 'string') {
+              const s = result.trim()
+              // data URI
+              if (s.startsWith('data:')) {
+                const comma = s.indexOf(',')
+                if (comma > 0) {
+                  const b64 = s.slice(comma + 1)
+                  const buf = Buffer.from(b64, 'base64')
+                  this.picCache.set(key, { value: buf, expires: Date.now() + this.defaultCacheTtl })
+                  return buf
+                }
+              }
+
+              // URL-like
+              if (s.startsWith('http://') || s.startsWith('https://') || s.startsWith('//')) {
+                this.picCache.set(key, { value: s, expires: Date.now() + this.defaultCacheTtl })
+                logger.info(`getPic: 从 ${instance.config.name}.${fnName} 获取到图片 URL`)
+                return s
+              }
+
+              // 其他字符串，可能是相对路径或自定义标识，直接返回
+              this.picCache.set(key, { value: s, expires: Date.now() + this.defaultCacheTtl })
+              return s
+            }
+          } catch (err) {
+            logger.debug(`getPic: ${instance.config.name}.${fnName} 调用失败:`, err instanceof Error ? err.message : err)
+          }
+        }
+      }
+
+      return null
+    } catch (err) {
+      logger.warn('getPic error:', err)
+      return null
+    }
   }
 
   /**
