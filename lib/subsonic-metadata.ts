@@ -5,6 +5,7 @@ import { formatSubsonicXML, createSubsonicResponse } from './subsonic'
 import { type AuthResult } from './auth'
 import * as dbAPI from './db'
 import { logger } from './logger'
+import { musicSourceManager } from './music-source-manager'
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function handleCoverArtAsync(request: NextRequest, authRes: AuthResult): Promise<Response> {
@@ -31,9 +32,51 @@ export async function handleCoverArtAsync(request: NextRequest, authRes: AuthRes
     const artist = singer || ''
     const album = albumName || ''
 
-    // 调用第三方封面 API 获取图片
+    // 1) 优先尝试通过已加载的本地音源获取封面
+    try {
+      const pic = await musicSourceManager.getPic(musicInfo, 5000)
+      if (pic) {
+        if ((pic as Buffer).constructor === Buffer) {
+          const buf = pic as Buffer
+          return new Response(new Uint8Array(buf), {
+            status: 200,
+            headers: {
+              'Content-Type': 'image/jpeg',
+              'Content-Length': String(buf.length),
+              'Cache-Control': 'public, max-age=86400'
+            }
+          })
+        }
+
+        const picStr = String(pic)
+        if (picStr.startsWith('http://') || picStr.startsWith('https://') || picStr.startsWith('//')) {
+          const fetched = await fetchImageFromUrl(picStr)
+          if (fetched) return fetched
+        }
+
+        // 其它字符串形式（data URI 或相对路径）尝试处理
+        if (picStr.startsWith('data:')) {
+          const comma = picStr.indexOf(',')
+          if (comma > 0) {
+            const b64 = picStr.slice(comma + 1)
+            const buf = Buffer.from(b64, 'base64')
+            return new Response(new Uint8Array(buf), {
+              status: 200,
+              headers: {
+                'Content-Type': 'image/jpeg',
+                'Content-Length': String(buf.length),
+                'Cache-Control': 'public, max-age=86400'
+              }
+            })
+          }
+        }
+      }
+    } catch (err) {
+      logger.debug('[handleCoverArtAsync] musicSourceManager.getPic failed:', err)
+    }
+
+    // 2) 调用第三方封面 API 获取图片
     const coverResponse = await fetchCoverFromAPI(title, album, artist)
-    
     if (coverResponse) {
       return coverResponse
     }
@@ -59,7 +102,7 @@ export function handleCoverArt(request: NextRequest, authRes: AuthResult): Respo
  */
 function serveDefaultCoverArt(): Response {
   try {
-    const coverPath = resolve(process.cwd(), 'public/icons/OIP-C.png')
+    const coverPath = resolve(process.cwd(), 'public/icons/404.png')
     const buffer = readFileSync(coverPath)
     
     return new Response(buffer, {
@@ -284,8 +327,19 @@ export async function handleGetLyricsAsync(request: NextRequest, authRes: AuthRe
     const artist = singer || ''
     const title = name || ''
 
-    // 调用第三方歌词 API: https://api.lrc.cx/lyrics
-    const lyricsText = await fetchLyricsFromAPI(title, albumName || title, artist)
+    // 1) 优先尝试通过已加载的本地音源获取歌词
+    let lyricsText: string | null = null
+    try {
+      lyricsText = await musicSourceManager.getLyric(musicInfo, 5000)
+    } catch (err) {
+      logger.debug('[handleGetLyricsAsync] musicSourceManager.getLyric failed:', err)
+      lyricsText = null
+    }
+
+    // 2) 若本地音源无歌词，则调用第三方歌词 API: https://api.lrc.cx/lyrics
+    if (!lyricsText) {
+      lyricsText = await fetchLyricsFromAPI(title, albumName || title, artist)
+    }
     
     if (!lyricsText) {
       // 无歌词
