@@ -49,5 +49,9 @@ next-env.d.ts
 
 # prisma
 /prisma/data/
+/prisma_data/
+/cache_data/
+/app_logs/
+/prisma/data/
 
 !prisma/migrations/.gitkeep
