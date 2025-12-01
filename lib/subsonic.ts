@@ -92,25 +92,25 @@ export function validateSubsonicAuth(params: SubsonicParams): SubsonicAuthResult
     }
   }
 
-  if (!params.c) {
-    return {
-      valid: false,
-      code: 10,
-      message: 'Required parameter is missing: c'
-    }
+if (!params.c) {
+  return {
+    valid: false,
+    code: 10,
+    message: 'Required parameter is missing: c'
   }
-return { valid: true }
-  // 验证 API key（临时方案：直接比对 token）
-  // TODO: 实现标准的 md5(password+salt) 验证
-  if (!HARD_CODED_API_KEYS.includes(params.t)) {
-    return {
-      valid: false,
-      code: 40,
-      message: 'Wrong username or password'
-    }
-  }
+}
 
-  return { valid: true }
+// 验证 API key（临时方案：先确保 t 存在再比对 token）
+// TODO: 实现标准的 md5(password+salt) 验证
+if (!params.t || !HARD_CODED_API_KEYS.includes(params.t)) {
+  return {
+    valid: false,
+    code: 40,
+    message: 'Wrong username or password'
+  }
+}
+
+return { valid: true }
 }
 
 /**
