@@ -1,5 +1,5 @@
 # 构建阶段
-FROM node:20-slim AS builder
+FROM node:20-bullseye-slim AS builder
 
 WORKDIR /app
 
@@ -26,7 +26,7 @@ RUN pnpm prisma generate
 RUN pnpm build
 
 # 运行阶段
-FROM node:20-slim
+FROM node:20-bullseye-slim
 
 WORKDIR /app
 
