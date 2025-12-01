@@ -49,25 +49,23 @@ export async function handleGetPlaylists(request: NextRequest, authRes: AuthResu
       orderBy: { createdAt: 'desc' }
     })
 
-    // 生成 XML - 如果属于当前用户则显示 allowedUser 节点；否则使用自闭合标签
+    // 生成 playlist 节点 - 如果属于当前用户则显示 allowedUser 子节点；否则使用自闭合标签
     const playlistNodes = userPlaylists.map(p => {
       const isOwner = p.username === username
       // 格式化时间为 Subsonic 格式: yyyy-MM-dd HH:mm:ss
       const createdStr = p.createdAt.toISOString().replace('T', ' ').substring(0, 19)
       
-      if (isOwner) {
-        // 属于当前用户的歌单，显示 allowedUser 子节点（可以为空）
+      const attrs = `id="${p.id}" name="${escapeXml(p.name)}" comment="${escapeXml(p.comment)}" owner="${escapeXml(p.owner || p.username)}" public="${p.isPublic}" songCount="${p.songCount}" duration="${p.duration || 0}" created="${createdStr}" coverArt="${escapeXml(p.coverArt || `pl-${p.id}`)}"`
+      
+      if (isOwner && p.allowedUsers.length > 0) {
+        // 属于当前用户且有授权用户的歌单，显示 allowedUser 子节点
         const allowedUserNodes = p.allowedUsers.map(au => 
-          `  <allowedUser>${escapeXml(au.username)}</allowedUser>`
+          `    <allowedUser>${escapeXml(au.username)}</allowedUser>`
         ).join('\n')
-        
-        const innerContent = allowedUserNodes ? `\n${allowedUserNodes}\n  ` : '\n  '
-        
-        return `  <playlist id="${p.id}" name="${escapeXml(p.name)}" comment="${escapeXml(p.comment)}" owner="${escapeXml(p.owner || p.username)}" public="${p.isPublic}" songCount="${p.songCount}" duration="${p.duration || 0}" created="${createdStr}" coverArt="${escapeXml(p.coverArt || `pl-${p.id}`)}">
-${innerContent}</playlist>`
+        return `  <playlist ${attrs}>\n${allowedUserNodes}\n  </playlist>`
       } else {
-        // 不是所有者的歌单使用自闭合标签
-        return `  <playlist id="${p.id}" name="${escapeXml(p.name)}" comment="${escapeXml(p.comment)}" owner="${escapeXml(p.owner || p.username)}" public="${p.isPublic}" songCount="${p.songCount}" duration="${p.duration || 0}" created="${createdStr}" coverArt="${escapeXml(p.coverArt || `pl-${p.id}`)}" />`
+        // 不是所有者的歌单或没有授权用户的歌单使用自闭合标签
+        return `  <playlist ${attrs} />`
       }
     }).join('\n')
 
@@ -153,15 +151,13 @@ export async function handleGetPlaylist(request: NextRequest, authRes: AuthResul
       return createSubsonicResponse(xml)
     }
 
-    // 生成 allowedUser 和 entry 节点
-    const allowedUserNodes = playlist.allowedUsers.length > 0 
-      ? '\n' + playlist.allowedUsers.map(au => 
-          `    <allowedUser>${escapeXml(au.username)}</allowedUser>`
-        ).join('\n')
-      : ''
-
     // 格式化时间为 Subsonic 格式: yyyy-MM-dd HH:mm:ss
     const createdStr = playlist.createdAt.toISOString().replace('T', ' ').substring(0, 19)
+
+    // 生成 allowedUser 子节点
+    const allowedUserNodes = playlist.allowedUsers.map(au => 
+      `\t<allowedUser>${escapeXml(au.username)}</allowedUser>`
+    ).join('\n')
 
     // 生成 entry 节点（映射为 Subsonic song 格式）
     const entryNodes = playlist.entries.map(entry => {
@@ -213,14 +209,20 @@ export async function handleGetPlaylist(request: NextRequest, authRes: AuthResul
         }
       }
 
-      return `    <entry id="${escapeXml(musicData.id)}" parent="${escapeXml(musicData.parent)}" title="${escapeXml(musicData.title)}" album="${escapeXml(musicData.album)}" artist="${escapeXml(musicData.artist)}" isDir="false" coverArt="${escapeXml(musicData.coverArt)}" created="${entry.addedAt.toISOString()}" duration="${musicData.duration}" bitRate="320" track="0" year="${escapeXml(musicData.year)}" genre="${escapeXml(musicData.genre)}" size="${musicData.size}" suffix="${escapeXml(musicData.suffix)}" contentType="${escapeXml(musicData.contentType)}" isVideo="false" path="${escapeXml(musicData.path)}" albumId="${escapeXml(musicData.albumId)}" artistId="${escapeXml(musicData.artistId)}" type="music"/>`
+      return `\t<entry id="${escapeXml(musicData.id)}" parent="${escapeXml(musicData.parent)}" title="${escapeXml(musicData.title)}" album="${escapeXml(musicData.album)}" artist="${escapeXml(musicData.artist)}" isDir="false" coverArt="${escapeXml(musicData.coverArt)}" created="${entry.addedAt.toISOString()}" duration="${musicData.duration}" bitRate="320" track="0" year="${escapeXml(musicData.year)}" genre="${escapeXml(musicData.genre)}" size="${musicData.size}" suffix="${escapeXml(musicData.suffix)}" contentType="${escapeXml(musicData.contentType)}" isVideo="false" path="${escapeXml(musicData.path)}" albumId="${escapeXml(musicData.albumId)}" artistId="${escapeXml(musicData.artistId)}" type="music"/>`
     }).join('\n')
+
+    // 构建 playlist 子节点内容
+    const childNodes = [
+      allowedUserNodes,
+      entryNodes
+    ].filter(Boolean).join('\n')
 
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1">
-  <playlist id="${playlist.id}" name="${escapeXml(playlist.name)}" comment="${escapeXml(playlist.comment)}" owner="${escapeXml(playlist.owner || playlist.username)}" public="${playlist.isPublic}" songCount="${playlist.songCount}" duration="${playlist.duration || 0}" created="${createdStr}" coverArt="${escapeXml(playlist.coverArt || `pl-${playlist.id}`)}">${allowedUserNodes}
-${entryNodes}
-  </playlist>
+\t<playlist id="${playlist.id}" name="${escapeXml(playlist.name)}" comment="${escapeXml(playlist.comment)}" owner="${escapeXml(playlist.owner || playlist.username)}" public="${playlist.isPublic}" songCount="${playlist.songCount}" duration="${playlist.duration || 0}" created="${createdStr}" coverArt="${escapeXml(playlist.coverArt || `pl-${playlist.id}`)}">
+${childNodes}
+\t</playlist>
 </subsonic-response>`
 
     return new Response(xml, {
