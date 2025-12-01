@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { handlePing } from '@/lib/subsonic-ping'
 import { handleSearch } from '@/lib/subsonic-search'
 import { handleStar, handleUnstar } from '@/lib/subsonic-favorites'
-import { handleCoverArt, handleGetLyrics } from '@/lib/subsonic-metadata'
+import { handleCoverArtAsync, handleGetLyricsAsync } from '@/lib/subsonic-metadata'
 import { handleGetSong } from '@/lib/subsonic-song'
 import { handleGetStarred } from '@/lib/subsonic-getstarred'
 import { formatSubsonicXML, createSubsonicResponse } from '@/lib/subsonic'
@@ -68,9 +68,11 @@ async function handleMethod(request: NextRequest, method: string) {
     case 'unstar':
       return handleUnstar(request, authRes)
     case 'getCoverArt':
-      return handleCoverArt(request, authRes)
+      // 使用异步版本获取封面（支持数据库查询和 API 调用）
+      return handleCoverArtAsync(request, authRes)
     case 'getLyrics':
-      return handleGetLyrics(request, authRes)
+      // 使用异步版本获取歌词（支持数据库查询和 API 调用）
+      return handleGetLyricsAsync(request, authRes)
     case 'getSong':
       return handleGetSong(request, authRes)
     case 'getStarred':
