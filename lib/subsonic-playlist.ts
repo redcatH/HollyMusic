@@ -70,7 +70,7 @@ export async function handleGetPlaylists(request: NextRequest, authRes: AuthResu
     }).join('\n')
 
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1">
+<subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1" type="navidrome">
   <playlists>
 ${playlistNodes}
   </playlists>
