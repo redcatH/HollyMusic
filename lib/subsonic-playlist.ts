@@ -219,7 +219,7 @@ export async function handleGetPlaylist(request: NextRequest, authRes: AuthResul
     ].filter(Boolean).join('\n')
 
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1">
+<subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1" type="navidrome">
 \t<playlist id="${playlist.id}" name="${escapeXml(playlist.name)}" comment="${escapeXml(playlist.comment)}" owner="${escapeXml(playlist.owner || playlist.username)}" public="${playlist.isPublic}" songCount="${playlist.songCount}" duration="${playlist.duration || 0}" created="${createdStr}" coverArt="${escapeXml(playlist.coverArt || `pl-${playlist.id}`)}">
 ${childNodes}
 \t</playlist>
