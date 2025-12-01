@@ -14,9 +14,14 @@ function escapeXml(unsafe: string) {
  * 格式化 ISO 日期为 Subsonic 格式
  * 例如：2024-12-01T10:30:45.123Z -> 2024-12-01T10:30:45
  */
-function formatDate(date: Date | string): string {
-  const d = typeof date === 'string' ? new Date(date) : date
-  return d.toISOString().replace(/\.\d{3}Z$/, '')
+function formatDate(date: Date | string | null | undefined): string {
+  if (!date) return new Date().toISOString().replace(/\.\d{3}Z$/, '')
+  try {
+    const d = typeof date === 'string' ? new Date(date) : date
+    return d.toISOString().replace(/\.\d{3}Z$/, '')
+  } catch {
+    return new Date().toISOString().replace(/\.\d{3}Z$/, '')
+  }
 }
 
 export async function handleGetStarred(request: NextRequest, authRes: AuthResult): Promise<Response> {
@@ -66,9 +71,25 @@ export async function handleGetStarred(request: NextRequest, authRes: AuthResult
         try {
           const musicInfo = await dbAPI.getMusicInfoBySongmid(fav.itemId)
           if (musicInfo) {
-            const duration = musicInfo.interval ? Math.round(musicInfo.interval.split(':').reduce((acc: number, val: string) => acc * 60 + parseInt(val), 0)) : 0
+            // 安全地解析 interval（格式：mm:ss 或 h:mm:ss）
+            let duration = 0
+            if (musicInfo.interval && typeof musicInfo.interval === 'string') {
+              try {
+                const parts = musicInfo.interval.split(':').map((s: string) => parseInt(s, 10))
+                duration = parts.reduce((acc: number, val: number) => acc * 60 + val, 0)
+              } catch {
+                duration = 0
+              }
+            }
+
             const bitRate = musicInfo._types?.['320k'] ? 320 : (musicInfo._types?.['128k'] ? 128 : 0)
-            const size = musicInfo._types && Object.values(musicInfo._types)[0] ? (Object.values(musicInfo._types)[0] as any).size : '0'
+            let size = '0'
+            if (musicInfo._types && typeof musicInfo._types === 'object') {
+              const firstType = Object.values(musicInfo._types)[0]
+              if (firstType && typeof firstType === 'object' && 'size' in firstType) {
+                size = String((firstType as any).size || 0)
+              }
+            }
             
             songs.push({
               id: escapeXml(musicInfo.songmid || fav.itemId),
@@ -85,7 +106,7 @@ export async function handleGetStarred(request: NextRequest, authRes: AuthResult
               track: '0',
               year: '0',
               genre: 'Unknown',
-              size: String(size),
+              size,
               suffix: 'mp3',
               contentType: 'audio/mpeg',
               isVideo: 'false',
