@@ -14,13 +14,35 @@ function escapeXml(unsafe: string) {
  * 格式化 ISO 日期为 Subsonic 格式
  * 例如：2024-12-01T10:30:45.123Z -> 2024-12-01T10:30:45
  */
-function formatDate(date: Date | string | null | undefined): string {
-  if (!date) return new Date().toISOString().replace(/\.\d{3}Z$/, '')
+function formatDate(date: any): string {
   try {
-    const d = typeof date === 'string' ? new Date(date) : date
-    return d.toISOString().replace(/\.\d{3}Z$/, '')
-  } catch {
-    return new Date().toISOString().replace(/\.\d{3}Z$/, '')
+    // 安全地处理各种输入
+    if (!date) {
+      return new Date().toISOString().substring(0, 19)
+    }
+    
+    let d: Date
+    if (date instanceof Date) {
+      d = date
+    } else if (typeof date === 'string') {
+      d = new Date(date)
+    } else if (typeof date === 'number') {
+      d = new Date(date)
+    } else {
+      console.warn('[formatDate] Unexpected date type:', typeof date, date)
+      return new Date().toISOString().substring(0, 19)
+    }
+    
+    // 检查是否是有效的日期
+    if (isNaN(d.getTime())) {
+      console.warn('[formatDate] Invalid date:', date)
+      return new Date().toISOString().substring(0, 19)
+    }
+    
+    return d.toISOString().substring(0, 19)
+  } catch (err) {
+    console.warn('[formatDate] Error formatting date:', date, err)
+    return new Date().toISOString().substring(0, 19)
   }
 }
 
@@ -69,15 +91,18 @@ export async function handleGetStarred(request: NextRequest, authRes: AuthResult
       } else if (fav.itemType === 'song') {
         // 对于歌曲，尝试从 MusicInfo 表查询完整信息
         try {
+          console.log('[getStarred] Fetching MusicInfo for song:', fav.itemId)
           const musicInfo = await dbAPI.getMusicInfoBySongmid(fav.itemId)
           if (musicInfo) {
+            console.log('[getStarred] Got MusicInfo for', fav.itemId, 'interval:', musicInfo.interval, 'type:', typeof musicInfo.interval)
             // 安全地解析 interval（格式：mm:ss 或 h:mm:ss）
             let duration = 0
             if (musicInfo.interval && typeof musicInfo.interval === 'string') {
               try {
                 const parts = musicInfo.interval.split(':').map((s: string) => parseInt(s, 10))
                 duration = parts.reduce((acc: number, val: number) => acc * 60 + val, 0)
-              } catch {
+              } catch (err) {
+                console.warn('[getStarred] Failed to parse interval:', musicInfo.interval, err)
                 duration = 0
               }
             }
@@ -100,7 +125,7 @@ export async function handleGetStarred(request: NextRequest, authRes: AuthResult
               isDir: 'false',
               coverArt: escapeXml(musicInfo.albumId || ''),
               created: formatDate(fav.createdAt),
-              starred: starredAttr,
+              starred: formatDate(fav.createdAt),
               duration: String(duration),
               bitRate: String(bitRate),
               track: '0',
@@ -118,6 +143,7 @@ export async function handleGetStarred(request: NextRequest, authRes: AuthResult
             })
           } else {
             // 如果查不到，使用默认信息
+            console.log('[getStarred] MusicInfo not found for', fav.itemId, 'using defaults')
             songs.push({
               id: escapeXml(fav.itemId),
               parent: '',
@@ -127,7 +153,7 @@ export async function handleGetStarred(request: NextRequest, authRes: AuthResult
               isDir: 'false',
               coverArt: '',
               created: formatDate(fav.createdAt),
-              starred: starredAttr,
+              starred: formatDate(fav.createdAt),
               duration: '0',
               bitRate: '320',
               track: '0',
@@ -144,7 +170,7 @@ export async function handleGetStarred(request: NextRequest, authRes: AuthResult
             })
           }
         } catch (err) {
-          console.warn('[getStarred] failed to fetch MusicInfo for', fav.itemId, err)
+          console.error('[getStarred] Error fetching MusicInfo for', fav.itemId, ':', err)
           // 查询失败时使用默认信息
           songs.push({
             id: escapeXml(fav.itemId),
@@ -155,7 +181,7 @@ export async function handleGetStarred(request: NextRequest, authRes: AuthResult
             isDir: 'false',
             coverArt: '',
             created: formatDate(fav.createdAt),
-            starred: starredAttr,
+            starred: formatDate(fav.createdAt),
             duration: '0',
             bitRate: '320',
             track: '0',
