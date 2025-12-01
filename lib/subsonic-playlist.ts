@@ -52,6 +52,8 @@ export async function handleGetPlaylists(request: NextRequest, authRes: AuthResu
     // 生成 XML - 如果属于当前用户则显示 allowedUser 节点；否则使用自闭合标签
     const playlistNodes = userPlaylists.map(p => {
       const isOwner = p.username === username
+      // 格式化时间为 Subsonic 格式: yyyy-MM-dd HH:mm:ss
+      const createdStr = p.createdAt.toISOString().replace('T', ' ').substring(0, 19)
       
       if (isOwner) {
         // 属于当前用户的歌单，显示 allowedUser 子节点（可以为空）
@@ -61,11 +63,11 @@ export async function handleGetPlaylists(request: NextRequest, authRes: AuthResu
         
         const innerContent = allowedUserNodes ? `\n${allowedUserNodes}\n  ` : '\n  '
         
-        return `  <playlist id="${p.id}" name="${escapeXml(p.name)}" comment="${escapeXml(p.comment)}" owner="${escapeXml(p.owner || p.username)}" public="${p.isPublic}" songCount="${p.songCount}" duration="${p.duration || 0}" created="${p.createdAt.toISOString()}" coverArt="${escapeXml(p.coverArt || `pl-${p.id}`)}">
+        return `  <playlist id="${p.id}" name="${escapeXml(p.name)}" comment="${escapeXml(p.comment)}" owner="${escapeXml(p.owner || p.username)}" public="${p.isPublic}" songCount="${p.songCount}" duration="${p.duration || 0}" created="${createdStr}" coverArt="${escapeXml(p.coverArt || `pl-${p.id}`)}">
 ${innerContent}</playlist>`
       } else {
         // 不是所有者的歌单使用自闭合标签
-        return `  <playlist id="${p.id}" name="${escapeXml(p.name)}" comment="${escapeXml(p.comment)}" owner="${escapeXml(p.owner || p.username)}" public="${p.isPublic}" songCount="${p.songCount}" duration="${p.duration || 0}" created="${p.createdAt.toISOString()}" coverArt="${escapeXml(p.coverArt || `pl-${p.id}`)}" />`
+        return `  <playlist id="${p.id}" name="${escapeXml(p.name)}" comment="${escapeXml(p.comment)}" owner="${escapeXml(p.owner || p.username)}" public="${p.isPublic}" songCount="${p.songCount}" duration="${p.duration || 0}" created="${createdStr}" coverArt="${escapeXml(p.coverArt || `pl-${p.id}`)}" />`
       }
     }).join('\n')
 
@@ -158,6 +160,9 @@ export async function handleGetPlaylist(request: NextRequest, authRes: AuthResul
         ).join('\n')
       : ''
 
+    // 格式化时间为 Subsonic 格式: yyyy-MM-dd HH:mm:ss
+    const createdStr = playlist.createdAt.toISOString().replace('T', ' ').substring(0, 19)
+
     // 生成 entry 节点（映射为 Subsonic song 格式）
     const entryNodes = playlist.entries.map(entry => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -213,7 +218,7 @@ export async function handleGetPlaylist(request: NextRequest, authRes: AuthResul
 
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1">
-  <playlist id="${playlist.id}" name="${escapeXml(playlist.name)}" comment="${escapeXml(playlist.comment)}" owner="${escapeXml(playlist.owner || playlist.username)}" public="${playlist.isPublic}" songCount="${playlist.songCount}" duration="${playlist.duration || 0}" created="${playlist.createdAt.toISOString()}" coverArt="${escapeXml(playlist.coverArt || `pl-${playlist.id}`)}">${allowedUserNodes}
+  <playlist id="${playlist.id}" name="${escapeXml(playlist.name)}" comment="${escapeXml(playlist.comment)}" owner="${escapeXml(playlist.owner || playlist.username)}" public="${playlist.isPublic}" songCount="${playlist.songCount}" duration="${playlist.duration || 0}" created="${createdStr}" coverArt="${escapeXml(playlist.coverArt || `pl-${playlist.id}`)}">${allowedUserNodes}
 ${entryNodes}
   </playlist>
 </subsonic-response>`
