@@ -13,15 +13,15 @@ services:
       - "3099:3000"
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=file:./data/music.db
+      - DATABASE_URL=file:./prisma/data/music.db
     volumes:
       # 本地目录映射（方便编辑）
       - ./custom-sources:/app/custom-sources
       - ./config:/app/config
       # 数据库文件持久化（重要！）
-      - ./music_db:/app/data
+      - ./prisma_data:/app/prisma/data
       # 缓存目录
-      - ./cache_data:/app/data/cache
+      - ./cache_data:/app/.cache
       # 日志目录（可选）
       - ./app_logs:/app/logs
     networks:
