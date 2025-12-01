@@ -19,7 +19,7 @@ services:
       - ./custom-sources:/app/custom-sources
       - ./config:/app/config
       # 数据库文件持久化（重要！）
-      - ./prisma_data:/app/prisma/data
+      - ./prisma_data:/app/prisma/prisma/data
       # 缓存目录
       - ./cache_data:/app/.cache
       # 日志目录（可选）
