@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server'
-import { decodeMusicInfo } from './subsonic-id'
 import { formatSubsonicXML, createSubsonicResponse } from './subsonic'
 import { type AuthResult } from './auth'
+import * as dbAPI from './db'
+import { logger } from './logger'
 
 /**
  * 将时间字符串转换为秒
@@ -32,8 +33,21 @@ function parseDurationToSeconds(duration: string | number | undefined): number {
   return 180 // 默认值
 }
 
+/**
+ * 转义 XML 特殊字符
+ */
+function escapeXml(text: string): string {
+  if (!text) return ''
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
+
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function handleGetSong(request: NextRequest, authRes: AuthResult): Response {
+export async function handleGetSongAsync(request: NextRequest, authRes: AuthResult): Promise<Response> {
   try {
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
@@ -46,8 +60,8 @@ export function handleGetSong(request: NextRequest, authRes: AuthResult): Respon
       return createSubsonicResponse(xml)
     }
 
-    // 解析编码的音乐信息
-    const musicInfo = decodeMusicInfo(id)
+    // 从数据库查询 MusicInfo（id 为 songmid）
+    const musicInfo = await dbAPI.getMusicInfoBySongmid(id)
     
     if (!musicInfo) {
       const xml = formatSubsonicXML({
@@ -58,15 +72,15 @@ export function handleGetSong(request: NextRequest, authRes: AuthResult): Respon
     }
 
     // 构造歌曲信息
-    const durationSeconds = parseDurationToSeconds(musicInfo.duration)
+    const durationSeconds = parseDurationToSeconds(musicInfo.interval)
     const songXml = `<?xml version="1.0" encoding="UTF-8"?>
 <subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.15.1">
   <song 
     id="${id}"
     parent="${id}"
-    title="${musicInfo.name || 'Unknown'}"
-    album="${musicInfo.album || 'Unknown'}"
-    artist="${musicInfo.singer || 'Unknown'}"
+    title="${escapeXml(musicInfo.name || 'Unknown')}"
+    album="${escapeXml(musicInfo.albumName || 'Unknown')}"
+    artist="${escapeXml(musicInfo.singer || 'Unknown')}"
     isDir="false"
     coverArt="${id}"
     created="2024-01-01T00:00:00"
@@ -76,7 +90,7 @@ export function handleGetSong(request: NextRequest, authRes: AuthResult): Respon
     suffix="mp3"
     contentType="audio/mpeg"
     isVideo="false"
-    path="${musicInfo.singer || 'Unknown'}/${musicInfo.album || 'Unknown'}/${musicInfo.name || 'Unknown'}.mp3"
+    path="${escapeXml(musicInfo.singer || 'Unknown')}/${escapeXml(musicInfo.albumName || 'Unknown')}/${escapeXml(musicInfo.name || 'Unknown')}.mp3"
   />
 </subsonic-response>`
 
@@ -89,11 +103,22 @@ export function handleGetSong(request: NextRequest, authRes: AuthResult): Respon
       }
     })
   } catch (err) {
-    console.error('[getSong] Error:', err)
+    logger.error('[getSong] Error:', err)
     const xml = formatSubsonicXML({
       status: 'failed',
       error: { code: 0, message: 'Internal error' }
     })
     return createSubsonicResponse(xml)
   }
+}
+
+// 同步版本 - 保持签名一致
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function handleGetSong(request: NextRequest, authRes: AuthResult): Response {
+  // 此函数应该在路由中被替换为异步调用
+  const xml = formatSubsonicXML({
+    status: 'failed',
+    error: { code: 0, message: 'Internal error' }
+  })
+  return createSubsonicResponse(xml)
 }
