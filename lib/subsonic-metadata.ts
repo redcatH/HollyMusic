@@ -85,9 +85,12 @@ function serveDefaultCoverArt(): Response {
  * 调用第三方封面 API 获取图片
  * API: https://api.lrc.cx/cover
  * 参数说明：
- * - title: 歌曲标题（三个参数都传时获取歌曲封面）
- * - album: 专辑名（不传title时获取专辑封面）
- * - artist: 作者（只传artist时获取歌手图片）
+ * - title: 歌曲标题
+ * - album: 专辑名
+ * - artist: 作者
+ * 
+ * 优先级：title > album > artist
+ * 只传一个参数到 API
  * 
  * 响应可能是：
  * 1. 直接返回图片文件（Content-Type: image/jpeg 等）
@@ -95,29 +98,15 @@ function serveDefaultCoverArt(): Response {
  */
 async function fetchCoverFromAPI(title: string, album: string, artist: string): Promise<Response | null> {
   try {
-    // 构建参数对象
+    // 构建参数对象 - 按优先级只传一个参数
     const params: Record<string, string> = {}
     
     const titleTrimmed = title.trim()
     const albumTrimmed = album.trim()
     const artistTrimmed = artist.trim()
     
-    // 优先级：三个都有 > title + album > title + artist > album + artist > 单个
-    if (titleTrimmed && albumTrimmed && artistTrimmed) {
-      // 获取歌曲封面
-      params.title = titleTrimmed
-      params.album = albumTrimmed
-      params.artist = artistTrimmed
-    } else if (titleTrimmed && albumTrimmed) {
-      params.title = titleTrimmed
-      params.album = albumTrimmed
-    } else if (titleTrimmed && artistTrimmed) {
-      params.title = titleTrimmed
-      params.artist = artistTrimmed
-    } else if (albumTrimmed && artistTrimmed) {
-      params.album = albumTrimmed
-      params.artist = artistTrimmed
-    } else if (titleTrimmed) {
+    // 优先级：title > album > artist
+    if (titleTrimmed) {
       params.title = titleTrimmed
     } else if (albumTrimmed) {
       params.album = albumTrimmed
@@ -306,33 +295,38 @@ export function handleGetLyrics(request: NextRequest, authRes: AuthResult): Resp
 /**
  * 调用第三方歌词 API 获取 LRC 格式歌词
  * API 参数说明：
- * - title: 歌曲标题（必需）
- * - album: 专辑名称（可留空，[Unknown Album]视为空）
- * - artist: 作者（可留空，支持多种分隔方式）
+ * - title: 歌曲标题
+ * - album: 专辑名称
+ * - artist: 作者
+ * 
+ * 优先级：title > album > artist
+ * 只传一个参数到 API
  */
 async function fetchLyricsFromAPI(title: string, album: string, artist: string): Promise<string | null> {
   try {
-    // 构建参数对象
-    const params: Record<string, string> = {
-      title: title.trim()
-    }
+    // 构建参数对象 - 按优先级只传一个参数
+    const params: Record<string, string> = {}
     
-    // album 处理：如果不为空且不是 [Unknown Album]，才加入参数
+    const titleTrimmed = title.trim()
     const albumTrimmed = album.trim()
-    if (albumTrimmed && albumTrimmed !== '[Unknown Album]') {
-      params.album = albumTrimmed
-    }
-    
-    // artist 处理：如果不为空，加入参数（支持多种分隔方式的artist）
     const artistTrimmed = artist.trim()
-    if (artistTrimmed) {
+    
+    // 优先级：title > album > artist
+    if (titleTrimmed) {
+      params.title = titleTrimmed
+    } else if (albumTrimmed && albumTrimmed !== '[Unknown Album]') {
+      params.album = albumTrimmed
+    } else if (artistTrimmed) {
       params.artist = artistTrimmed
+    } else {
+      // 没有有效参数
+      return null
     }
     
     const searchParams = new URLSearchParams(params)
     const url = `https://api.lrc.cx/lyrics?${searchParams.toString()}`
     
-    logger.info('[fetchLyricsFromAPI] Fetching from:', url)
+    console.log('[fetchLyricsFromAPI] Request URL:', url)
     
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 5000) // 5秒超时
