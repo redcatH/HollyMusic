@@ -69,12 +69,12 @@ export async function handleUnstar(request: NextRequest, authRes: AuthResult): P
     const url = new URL(request.url)
     const params = url.searchParams
     const ids = parseListParam(params.get('id'))
-    const albumIds = parseListParam(params.get('albumId'))
-    const artistIds = parseListParam(params.get('artistId'))
+    // const albumIds = parseListParam(params.get('albumId'))
+    // const artistIds = parseListParam(params.get('artistId'))
     const sourceParam = params.get('source') || null
 
-    if (ids.length === 0 && albumIds.length === 0 && artistIds.length === 0) {
-      const xml = formatSubsonicXML({ status: 'failed', error: { code: 50, message: 'Required parameter missing: id/albumId/artistId' } })
+    if (ids.length === 0 /* && albumIds.length === 0 && artistIds.length === 0 */) {
+      const xml = formatSubsonicXML({ status: 'failed', error: { code: 10, message: 'Required parameter missing: id/albumId/artistId' } })
       return createSubsonicResponse(xml)
     }
 
@@ -83,8 +83,14 @@ export async function handleUnstar(request: NextRequest, authRes: AuthResult): P
 
     const items: FavoriteItem[] = []
     items.push(...ids.map(id => ({ itemType: 'song' as const, itemId: id, source: sourceParam })))
-    items.push(...albumIds.map(id => ({ itemType: 'album' as const, itemId: id, source: sourceParam })))
-    items.push(...artistIds.map(id => ({ itemType: 'artist' as const, itemId: id, source: sourceParam })))
+    // items.push(...albumIds.map(id => ({ itemType: 'album' as const, itemId: id, source: sourceParam })))
+    // items.push(...artistIds.map(id => ({ itemType: 'artist' as const, itemId: id, source: sourceParam })))
+
+    // 双重检查：确保至少有一项要删除
+    if (items.length === 0) {
+      const xml = formatSubsonicXML({ status: 'failed', error: { code: 10, message: 'No items to unstar' } })
+      return createSubsonicResponse(xml)
+    }
 
     const { deleted } = await favorites.unstarItems(userId, items)
     console.debug('[unstar] deleted:', deleted)

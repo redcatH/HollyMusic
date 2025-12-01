@@ -66,8 +66,9 @@ export async function starItems(userId: number, items: FavoriteItem[]) {
 export async function unstarItems(userId: number, items: FavoriteItem[]) {
   if (!items || items.length === 0) return { deleted: 0 }
 
-  // Build OR conditions
+  // Build OR conditions - 重要：确保 OR 数组不为空，防止删除所有记录
   const or = items.map(i => ({ itemType: i.itemType, itemId: i.itemId, source: i.source ?? null }))
+  if (or.length === 0) return { deleted: 0 }
 
   const res = await prisma.favorite.deleteMany({ where: { userId, OR: or } })
   return { deleted: res.count }
