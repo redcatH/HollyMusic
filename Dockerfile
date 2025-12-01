@@ -51,20 +51,8 @@ COPY .env.example .env.example
 # 创建缓存和数据目录
 RUN mkdir -p /app/data /app/logs
 
-# 创建启动脚本
-RUN cat > /app/start.sh <<EOF
-#!/bin/sh
-set -e
-
-# 执行 Prisma 迁移（如果有新的迁移文件）
-echo "Running Prisma migrations..."
-pnpm prisma migrate deploy || echo "No pending migrations"
-
-# 启动应用
-echo "Starting Next.js application..."
-exec pnpm start
-EOF
-
+# 复制启动脚本到镜像并赋予执行权限
+COPY scripts/start.sh /app/start.sh
 RUN chmod +x /app/start.sh
 
 # 暴露端口
