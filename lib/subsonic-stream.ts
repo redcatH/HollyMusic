@@ -21,6 +21,7 @@ const httpsAgent = new https.Agent({
 const URL_CACHE_TTL = 210 * 60 * 1000 // 210 分钟
 const AUDIO_CACHE_DIR = process.env.AUDIO_CACHE_DIR || path.join(process.cwd(), '.cache', 'audio')
 const AUDIO_CACHE_TTL_DAYS = parseInt(process.env.AUDIO_CACHE_TTL_DAYS || '7', 10)
+const ENABLE_FILE_CACHE = process.env.ENABLE_FILE_CACHE === 'true' // 默认开启，可通过 ENABLE_FILE_CACHE=false 关闭
 
 const EXT_CONTENT_TYPE_MAP: Record<string, string> = {
   '.flac': 'audio/flac',
@@ -454,50 +455,20 @@ export async function handleStream(request: NextRequest): Promise<Response> {
 
     logger.info(`[handleStream] Stream request: ${musicInfo.name} - ${musicInfo.singer} (quality: ${quality})`)
 
-    // HEAD: 如果是 HEAD 请求，优先仅返回本地缓存的元信息（避免触发上游完整下载）
-    logger.debug(`[handleStream] Request method: ${request.method}`)
-    if (request.method === 'HEAD') {
-      logger.debug('[handleStream] HEAD request received; checking cached metadata only')
-      try {
-        const filePath = FileCache.getFilePath(musicInfo.source, musicInfo.songmid, quality)
-        if (fs.existsSync(filePath) && FileCache.isValid(musicInfo.source, musicInfo.songmid, quality)) {
-          const stats = fs.statSync(filePath)
-          const headers = new Headers()
-          headers.set('Content-Type', getContentType(quality))
-          headers.set('Content-Length', String(stats.size))
-          headers.set('Date', new Date().toUTCString())
-          headers.set('Vary', 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers')
-          return new NextResponse(null, { status: 200, headers })
-        }
-
-        // 本地无缓存时：为了避免在 HEAD 请求时触发完整上游下载，先返回带 Content-Type 的 200（后续步骤可实现上游 HEAD 探测）
-        const headers = new Headers()
-        headers.set('Content-Type', getContentType(quality))
-        headers.set('Date', new Date().toUTCString())
-        headers.set('Vary', 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers')
-        return new NextResponse(null, { status: 200, headers })
-      } catch (err) {
-        logger.error('[handleStream] HEAD handling error:', err)
-        const xml = formatSubsonicXML({
-          status: 'failed',
-          error: { code: 0, message: 'Stream request failed' }
-        })
-        return createSubsonicResponse(xml)
-      }
-    }
-
     // ========== STEP 4: 检查本地文件缓存 ==========
-    logger.debug(`[handleStream] Checking file cache...`)
-    const cachedBuffer = await FileCache.read(musicInfo.source, musicInfo.songmid, quality)
-    if (cachedBuffer) {
-      logger.info(`[handleStream] Returning cached file`)
-      const u8 = new Uint8Array((cachedBuffer as Buffer).buffer, (cachedBuffer as Buffer).byteOffset, (cachedBuffer as Buffer).byteLength)
-      const response = new NextResponse(u8 as unknown as BodyInit, { status: 200 })
-      response.headers.set('Content-Type', getContentType(quality))
-      response.headers.set('Content-Length', String(cachedBuffer.length))
-      response.headers.set('Date', new Date().toUTCString())
-      response.headers.set('Vary', 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers')
-      return response
+    if (ENABLE_FILE_CACHE) {
+      logger.debug(`[handleStream] Checking file cache...`)
+      const cachedBuffer = await FileCache.read(musicInfo.source, musicInfo.songmid, quality)
+      if (cachedBuffer) {
+        logger.info(`[handleStream] Returning cached file from disk`)
+        const u8 = new Uint8Array((cachedBuffer as Buffer).buffer, (cachedBuffer as Buffer).byteOffset, (cachedBuffer as Buffer).byteLength)
+        const response = new NextResponse(u8 as unknown as BodyInit, { status: 200 })
+        response.headers.set('Content-Type', getContentType(quality))
+        response.headers.set('Content-Length', String(cachedBuffer.length))
+        response.headers.set('Date', new Date().toUTCString())
+        response.headers.set('Vary', 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers')
+        return response
+      }
     }
 
     // ========== STEP 5: 获取播放 URL ==========
@@ -509,53 +480,43 @@ export async function handleStream(request: NextRequest): Promise<Response> {
     logger.debug(`[handleStream] Proxying audio stream...`)
     const streamResponse = await AudioProxy.getStream(playUrl, quality)
 
-    // ========== STEP 7: 保存到文件缓存并重新读取返回 ==========
+    // ========== STEP 7: 立即返回流给客户端，同时后台异步保存到缓存 ==========
     if (streamResponse.status === 200 && streamResponse.headers.get('Content-Type')?.includes('audio')) {
-      logger.debug(`[handleStream] Saving to file cache...`)
-      try {
-        const clone = streamResponse.clone()
-        const saveSuccess = await FileCache.save(musicInfo.source, musicInfo.songmid, quality, clone)
-
-        if (saveSuccess) {
-          logger.info(`[handleStream] File cache saved successfully, reading from disk...`)
-          // 从硬盘读取保存的文件
-          const cachedBuffer = await FileCache.read(musicInfo.source, musicInfo.songmid, quality)
-          if (cachedBuffer) {
-            // 构造新的响应返回
-            const u8 = new Uint8Array((cachedBuffer as Buffer).buffer, (cachedBuffer as Buffer).byteOffset, (cachedBuffer as Buffer).byteLength)
-            const response = new NextResponse(u8 as unknown as BodyInit, { status: 200 })
-            response.headers.set('Content-Type', getContentType(quality))
-            response.headers.set('Content-Length', String(cachedBuffer.length))
-            response.headers.set('Connection', 'keep-alive')
-            response.headers.set('Vary', 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers')
-            response.headers.set('Date', new Date().toUTCString())
-            logger.info(`[handleStream] Returning cached file from disk`)
-            return response
+      // 如果开启文件缓存，后台异步保存（不阻塞客户端响应）
+      if (ENABLE_FILE_CACHE) {
+        // 在后台执行保存，不等待
+        ;(async () => {
+          try {
+            logger.debug(`[handleStream] Background: saving to file cache...`)
+            const clone = streamResponse.clone()
+            const saveSuccess = await FileCache.save(musicInfo.source, musicInfo.songmid, quality, clone)
+            if (saveSuccess) {
+              logger.info(`[handleStream] Background: file cache saved successfully`)
+            } else {
+              logger.warn(`[handleStream] Background: failed to save file cache`)
+            }
+          } catch (err) {
+            logger.error('[handleStream] Background: error during cache save:', err)
           }
-        }
-
-        // 保存失败或读取失败
-        logger.error('[handleStream] Failed to save or read file cache')
-        const xml = formatSubsonicXML({
-          status: 'failed',
-          error: { code: 0, message: 'Stream request failed' }
-        })
-        return createSubsonicResponse(xml)
-      } catch (err) {
-        logger.error('[handleStream] Error during cache save and reload:', err)
-        const xml = formatSubsonicXML({
-          status: 'failed',
-          error: { code: 0, message: 'Stream request failed' }
-        })
-        return createSubsonicResponse(xml)
+        })()
       }
+
+      // 立即返回响应给客户端（不等待后台保存完成）
+      const headers = new Headers(streamResponse.headers)
+      headers.set('Content-Type', getContentType(quality))
+      headers.set('Connection', 'keep-alive')
+      headers.set('Vary', 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers')
+      headers.set('Date', new Date().toUTCString())
+      
+      logger.info(`[handleStream] Returning stream to client (async cache save in background)`)
+      return new NextResponse(streamResponse.body, { status: streamResponse.status, headers })
     }
 
     // 如果响应不是成功的音频，返回错误
     logger.error('[handleStream] Invalid stream response')
     const xml = formatSubsonicXML({
       status: 'failed',
-      error: { code: 0, message: 'Stream request failed' }
+      error: { code: 70, message: 'Stream request failed' }
     })
     return createSubsonicResponse(xml)
   } catch (err) {

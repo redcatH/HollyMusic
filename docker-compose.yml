@@ -13,14 +13,17 @@ services:
       - "3099:3000"
     environment:
       - NODE_ENV=production
+      - DATABASE_URL=file:./data/music.db
     volumes:
       # 本地目录映射（方便编辑）
       - ./custom-sources:/app/custom-sources
       - ./config:/app/config
-      # 持久化缓存目录
-      - cache_data:/app/data/cache
+      # 数据库文件持久化（重要！）
+      - ./music_db:/app/data
+      # 缓存目录
+      - ./cache_data:/app/data/cache
       # 日志目录（可选）
-      - app_logs:/app/logs
+      - ./app_logs:/app/logs
     networks:
       - redcat-network
     # depends_on:
@@ -71,16 +74,6 @@ services:
   #     interval: 30s
   #     timeout: 10s
   #     retries: 3
-
-volumes:
-  cache_data:
-    driver: local
-  app_logs:
-    driver: local
-  redis_data:
-    driver: local
-  postgres_data:
-    driver: local
 
 networks:
   redcat-network:

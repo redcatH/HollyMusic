@@ -1,0 +1,181 @@
+import { NextRequest } from 'next/server'
+import { formatSubsonicXML, createSubsonicResponse } from '@/lib/subsonic'
+import { type AuthResult } from '@/lib/auth'
+import favorites from '@/lib/favorites'
+import dbAPI from '@/lib/db'
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+function escapeXml(unsafe: string) {
+  return unsafe.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')
+}
+
+/**
+ * 格式化 ISO 日期为 Subsonic 格式
+ * 例如：2024-12-01T10:30:45.123Z -> 2024-12-01T10:30:45
+ */
+function formatDate(date: Date | string): string {
+  const d = typeof date === 'string' ? new Date(date) : date
+  return d.toISOString().replace(/\.\d{3}Z$/, '')
+}
+
+export async function handleGetStarred(request: NextRequest, authRes: AuthResult): Promise<Response> {
+  try {
+    if (!authRes.user) {
+      const xml = formatSubsonicXML({ status: 'failed', error: { code: 40, message: 'Authentication required' } })
+      return createSubsonicResponse(xml)
+    }
+
+    const userId = authRes.user.id
+
+    // 获取用户的所有收藏
+    const favorites_list = await favorites.listFavorites(userId, { limit: 500 })
+
+    // 按类型分组
+    const artists: any[] = []
+    const albums: any[] = []
+    const songs: any[] = []
+
+    for (const fav of favorites_list) {
+      const starredAttr = formatDate(fav.createdAt)
+
+      if (fav.itemType === 'artist') {
+        artists.push({
+          id: escapeXml(fav.itemId),
+          name: escapeXml(fav.itemId), // 由于只存了 ID，name 用 ID 代替（理想情况下需要查询艺术家名称）
+          starred: starredAttr,
+        })
+      } else if (fav.itemType === 'album') {
+        albums.push({
+          id: escapeXml(fav.itemId),
+          parent: escapeXml(fav.source || ''), // 使用 source 作为 parent
+          title: escapeXml(fav.itemId),
+          album: escapeXml(fav.itemId),
+          artist: escapeXml(fav.source || 'Unknown'),
+          isDir: 'true',
+          coverArt: escapeXml(fav.itemId),
+          created: formatDate(fav.createdAt),
+          starred: starredAttr,
+        })
+      } else if (fav.itemType === 'song') {
+        // 对于歌曲，尝试从 MusicInfo 表查询完整信息
+        try {
+          const musicInfo = await dbAPI.getMusicInfoBySongmid(fav.itemId)
+          if (musicInfo) {
+            const duration = musicInfo.interval ? Math.round(musicInfo.interval.split(':').reduce((acc: number, val: string) => acc * 60 + parseInt(val), 0)) : 0
+            const bitRate = musicInfo._types?.['320k'] ? 320 : (musicInfo._types?.['128k'] ? 128 : 0)
+            const size = musicInfo._types && Object.values(musicInfo._types)[0] ? (Object.values(musicInfo._types)[0] as any).size : '0'
+            
+            songs.push({
+              id: escapeXml(musicInfo.songmid || fav.itemId),
+              parent: escapeXml(musicInfo.albumId || ''),
+              title: escapeXml(musicInfo.name || ''),
+              album: escapeXml(musicInfo.albumName || ''),
+              artist: escapeXml(musicInfo.singer || ''),
+              isDir: 'false',
+              coverArt: escapeXml(musicInfo.albumId || ''),
+              created: formatDate(fav.createdAt),
+              starred: starredAttr,
+              duration: String(duration),
+              bitRate: String(bitRate),
+              track: '0',
+              year: '0',
+              genre: 'Unknown',
+              size: String(size),
+              suffix: 'mp3',
+              contentType: 'audio/mpeg',
+              isVideo: 'false',
+              path: escapeXml(musicInfo.singer ? `${musicInfo.singer}/${musicInfo.albumName || ''}/${musicInfo.name}` : musicInfo.name),
+              albumId: escapeXml(musicInfo.albumId || ''),
+              artistId: '',
+              type: 'music',
+              source: musicInfo.source,
+            })
+          } else {
+            // 如果查不到，使用默认信息
+            songs.push({
+              id: escapeXml(fav.itemId),
+              parent: '',
+              title: escapeXml(fav.itemId),
+              album: escapeXml(fav.source || 'Unknown'),
+              artist: escapeXml(fav.source || 'Unknown'),
+              isDir: 'false',
+              coverArt: '',
+              created: formatDate(fav.createdAt),
+              starred: starredAttr,
+              duration: '0',
+              bitRate: '320',
+              track: '0',
+              year: '0',
+              genre: 'Unknown',
+              size: '0',
+              suffix: 'mp3',
+              contentType: 'audio/mpeg',
+              isVideo: 'false',
+              path: escapeXml(fav.itemId),
+              albumId: '',
+              artistId: '',
+              type: 'music',
+            })
+          }
+        } catch (err) {
+          console.warn('[getStarred] failed to fetch MusicInfo for', fav.itemId, err)
+          // 查询失败时使用默认信息
+          songs.push({
+            id: escapeXml(fav.itemId),
+            parent: '',
+            title: escapeXml(fav.itemId),
+            album: escapeXml(fav.source || 'Unknown'),
+            artist: escapeXml(fav.source || 'Unknown'),
+            isDir: 'false',
+            coverArt: '',
+            created: formatDate(fav.createdAt),
+            starred: starredAttr,
+            duration: '0',
+            bitRate: '320',
+            track: '0',
+            year: '0',
+            genre: 'Unknown',
+            size: '0',
+            suffix: 'mp3',
+            contentType: 'audio/mpeg',
+            isVideo: 'false',
+            path: escapeXml(fav.itemId),
+            albumId: '',
+            artistId: '',
+            type: 'music',
+          })
+        }
+      }
+    }
+
+    // 构建 XML
+    const artistNodes = artists
+      .map(
+        a => `<artist name="${a.name}" id="${a.id}" starred="${a.starred}"/>`
+      )
+      .join('')
+
+    const albumNodes = albums
+      .map(
+        a =>
+          `<album id="${a.id}" parent="${a.parent}" title="${a.title}" album="${a.album}" artist="${a.artist}" isDir="${a.isDir}" coverArt="${a.coverArt}" created="${a.created}" starred="${a.starred}"/>`
+      )
+      .join('')
+
+    const songNodes = songs
+      .map(
+        s =>
+          `<song id="${s.id}" parent="${s.parent}" title="${s.title}" album="${s.album}" artist="${s.artist}" isDir="${s.isDir}" coverArt="${s.coverArt}" created="${s.created}" starred="${s.starred}" duration="${s.duration}" bitRate="${s.bitRate}" track="${s.track}" year="${s.year}" genre="${s.genre}" size="${s.size}" suffix="${s.suffix}" contentType="${s.contentType}" isVideo="${s.isVideo}" path="${s.path}" albumId="${s.albumId}" artistId="${s.artistId}" type="${s.type}"/>`
+      )
+      .join('')
+
+    const children = `<starred>${artistNodes}${albumNodes}${songNodes}</starred>`
+    const xml = formatSubsonicXML({ status: 'ok', children })
+    return createSubsonicResponse(xml)
+  } catch (err) {
+    console.error('[getStarred] Error:', err)
+    const xml = formatSubsonicXML({ status: 'failed', error: { code: 0, message: err instanceof Error ? err.message : 'Internal error' } })
+    return createSubsonicResponse(xml)
+  }
+}
