@@ -6,8 +6,10 @@ import dbAPI from '@/lib/db'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-function escapeXml(unsafe: string) {
-  return unsafe.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')
+function escapeXml(unsafe: any) {
+  if (unsafe === null || unsafe === undefined) return ''
+  const s = String(unsafe)
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')
 }
 
 /**
