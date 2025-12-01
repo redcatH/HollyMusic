@@ -3,8 +3,14 @@ FROM node:20-bullseye-slim AS builder
 
 WORKDIR /app
 
+# 配置 npm 使用国内镜像加速
+RUN npm config set registry https://registry.npmmirror.com
+
 # 使用 pnpm 作为包管理器
 RUN npm install -g pnpm
+
+# 复制 .npmrc 配置（如果存在）以使用国内镜像
+COPY .npmrc* ./
 
 # 先只复制 package 文件（利用 Docker 分层缓存）
 # 如果 package.json 和 pnpm-lock.yaml 没有变化，此层会被缓存
@@ -32,6 +38,9 @@ WORKDIR /app
 
 # 安装 pnpm
 RUN npm install -g pnpm
+
+# 复制 .npmrc 配置到运行镜像（可选，如需在运行时重新安装依赖）
+COPY .npmrc* ./
 
 # 从构建阶段复制构建结果
 COPY --from=builder /app/.next ./.next
