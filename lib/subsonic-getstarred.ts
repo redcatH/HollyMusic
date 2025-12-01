@@ -156,28 +156,40 @@ export async function handleGetStarred(request: NextRequest, authRes: AuthResult
     // 构建 XML
     const artistNodes = artists
       .map(
-        a => `<artist name="${a.name}" id="${a.id}" starred="${a.starred}"/>`
+        a => `\t<artist name="${a.name}" id="${a.id}" starred="${a.starred}"/>`
       )
-      .join('')
+      .join('\n')
 
     const albumNodes = albums
       .map(
         a =>
-          `<album id="${a.id}" parent="${a.parent}" title="${a.title}" album="${a.album}" artist="${a.artist}" isDir="${a.isDir}" coverArt="${a.coverArt}" created="${a.created}" starred="${a.starred}"/>`
+          `\t<album id="${a.id}" parent="${a.parent}" title="${a.title}" album="${a.album}" artist="${a.artist}" isDir="${a.isDir}" coverArt="${a.coverArt}" created="${a.created}" starred="${a.starred}"/>`
       )
-      .join('')
+      .join('\n')
 
     const songNodes = songs
       .map(
         s =>
-          `<song id="${s.id}" parent="${s.parent}" title="${s.title}" album="${s.album}" artist="${s.artist}" isDir="${s.isDir}" coverArt="${s.coverArt}" created="${s.created}" starred="${s.starred}" duration="${s.duration}" bitRate="${s.bitRate}" track="${s.track}" year="${s.year}" genre="${s.genre}" size="${s.size}" suffix="${s.suffix}" contentType="${s.contentType}" isVideo="${s.isVideo}" path="${s.path}" albumId="${s.albumId}" artistId="${s.artistId}" type="${s.type}"/>`
+          `\t<song id="${s.id}" parent="${s.parent}" title="${s.title}" album="${s.album}" artist="${s.artist}" isDir="${s.isDir}" coverArt="${s.coverArt}" created="${s.created}" starred="${s.starred}" duration="${s.duration}" bitRate="${s.bitRate}" track="${s.track}" year="${s.year}" genre="${s.genre}" size="${s.size}" suffix="${s.suffix}" contentType="${s.contentType}" isVideo="${s.isVideo}" path="${s.path}" albumId="${s.albumId}" artistId="${s.artistId}" type="${s.type}"/>`
       )
-      .join('')
+      .join('\n')
 
-    const children = `<starred>${artistNodes}${albumNodes}${songNodes}</starred>`
-    const xml = formatSubsonicXML({ status: 'ok', children })
+    // 合并所有节点
+    const allNodes = [artistNodes, albumNodes, songNodes].filter(Boolean).join('\n')
+    
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1">
+${allNodes}
+</subsonic-response>`
+    
     console.log('[getStarred] Returning', artists.length, 'artists,', albums.length, 'albums,', songs.length, 'songs')
-    return createSubsonicResponse(xml)
+    return new Response(xml, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/xml; charset=utf-8',
+        'Content-Length': String(Buffer.byteLength(xml, 'utf8'))
+      }
+    })
   } catch (err) {
     console.error('[getStarred] Error:', err)
     const xml = formatSubsonicXML({ status: 'failed', error: { code: 0, message: err instanceof Error ? err.message : 'Internal error' } })
