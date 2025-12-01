@@ -19,11 +19,27 @@ export async function handleCoverArtAsync(request: NextRequest, authRes: AuthRes
       return serveDefaultCoverArt()
     }
 
-    // 根据 id（songmid）获取 MusicInfo
-    const musicInfo = await dbAPI.getMusicInfoBySongmid(id)
-    
-    if (!musicInfo) {
-      // 无 MusicInfo，返回默认图片
+    // 判断 id 类型：song / album (prefix `al-`) / artist (prefix `ar-`)
+    let musicInfo = null
+
+    try {
+      if (id.startsWith('al-')) {
+        const albumId = id.slice(3)
+        if (!albumId) return serveDefaultCoverArt()
+        // 从数据库中查找该专辑的第一首歌
+        musicInfo = await dbAPI.getFirstMusicInfoByAlbumId(albumId)
+        if (!musicInfo) return serveDefaultCoverArt()
+      } else if (id.startsWith('ar-')) {
+        // 歌手类型暂不实现，直接返回默认封面
+        // 未来可实现：根据 artist id 查找代表曲目或专辑封面
+        return serveDefaultCoverArt()
+      } else {
+        // 默认按歌曲 id 处理
+        musicInfo = await dbAPI.getMusicInfoBySongmid(id)
+        if (!musicInfo) return serveDefaultCoverArt()
+      }
+    } catch (err) {
+      logger.warn('[handleCoverArtAsync] DB lookup failed:', err)
       return serveDefaultCoverArt()
     }
 

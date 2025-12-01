@@ -20,8 +20,39 @@ model MusicInfo {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Denormalized/searchable fields
+  name           String?   // 歌曲名
+  singer         String?   // 歌手/艺人
+  albumId        String?   // 专辑 id
+  albumName      String?   // 专辑名
+  img            String?   // 封面 URL/路径
+  durationSeconds Int?     // 时长（秒）
+
+  // Source-specific identifiers
+  songId         String?
+  albumMid       String?
+  strMediaMid    String?
+  hash           String?
+  copyrightId    String?
+
+  // Structured JSON fields (kept for flexibility) - store as JSON text for SQLite
+  typesJson      String?
+  typesMapJson   String?
+  typeUrlJson    String?
+
+  // Lyrics / resource URLs
+  lrc            String?
+  lrcUrl         String?
+  mrcUrl         String?
+  trcUrl         String?
+
   @@unique([source, songmid])
   @@index([songmid])
+  @@index([name])
+  @@index([singer])
+  @@index([albumId])
+  @@index([albumName])
+  @@index([songId])
 }
 
 model User {

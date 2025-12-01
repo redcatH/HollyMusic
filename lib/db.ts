@@ -72,6 +72,20 @@ export async function getMusicInfoBySongmid(songmid: string): Promise<MusicInfo 
   }
 }
 
+export async function getFirstMusicInfoByAlbumId(albumId: string): Promise<MusicInfo | null> {
+  try {
+    const row = await prisma.musicInfo.findFirst({
+      where: { albumId },
+      orderBy: { id: 'asc' },
+    })
+    if (!row || !row.data) return null
+    return JSON.parse(row.data) as MusicInfo
+  } catch (e) {
+    console.warn('getFirstMusicInfoByAlbumId error', e)
+    return null
+  }
+}
+
 export async function upsertMusicInfo(mi: MusicInfo): Promise<{ action: 'insert' | 'update' | 'noop' }> {
   try {
     const checksum = computeChecksum(mi)
@@ -90,12 +104,42 @@ export async function upsertMusicInfo(mi: MusicInfo): Promise<{ action: 'insert'
     })
 
     if (!existing) {
+      const durationSeconds = (() => {
+        const n = Number(mi.interval)
+        return Number.isNaN(n) ? null : n
+      })()
+
       await prisma.musicInfo.create({
         data: {
           source: mi.source,
           songmid: mi.songmid,
           data: dataJson,
           checksum,
+          // denormalized/searchable fields
+          name: mi.name || null,
+          singer: mi.singer || null,
+          albumId: mi.albumId || null,
+          albumName: mi.albumName || null,
+          img: (mi as any).img || null,
+          durationSeconds,
+
+          // source-specific identifiers
+          songId: (mi as any).songId != null ? String((mi as any).songId) : null,
+          albumMid: (mi as any).albumMid || null,
+          strMediaMid: (mi as any).strMediaMid || null,
+          hash: (mi as any).hash || null,
+          copyrightId: (mi as any).copyrightId || null,
+
+          // structured JSON stored as text for SQLite
+          typesJson: JSON.stringify(mi.types || []),
+          typesMapJson: JSON.stringify(mi._types || {}),
+          typeUrlJson: JSON.stringify(mi.typeUrl || {}),
+
+          // lyrics / resource urls
+          lrc: (mi as any).lrc || null,
+          lrcUrl: (mi as any).lrcUrl || null,
+          mrcUrl: (mi as any).mrcUrl || null,
+          trcUrl: (mi as any).trcUrl || null,
         },
       })
       return { action: 'insert' }
@@ -104,6 +148,11 @@ export async function upsertMusicInfo(mi: MusicInfo): Promise<{ action: 'insert'
     if (existing.checksum === checksum) {
       return { action: 'noop' }
     }
+
+    const durationSeconds = (() => {
+      const n = Number(mi.interval)
+      return Number.isNaN(n) ? null : n
+    })()
 
     await prisma.musicInfo.update({
       where: {
@@ -115,6 +164,28 @@ export async function upsertMusicInfo(mi: MusicInfo): Promise<{ action: 'insert'
       data: {
         data: dataJson,
         checksum,
+        // update denormalized/searchable fields as above
+        name: mi.name || null,
+        singer: mi.singer || null,
+        albumId: mi.albumId || null,
+        albumName: mi.albumName || null,
+        img: (mi as any).img || null,
+        durationSeconds,
+
+        songId: (mi as any).songId != null ? String((mi as any).songId) : null,
+        albumMid: (mi as any).albumMid || null,
+        strMediaMid: (mi as any).strMediaMid || null,
+        hash: (mi as any).hash || null,
+        copyrightId: (mi as any).copyrightId || null,
+
+        typesJson: JSON.stringify(mi.types || []),
+        typesMapJson: JSON.stringify(mi._types || {}),
+        typeUrlJson: JSON.stringify(mi.typeUrl || {}),
+
+        lrc: (mi as any).lrc || null,
+        lrcUrl: (mi as any).lrcUrl || null,
+        mrcUrl: (mi as any).mrcUrl || null,
+        trcUrl: (mi as any).trcUrl || null,
       },
     })
     return { action: 'update' }
@@ -127,6 +198,7 @@ export async function upsertMusicInfo(mi: MusicInfo): Promise<{ action: 'insert'
 const dbAPI = {
   getMusicInfo,
   getMusicInfoBySongmid,
+  getFirstMusicInfoByAlbumId,
   upsertMusicInfo,
 }
 
