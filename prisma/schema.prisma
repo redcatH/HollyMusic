@@ -23,3 +23,28 @@ model MusicInfo {
   @@unique([source, songmid])
   @@index([songmid])
 }
+
+model User {
+  id             Int      @id @default(autoincrement())
+  username       String   @unique
+  subsonicSecret String?  // optional plain secret for t verification (md5(secret+s))
+  lastLogin      DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  favorites Favorite[]
+}
+
+model Favorite {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  itemType  String   // 'song' | 'album' | 'artist'
+  itemId    String   // the id value as passed by client (raw song id / album id / artist id)
+  source    String?  // optional source/origin of the item (may be null)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, itemType, itemId, source])
+  @@index([itemId])
+}

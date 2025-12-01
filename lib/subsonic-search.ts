@@ -2,6 +2,10 @@ import { NextRequest } from 'next/server'
 import { formatSubsonicXML, createSubsonicResponse } from '@/lib/subsonic'
 import type { MusicInfo } from '@/lib/types/music'
 import { upsertMusicInfo } from '@/lib/db'
+import { searchCache } from '@/lib/cache-manager'
+import { logger } from '@/lib/logger'
+import { buildSubsonicSearchCacheKey } from '@/lib/cache-key'
+import { getSearchCacheTTL } from '@/lib/cache-config'
 // removed encodeMusicInfo import — song id will use original songmid/songId
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -25,9 +29,18 @@ export async function handleSearch(request: NextRequest) {
   const q = url.searchParams.get('query') || url.searchParams.get('q') || ''
   const songCount = 50 //parseCount(url.searchParams.get('songCount') ?? undefined, 20)
   const songOffset = parseOffset(url.searchParams.get('songOffset') ?? undefined)
+
+  // aggregate sources used for search (moved outside try so cache key can be computed)
+  const sources = ['tx','wy', 'kw', 'kg', 'mg']
+  const cacheKey = buildSubsonicSearchCacheKey(q, sources, songCount, songOffset)
+  const cachedXml = searchCache.get(cacheKey) as string | null
+  if (cachedXml) {
+    logger.debug('[subsonic-search] cache hit', cacheKey)
+    return createSubsonicResponse(cachedXml)
+  }
+
   try {
     // aggregate results from multiple sources until we have enough songs
-    const sources = ['tx','wy', 'kw', 'kg', 'mg']
     const songs: Array<MusicInfo & Record<string, any>> = []
 
     const musicSearchModule = await import('@/lib/music-core/music-search')
@@ -168,6 +181,16 @@ export async function handleSearch(request: NextRequest) {
     const children = `<searchResult3>${songNodes}</searchResult3>`
     // const children = `<searchResult3>${artistNodes}${albumNodes}${songNodes}</searchResult3>`
     const xml = formatSubsonicXML({ status: 'ok', children })
+    
+    // cache the generated XML for subsequent identical searches
+    try {
+      const ttl = getSearchCacheTTL()
+      searchCache.set(cacheKey, xml, ttl)
+    } catch (err) {
+      // ignore cache set errors
+      logger.warn('[subsonic-search] failed to set cache', err)
+    }
+    
     console.log(xml)
     return createSubsonicResponse(xml)
   } catch (err) {

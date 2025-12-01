@@ -1,30 +1,26 @@
 import { NextRequest } from 'next/server'
-import {
-  parseSubsonicParams,
-  validateSubsonicAuth,
-  formatSubsonicXML,
-  createSubsonicResponse
-} from '@/lib/subsonic'
+import { formatSubsonicXML, createSubsonicResponse } from '@/lib/subsonic'
+import auth from '@/lib/auth'
+import userModel from '@/lib/user'
 
 export async function handlePing(request: NextRequest) {
   try {
-    const params = parseSubsonicParams(request)
-    const authResult = validateSubsonicAuth(params)
-console.log("登录成功! {authResult}", authResult)
-    if (!authResult.valid) {
-      const xml = formatSubsonicXML({
-        status: 'failed',
-        error: {
-          code: authResult.code!,
-          message: authResult.message!
-        }
-      })
-      const result = createSubsonicResponse(xml)
-      return result
+    // Use new auth resolver (supports md5 t verification and fallback plain u)
+    const authRes = await auth.resolveUserFromRequest(request)
+    if (authRes.error === 'invalid_t') return auth.authFailedResponse('invalid_t')
+    if (!authRes.user) {
+      const xml = formatSubsonicXML({ status: 'failed', error: { code: 40, message: 'Authentication required' } })
+      return createSubsonicResponse(xml)
     }
-    console.log("登录成功!", params.u)
+
+    // update lastLogin timestamp for the user (best-effort)
+    try {
+      await userModel.updateLastLoginByUsername(authRes.user.username)
+    } catch (e) {
+      console.warn('[ping] update lastLogin failed', e)
+    }
+
     const xml = formatSubsonicXML({ status: 'ok' })
-    console.log("登录成功!", xml)
     return createSubsonicResponse(xml)
   } catch (err) {
     const xml = formatSubsonicXML({

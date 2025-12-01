@@ -19,6 +19,9 @@ COPY . .
 # 确保必要的目录存在
 RUN mkdir -p custom-sources config
 
+# 生成 Prisma 客户端
+RUN pnpm prisma generate
+
 # 构建应用
 RUN pnpm build
 
@@ -36,12 +39,33 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/config ./config
 COPY --from=builder /app/custom-sources ./custom-sources
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/lib/generated/prisma ./lib/generated/prisma
 
 # 复制 builder 中的 public 目录到运行镜像，确保静态资源可访问
 COPY --from=builder /app/public ./public
 
+# 复制 .env.example 作为参考（实际使用时应挂载或注入 .env）
+COPY .env.example .env.example
+
 # 创建缓存和数据目录
-RUN mkdir -p /app/data/cache /app/logs
+RUN mkdir -p /app/data /app/logs
+
+# 创建启动脚本
+RUN cat > /app/start.sh << 'EOF'
+#!/bin/sh
+set -e
+
+# 执行 Prisma 迁移（如果有新的迁移文件）
+echo "Running Prisma migrations..."
+pnpm prisma migrate deploy || echo "No pending migrations"
+
+# 启动应用
+echo "Starting Next.js application..."
+exec pnpm start
+EOF
+
+RUN chmod +x /app/start.sh
 
 # 暴露端口
 EXPOSE 3000
@@ -50,5 +74,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD node -e "require('http').get('http://localhost:3000/api/health', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
 
-# 启动应用
-CMD ["pnpm", "start"]
+# 启动应用（执行迁移 + 启动服务）
+CMD ["/app/start.sh"]
