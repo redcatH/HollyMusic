@@ -118,17 +118,17 @@ export async function upsertMusicInfo(mi: MusicInfo): Promise<{ action: 'insert'
           // denormalized/searchable fields
           name: mi.name || null,
           singer: mi.singer || null,
-          albumId: mi.albumId || null,
+          albumId: mi.albumId != null ? String(mi.albumId) : null,
           albumName: mi.albumName || null,
           img: (mi as any).img || null,
           durationSeconds,
 
           // source-specific identifiers
           songId: (mi as any).songId != null ? String((mi as any).songId) : null,
-          albumMid: (mi as any).albumMid || null,
-          strMediaMid: (mi as any).strMediaMid || null,
+          albumMid: (mi as any).albumMid != null ? String((mi as any).albumMid) : null,
+          strMediaMid: (mi as any).strMediaMid != null ? String((mi as any).strMediaMid) : null,
           hash: (mi as any).hash || null,
-          copyrightId: (mi as any).copyrightId || null,
+          copyrightId: (mi as any).copyrightId != null ? String((mi as any).copyrightId) : null,
 
           // structured JSON stored as text for SQLite
           typesJson: JSON.stringify(mi.types || []),
@@ -167,16 +167,16 @@ export async function upsertMusicInfo(mi: MusicInfo): Promise<{ action: 'insert'
         // update denormalized/searchable fields as above
         name: mi.name || null,
         singer: mi.singer || null,
-        albumId: mi.albumId || null,
+        albumId: mi.albumId != null ? String(mi.albumId) : null,
         albumName: mi.albumName || null,
         img: (mi as any).img || null,
         durationSeconds,
 
         songId: (mi as any).songId != null ? String((mi as any).songId) : null,
-        albumMid: (mi as any).albumMid || null,
-        strMediaMid: (mi as any).strMediaMid || null,
+        albumMid: (mi as any).albumMid != null ? String((mi as any).albumMid) : null,
+        strMediaMid: (mi as any).strMediaMid != null ? String((mi as any).strMediaMid) : null,
         hash: (mi as any).hash || null,
-        copyrightId: (mi as any).copyrightId || null,
+        copyrightId: (mi as any).copyrightId != null ? String((mi as any).copyrightId) : null,
 
         typesJson: JSON.stringify(mi.types || []),
         typesMapJson: JSON.stringify(mi._types || {}),

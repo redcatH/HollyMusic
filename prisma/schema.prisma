@@ -46,6 +46,8 @@ model MusicInfo {
   mrcUrl         String?
   trcUrl         String?
 
+  playlistEntries PlaylistEntry[]
+
   @@unique([source, songmid])
   @@index([songmid])
   @@index([name])
@@ -64,6 +66,8 @@ model User {
   updatedAt      DateTime @updatedAt
 
   favorites Favorite[]
+  playlists Playlist[]
+  playlistAllowedUsers PlaylistAllowedUser[]
 }
 
 model Favorite {
@@ -78,4 +82,74 @@ model Favorite {
 
   @@unique([userId, itemType, itemId, source])
   @@index([itemId])
+}
+
+model Playlist {
+  id             Int      @id @default(autoincrement())
+  name           String
+  username       String
+  comment        String?
+  isPublic       Boolean  @map("public") @default(false)
+  songCount      Int      @default(0)
+  duration       Int?     // seconds
+  createdAt      DateTime @map("created") @default(now())
+  changedAt      DateTime @map("changed") @updatedAt
+  owner          String?
+  coverArt       String?
+
+  user           User     @relation(fields: [username], references: [username], onDelete: Cascade)
+  entries        PlaylistEntry[]
+  allowedUsers   PlaylistAllowedUser[]
+
+  @@index([username])
+  @@index([isPublic])
+}
+
+model PlaylistEntry {
+  id            Int      @id @default(autoincrement())
+  playlistId    Int
+  musicInfoId   Int?
+  songmid       String?
+  position      Int
+  addedBy       String?
+  addedAt       DateTime @default(now())
+  snapshotJson  String?
+  playCount     Int      @default(0)
+  lastPlayed    DateTime?
+
+  playlist      Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  musicInfo     MusicInfo? @relation(fields: [musicInfoId], references: [id], onDelete: SetNull)
+
+  @@unique([playlistId, position])
+  @@index([playlistId])
+  @@index([musicInfoId])
+  @@index([songmid])
+}
+
+model PlaylistAllowedUser {
+  id         Int      @id @default(autoincrement())
+  playlistId Int
+  username   String
+
+  playlist   Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [username], references: [username], onDelete: Cascade)
+
+  @@unique([playlistId, username])
+  @@index([username])
+}
+
+model PlayHistory {
+  id          Int      @id @default(autoincrement())
+  playlistId  Int?
+  entryId     Int?
+  musicInfoId Int?
+  songmid     String?
+  username    String?
+  playedAt    DateTime @default(now())
+  clientIp    String?
+  userAgent   String?
+
+  @@index([playedAt])
+  @@index([username])
+  @@index([playlistId])
 }
