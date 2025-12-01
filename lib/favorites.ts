@@ -69,38 +69,26 @@ export async function unstarItems(userId: number, items: FavoriteItem[]) {
     return { deleted: 0 }
   }
 
-  // Build deletion conditions: userId AND (itemType+itemId+source 的组合)
-  // 由于唯一约束是 (userId, itemType, itemId, source)，必须指定所有这些字段
-  const conditions: Array<{ userId: number; itemType: string; itemId: string; source: string | null }> = []
+  let totalDeleted = 0
   
   for (const item of items) {
     if (!item.itemId) {
       console.warn('[unstarItems] Warning: item without itemId', item)
       continue
     }
-    conditions.push({
-      userId,
-      itemType: item.itemType,
-      itemId: item.itemId,
-      source: item.source ?? null
+
+    // Delete all records matching userId + itemId (ignore itemType and source)
+    const res = await prisma.favorite.deleteMany({
+      where: {
+        userId,
+        itemId: item.itemId,
+      },
     })
-  }
-
-  if (conditions.length === 0) {
-    console.warn('[unstarItems] Warning: no valid conditions after mapping')
-    return { deleted: 0 }
-  }
-
-  console.log('[unstarItems] Deleting', conditions.length, 'items for userId', userId)
-  
-  // 每个条件都是完全确定的：userId AND itemType AND itemId AND source
-  let totalDeleted = 0
-  for (const cond of conditions) {
-    const res = await prisma.favorite.deleteMany({ where: cond })
+    console.log('[unstarItems] Deleted', res.count, 'records for userId', userId, 'itemId', item.itemId)
     totalDeleted += res.count
   }
   
-  console.log('[unstarItems] Deleted', totalDeleted, 'records for userId', userId)
+  console.log('[unstarItems] Total deleted:', totalDeleted)
   return { deleted: totalDeleted }
 }
 
