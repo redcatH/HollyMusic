@@ -46,3 +46,8 @@ next-env.d.ts
 /.cache
 /config/users.json
 *.mp3
+
+# prisma
+/prisma/data/
+
+!prisma/migrations/.gitkeep
