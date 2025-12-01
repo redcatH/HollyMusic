@@ -27,9 +27,13 @@ export async function handleGetStarred(request: NextRequest, authRes: AuthResult
     }
 
     const userId = authRes.user.id
+    const url = new URL(request.url)
+    console.log('[getStarred] Request URL:', url.toString())
+    console.log('[getStarred] userId:', userId, 'user:', authRes.user.username)
 
     // 获取用户的所有收藏
     const favorites_list = await favorites.listFavorites(userId, { limit: 500 })
+    console.log('[getStarred] Found', favorites_list.length, 'favorites for user', authRes.user.username)
 
     // 按类型分组
     const artists: any[] = []
@@ -172,6 +176,7 @@ export async function handleGetStarred(request: NextRequest, authRes: AuthResult
 
     const children = `<starred>${artistNodes}${albumNodes}${songNodes}</starred>`
     const xml = formatSubsonicXML({ status: 'ok', children })
+    console.log('[getStarred] Returning', artists.length, 'artists,', albums.length, 'albums,', songs.length, 'songs')
     return createSubsonicResponse(xml)
   } catch (err) {
     console.error('[getStarred] Error:', err)
