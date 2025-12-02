@@ -69,12 +69,12 @@ async function handleMethod(request: NextRequest, method: string) {
       return handleStar(request, authRes)
     case 'unstar':
       return handleUnstar(request, authRes)
-    case 'getCoverArt':
-      // 使用异步版本获取封面（支持数据库查询和 API 调用）
-      return handleCoverArtAsync(request, authRes)
-    case 'getLyrics':
-      // 使用异步版本获取歌词（支持数据库查询和 API 调用）
-      return handleGetLyricsAsync(request, authRes)
+    // case 'getCoverArt':
+    //   // 使用异步版本获取封面（支持数据库查询和 API 调用）
+    //   return handleCoverArtAsync(request, authRes)
+    // case 'getLyrics':
+    //   // 使用异步版本获取歌词（支持数据库查询和 API 调用）
+    //   return handleGetLyricsAsync(request, authRes)
     case 'getSong':
       // 使用异步版本获取歌曲信息（从数据库直接查询）
       return handleGetSongAsync(request, authRes)
@@ -84,6 +84,14 @@ async function handleMethod(request: NextRequest, method: string) {
       return handleGetPlaylists(request, authRes)
     case 'getPlaylist':
       return handleGetPlaylist(request, authRes)
+      const children = `
+<playlist id="2" name="dj" comment="" owner="admin" public="false" songCount="2" duration="0" created="2025-12-02 05:54:13" coverArt="pl-2">
+<allowedUser>admin</allowedUser>
+<entry id="" parent="" title="" album="" artist="" isDir="false" coverArt="" created="2025-12-02T05:54:19.179Z" duration="undefined" bitRate="320" track="0" year="" genre="" size="undefined" suffix="" contentType="" isVideo="false" path="" albumId="" artistId="" type="music"/>
+<entry id="338638" parent="1737790" title="夜曲" album="第六届全球华语歌曲排行榜颁奖典礼" artist="周杰伦" isDir="false" coverArt="pl-2" created="2025-12-02T07:05:31.716Z" duration="0" bitRate="320" track="0" year="" genre="" size="0" suffix="mp3" contentType="audio/mpeg" isVideo="false" path="周杰伦/第六届全球华语歌曲排行榜颁奖典礼/夜曲.mp3" albumId="1737790" artistId="" type="music"/>
+</playlist>`;
+      const xml = formatSubsonicXML({ status: 'ok', children })
+      return createSubsonicResponse(xml)
     case 'createPlaylist':
       return handleCreatePlaylist(request, authRes)
     case 'deletePlaylist':

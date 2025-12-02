@@ -160,6 +160,7 @@ export async function handleGetPlaylist(request: NextRequest, authRes: AuthResul
 
             // 优先使用 musicInfo，否则解析 snapshot
             if (entry.musicInfo) {
+
                 const mi = entry.musicInfo
                 musicData = {
                     id: mi.songmid,
@@ -178,32 +179,36 @@ export async function handleGetPlaylist(request: NextRequest, authRes: AuthResul
                     contentType: 'audio/mpeg',
                     path: `${mi.singer || 'Unknown'}/${mi.albumName || 'Unknown'}/${mi.name || 'Unknown'}.mp3`
                 }
-            } else if (entry.snapshotJson) {
-                try {
-                    const snapshot = JSON.parse(entry.snapshotJson)
-                    musicData = {
-                        id: snapshot.songmid || entry.songmid || '',
-                        title: snapshot.name || '',
-                        artist: snapshot.singer || '',
-                        album: snapshot.albumName || '',
-                        coverArt: `pl-${playlist.id}`,
-                        duration: snapshot.durationSeconds || 0,
-                        parent: snapshot.albumId || '',
-                        albumId: snapshot.albumId || '',
-                        artistId: '',
-                        year: '',
-                        genre: '',
-                        size: 0,
-                        suffix: 'mp3',
-                        contentType: 'audio/mpeg',
-                        path: `${snapshot.singer || 'Unknown'}/${snapshot.albumName || 'Unknown'}/${snapshot.name || 'Unknown'}.mp3`
-                    }
-                } catch {
-                    logger.warn('[getPlaylist] Failed to parse snapshot for entry', entry.id)
-                }
+                return `\t<entry id="${escapeXml(musicData.id)}" parent="${escapeXml(musicData.parent)}" title="${escapeXml(musicData.title)}" album="${escapeXml(musicData.album)}" artist="${escapeXml(musicData.artist)}" isDir="false" coverArt="${escapeXml(musicData.coverArt)}" created="${entry.addedAt.toISOString()}" duration="${musicData.duration}" bitRate="320" track="0" year="${escapeXml(musicData.year)}" genre="${escapeXml(musicData.genre)}" size="${musicData.size}" suffix="${escapeXml(musicData.suffix)}" contentType="${escapeXml(musicData.contentType)}" isVideo="false" path="${escapeXml(musicData.path)}" albumId="${escapeXml(musicData.albumId)}" artistId="${escapeXml(musicData.artistId)}" type="music"/>`
+            } 
+            else if (entry.snapshotJson) {
+                return '';
+                // try {
+                //     const snapshot = JSON.parse(entry.snapshotJson)
+                //     musicData = {
+                //         id: snapshot.songmid || entry.songmid || '',
+                //         title: snapshot.name || '',
+                //         artist: snapshot.singer || '',
+                //         album: snapshot.albumName || '',
+                //         coverArt: `pl-${playlist.id}`,
+                //         duration: snapshot.durationSeconds || 0,
+                //         parent: snapshot.albumId || '',
+                //         albumId: snapshot.albumId || '',
+                //         artistId: '',
+                //         year: '',
+                //         genre: '',
+                //         size: 0,
+                //         suffix: 'mp3',
+                //         contentType: 'audio/mpeg',
+                //         path: `${snapshot.singer || 'Unknown'}/${snapshot.albumName || 'Unknown'}/${snapshot.name || 'Unknown'}.mp3`
+                //     }
+                // } catch {
+                //     logger.warn('[getPlaylist] Failed to parse snapshot for entry', entry.id)
+                // }
+                return `\t<entry id="${escapeXml(musicData.id)}" parent="${escapeXml(musicData.parent)}" title="${escapeXml(musicData.title)}" album="${escapeXml(musicData.album)}" artist="${escapeXml(musicData.artist)}" isDir="false" coverArt="${escapeXml(musicData.coverArt)}" created="${entry.addedAt.toISOString()}" duration="${musicData.duration}" bitRate="320" track="0" year="${escapeXml(musicData.year)}" genre="${escapeXml(musicData.genre)}" size="${musicData.size}" suffix="${escapeXml(musicData.suffix)}" contentType="${escapeXml(musicData.contentType)}" isVideo="false" path="${escapeXml(musicData.path)}" albumId="${escapeXml(musicData.albumId)}" artistId="${escapeXml(musicData.artistId)}" type="music"/>`
             }
 
-            return `\t<entry id="${escapeXml(musicData.id)}" parent="${escapeXml(musicData.parent)}" title="${escapeXml(musicData.title)}" album="${escapeXml(musicData.album)}" artist="${escapeXml(musicData.artist)}" isDir="false" coverArt="${escapeXml(musicData.coverArt)}" created="${entry.addedAt.toISOString()}" duration="${musicData.duration}" bitRate="320" track="0" year="${escapeXml(musicData.year)}" genre="${escapeXml(musicData.genre)}" size="${musicData.size}" suffix="${escapeXml(musicData.suffix)}" contentType="${escapeXml(musicData.contentType)}" isVideo="false" path="${escapeXml(musicData.path)}" albumId="${escapeXml(musicData.albumId)}" artistId="${escapeXml(musicData.artistId)}" type="music"/>`
+            
         }).join('\n')
 
         // 构建 playlist 子节点内容
@@ -498,7 +503,23 @@ export async function handleUpdatePlaylist(request: NextRequest, authRes: AuthRe
             // 获取当前最大 position
             const maxPosRow = await prisma.playlistEntry.findFirst({ where: { playlistId }, orderBy: { position: 'desc' }, select: { position: true } })
             let pos = maxPosRow?.position ?? 0
-            for (const sid of songIdToAdd) {
+
+            // 去重并跳过已存在的 songmid
+            const seen = new Set<string>()
+            for (const rawSid of songIdToAdd) {
+                const sid = String(rawSid).trim()
+                if (!sid) continue
+                // 本次请求内去重
+                if (seen.has(sid)) continue
+                seen.add(sid)
+
+                // 如果该歌已经在歌单中存在，则跳过添加
+                const existsEntry = await prisma.playlistEntry.findFirst({ where: { playlistId, songmid: sid } })
+                if (existsEntry) {
+                    logger.info(`[updatePlaylist] Skipping duplicate song ${sid} for playlist ${playlistId}`)
+                    continue
+                }
+
                 pos++
                 // 查找 MusicInfo（使用 findFirst 兼容非唯一索引）
                 const mi = await prisma.musicInfo.findFirst({ where: { songmid: sid } })
