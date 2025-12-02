@@ -69,12 +69,12 @@ async function handleMethod(request: NextRequest, method: string) {
       return handleStar(request, authRes)
     case 'unstar':
       return handleUnstar(request, authRes)
-    // case 'getCoverArt':
-    //   // 使用异步版本获取封面（支持数据库查询和 API 调用）
-    //   return handleCoverArtAsync(request, authRes)
-    // case 'getLyrics':
-    //   // 使用异步版本获取歌词（支持数据库查询和 API 调用）
-    //   return handleGetLyricsAsync(request, authRes)
+    case 'getCoverArt':
+      // 使用异步版本获取封面（支持数据库查询和 API 调用）
+      return handleCoverArtAsync(request, authRes)
+    case 'getLyrics':
+      // 使用异步版本获取歌词（支持数据库查询和 API 调用）
+      return handleGetLyricsAsync(request, authRes)
     case 'getSong':
       // 使用异步版本获取歌曲信息（从数据库直接查询）
       return handleGetSongAsync(request, authRes)
