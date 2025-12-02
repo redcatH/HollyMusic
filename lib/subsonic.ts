@@ -10,7 +10,7 @@ import crypto from 'crypto'
 export const HARD_CODED_API_KEYS = ['my-temporary-key']
 
 // Subsonic 协议版本
-export const SUBSONIC_VERSION = '1.15.1'
+export const SUBSONIC_VERSION = '1.16.1'
 
 // Subsonic XML 命名空间
 export const SUBSONIC_XMLNS = 'http://subsonic.org/restapi'
@@ -124,6 +124,7 @@ export interface SubsonicXMLOptions {
     code: number
     message: string
   }
+  rootheader?: string  // 额外的根节点属性字符串
 }
 
 export function formatSubsonicXML(options: SubsonicXMLOptions): string {
@@ -131,7 +132,8 @@ export function formatSubsonicXML(options: SubsonicXMLOptions): string {
     status,
     version = SUBSONIC_VERSION,
     children = '',
-    error
+    error,
+    rootheader = ''
   } = options
 
   const xmlHeader = '<?xml version="1.0" encoding="UTF-8"?>'
@@ -143,7 +145,7 @@ export function formatSubsonicXML(options: SubsonicXMLOptions): string {
     responseContent = children
   }
 
-  const response = `<subsonic-response xmlns="${SUBSONIC_XMLNS}" status="${status}" version="${version}">${responseContent}</subsonic-response>`
+  const response = `<subsonic-response xmlns="${SUBSONIC_XMLNS}" status="${status}" version="${version}"${rootheader}>${responseContent}</subsonic-response>`
 
   return `${xmlHeader}\n${response}`
 }
@@ -167,8 +169,7 @@ export function createSubsonicResponse(xml: string) {
   return new Response(xml, {
     status: 200,
     headers: {
-      'Content-Type': 'text/xml; charset=utf-8',
-      'Cache-Control': 'no-cache'
+      'Content-Type': 'application/xml; charset=UTF-8'
     }
   })
 }

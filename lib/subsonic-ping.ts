@@ -20,7 +20,7 @@ export async function handlePing(request: NextRequest) {
       console.warn('[ping] update lastLogin failed', e)
     }
 
-    const xml = formatSubsonicXML({ status: 'ok' })
+    const xml = formatSubsonicXML({ status: 'ok' , rootheader:' serverVersion="v1.9.8" openSubsonic="true"' })
     return createSubsonicResponse(xml)
   } catch (err) {
     const xml = formatSubsonicXML({

@@ -3,6 +3,7 @@ import { formatSubsonicXML, createSubsonicResponse } from '@/lib/subsonic'
 import { type AuthResult } from '@/lib/auth'
 import favorites from '@/lib/favorites'
 import dbAPI from '@/lib/db'
+import { normalizeSizeToBytes } from '@/lib/utils'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -113,8 +114,8 @@ export async function handleGetStarred(request: NextRequest, authRes: AuthResult
             let size = '0'
             if (musicInfo._types && typeof musicInfo._types === 'object') {
               const firstType = Object.values(musicInfo._types)[0]
-              if (firstType && typeof firstType === 'object' && 'size' in firstType) {
-                size = String((firstType as any).size || 0)
+              if (firstType) {
+                size = normalizeSizeToBytes((firstType as any).size)
               }
             }
             
@@ -219,17 +220,15 @@ export async function handleGetStarred(request: NextRequest, authRes: AuthResult
     const songNodes = songs
       .map(
         s =>
-          `\t<song id="${s.id}" parent="${s.parent}" title="${s.title}" album="${s.album}" artist="${s.artist}" isDir="${s.isDir}" coverArt="${s.coverArt}" created="${s.created}" starred="${s.starred}" duration="${s.duration}" bitRate="${s.bitRate}" track="${s.track}" year="${s.year}" genre="${s.genre}" size="${s.size}" suffix="${s.suffix}" contentType="${s.contentType}" isVideo="${s.isVideo}" path="${s.path}" albumId="${s.albumId}" artistId="${s.artistId}" type="${s.type}"/>`
+          `	<song id="${s.id}" parent="${s.parent}" title="${s.title}" isDir="${s.isDir}" coverArt="${s.coverArt}" duration="${s.duration}" bitRate="${s.bitRate}" size="${s.size}" suffix="${s.suffix}" contentType="${s.contentType}" isVideo="${s.isVideo}" albumId="${s.albumId}" artistId="${s.artistId}" type="${s.type}" starred="${s.starred}" track="${s.track}" year="${s.year}" genre="${s.genre}" sortName="" mediaType="song" userRating="5" album="${s.album}" artist="${s.artist}" created="${s.created}" path="${s.path}"/>`
       )
       .join('\n')
 
     // 合并所有节点
     const allNodes = [artistNodes, albumNodes, songNodes].filter(Boolean).join('\n')
     
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1">
-${allNodes}
-</subsonic-response>`
+    const children = `<starred>\n${allNodes}\n</starred>`
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1">\n${children}\n</subsonic-response>`
     
     console.log('[getStarred] Returning', artists.length, 'artists,', albums.length, 'albums,', songs.length, 'songs')
     return new Response(xml, {
