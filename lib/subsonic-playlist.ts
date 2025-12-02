@@ -169,7 +169,7 @@ export async function handleGetPlaylist(request: NextRequest, authRes: AuthResul
                     album: mi.albumName || '',
                     coverArt: `pl-${playlist.id}`,
                     duration: mi.durationSeconds || 0,
-                    parent: mi.albumId || '',
+                    parent: playlist.id || '',
                     albumId: mi.albumId || '',
                     artistId: '',
                     year: '',
@@ -486,7 +486,7 @@ export async function handleUpdatePlaylist(request: NextRequest, authRes: AuthRe
         // 删除：按 songmid 删除所有匹配的条目
         if (songIndexToRemove.length > 0) {
             for (const sid of songIndexToRemove) {
-                await prisma.playlistEntry.deleteMany({ where: { playlistId, songmid: sid } })
+                await prisma.playlistEntry.deleteMany({ where: { playlistId, position: parseInt(sid, 10) + 1 } })
             }
             // 重新排序 positions
             const remaining = await prisma.playlistEntry.findMany({ where: { playlistId }, orderBy: { position: 'asc' } })
