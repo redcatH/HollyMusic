@@ -5,8 +5,9 @@ import { handleStar, handleUnstar } from '@/lib/subsonic-favorites'
 import { handleCoverArtAsync, handleGetLyricsAsync } from '@/lib/subsonic-metadata'
 import { handleGetSongAsync } from '@/lib/subsonic-song'
 import { handleGetStarred } from '@/lib/subsonic-getstarred'
-import { handleGetPlaylists, handleGetPlaylist, handleCreatePlaylist, handleDeletePlaylist } from '@/lib/subsonic-playlist'
+import { handleGetPlaylists, handleGetPlaylist, handleCreatePlaylist, handleDeletePlaylist, handleUpdatePlaylist } from '@/lib/subsonic-playlist'
 import { formatSubsonicXML, createSubsonicResponse } from '@/lib/subsonic'
+import { handleGetOpenSubsonicExtensions, handleGetUser, handleGetAlbumList2 } from '@/lib/subsonic-system'
 import { handleStream } from '@/lib/subsonic-stream'
 import auth, { type AuthResult } from '@/lib/auth'
 import configSync from '@/lib/config-sync'
@@ -87,6 +88,28 @@ async function handleMethod(request: NextRequest, method: string) {
       return handleCreatePlaylist(request, authRes)
     case 'deletePlaylist':
       return handleDeletePlaylist(request, authRes)
+    case 'getOpenSubsonicExtensions':
+      return handleGetOpenSubsonicExtensions(request, authRes)
+    case 'getUser':
+      return handleGetUser(request, authRes)
+    case 'getAlbumList2':
+      return handleGetAlbumList2(request, authRes)
+    case 'getScanStatus':
+       const getScanStatus = formatSubsonicXML({
+        status: 'ok',
+        children:'<scanStatus scanning="false" count="10000"/>' }
+      )
+      return createSubsonicResponse(getScanStatus)
+    // case 'getAlbumList':
+    //   const getAlbumList = '<subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1"><albumList2><album id="412776666696599617" coverArt="al-412776666696599617" songCount="0" duration="2025" year="2025" name="安和桥北" created="2025-11-27T16:16:23"/><album id="412759344724095257" coverArt="al-412759344724095257" songCount="0" duration="2025" year="2025" name="十一月的萧邦" created="2025-11-27T15:07:33"/></albumList2></subsonic-response>';
+    //       return new Response(getAlbumList, {
+    //   status: 200,
+    //   headers: {
+    //     'Content-Type': 'application/xml; charset=utf-8',
+    //     'Content-Length': String(Buffer.byteLength(getAlbumList, 'utf8'))
+    //   }})
+    case 'updatePlaylist':
+      return handleUpdatePlaylist(request, authRes)
     default: {
       // console.log("404 url", method)
       // return new Response(null, {
