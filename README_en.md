@@ -1,3 +1,7 @@
+**free！free！free！free！free！**
+
+Our motto: use all available resources on the internet to get everything for free!
+
 HollyMusic — Local / Self-hosted Music Aggregation Service
 
 HollyMusic is a Next.js + TypeScript frontend focused on aggregating multiple third-party music sources and exposing a unified API for playback, metadata (cover, lyrics), and Subsonic-compatible endpoints.
@@ -93,7 +97,3 @@ Contributing
 Resources
 
 - See `docs/` for additional guides: `docs/CONFIG-HOT-RELOAD.md`, `docs/SEARCH-GUIDE.md`, etc.
-
----
-
-If you want me to add examples for `music-sources.json`, or to change phrasing in either language, tell me where to adjust.
