@@ -1,6 +1,8 @@
+**我们的宗旨：利用网络上的一切资源，将白嫖进行到底！**
+
 **HollyMusic — 本地/自托管的音乐聚合服务**
 
-这是一个基于 Next.js + TypeScript 的音乐聚合前端（兼顾 Subsonic API），目的是整合多个第三方音源脚本，并提供统一的播放/下载/元数据（封面、歌词）访问接口。
+一个基于 Next.js + TypeScript 的音乐聚合前端（兼顾 Subsonic API），目的是整合多个第三方音源脚本，并提供统一的播放/下载/元数据（封面、歌词）访问接口。
 
 核心特点：
 - 支持多音源插件（放在 `custom-sources/`），通过内嵌的 `LXEnvironmentSimulator` 运行音源脚本并统一调用。
@@ -91,7 +93,3 @@ docker-compose up --build -d
 
 **参考文档与目录**
 - 项目中已有若干文档在 `docs/`，包含调试指南、音源脚本规范与构建说明，建议阅读 `docs/CONFIG-HOT-RELOAD.md` 与 `docs/SEARCH-GUIDE.md`。
-
----
-
-如果你希望我把 README 的某处文案改成英文版，或补充示例 `music-sources.json` 配置段落，我可以继续修改并提交变更。

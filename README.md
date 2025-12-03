@@ -1,3 +1,7 @@
+我们的宗旨：利用网络上的一切资源，将白嫖进行到底！
+
+Our motto: use all available resources on the internet to get everything for free!
+
 This repository contains two localized READMEs. Choose the language you prefer:
 
 - Chinese (Simplified): `README_zh.md`
@@ -88,8 +92,6 @@ docker-compose up --build -d
 - 项目中已有若干文档在 `docs/`，包含调试指南、音源脚本规范与构建说明，建议阅读 `docs/CONFIG-HOT-RELOAD.md` 与 `docs/SEARCH-GUIDE.md`。
 
 ---
-
-如果你希望我把 README 的某处文案改成英文版，或补充示例 `music-sources.json` 配置段落，我可以继续修改并提交变更。
 
 First, run the development server:
 
