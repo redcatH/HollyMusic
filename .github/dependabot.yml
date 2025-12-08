@@ -3,6 +3,12 @@ updates:
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "auto"
     open-pull-requests-limit: 10
-    rebase-strategy: "auto"
+    ignore:
+      # 方式1：全局禁用所有 major（最简单）
+      - update-types: ["version-update:semver-major"]
+
+      # 方式2：如果你还想额外单独屏蔽某些包的 minor/patch，也可以继续加
+      # - dependency-name: "lodash"
+      # - dependency-name: "webpack"
