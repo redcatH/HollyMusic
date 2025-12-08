@@ -6,7 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint . --ext .js,.ts,.tsx --ignore-pattern 'lx-env-simulator/**'"
+    "lint": "eslint . --ext .js,.ts,.tsx --ignore-pattern 'lx-env-simulator/**'",
+    "prisma:generate": "prisma generate",
+    "prisma:studio": "prisma studio",
+    "prisma:migrate": "prisma migrate dev",
+    "dev:turbo": "next dev --turbo",
+    "analyze": "ANALYZE=true next build"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
@@ -23,10 +28,10 @@
     "howler": "^2.2.4",
     "lucide-react": "^0.554.0",
     "needle": "^3.3.1",
-    "next": "16.0.3",
+    "next": "16.0.7",
     "qs": "^6.14.0",
-    "react": "19.2.0",
-    "react-dom": "19.2.0",
+    "react": "19.2.1",
+    "react-dom": "19.2.1",
     "react-use": "^17.5.0",
     "react-window": "^1.8.10",
     "tailwind-merge": "^3.4.0",
