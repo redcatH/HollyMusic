@@ -7,7 +7,8 @@ updates:
     open-pull-requests-limit: 10
     rebase-strategy: "auto"
     ignore:
-      - update-types: ["version-update:semver-major"]
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
       # - dependency-name: "lodash"
       # - dependency-name: "webpack"
