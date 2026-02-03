@@ -142,7 +142,7 @@ export function BottomPlayer() {
     console.log('BottomPlayer: 加载音频', currentMusicUrl)
     let isMounted = true
 
-    audio.load(currentMusicUrl, false, handleSongEnd).then(() => {
+    audio.load(currentMusicUrl, false, handleSongEnd,{useHtml5:true}).then(() => {
       if (!isMounted) return
       console.log('BottomPlayer: 音频加载完成')
       // 加载完成后，根据 isPlaying 决定是否播放
