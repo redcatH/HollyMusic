@@ -56,3 +56,5 @@ next-env.d.ts
 
 !prisma/migrations/.gitkeep
 */prisma/data/**.db
+
+/config/music-sources.json
