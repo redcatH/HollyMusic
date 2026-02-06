@@ -1,8 +1,9 @@
 'use client'
 
 import { Home, Music, Heart, ListMusic, Settings, History } from 'lucide-react'
+import Link from 'next/link'
 import { usePlayerStore } from '@/lib/store'
-import { useState } from 'react'
+import { usePathname } from 'next/navigation'
 import { usePlayHistory } from '@/hooks/usePlayHistory'
 
 type MenuItem = {
@@ -15,7 +16,7 @@ type MenuItem = {
 
 export function Sidebar() {
   const { isDarkMode, sidebarOpen } = usePlayerStore()
-  const [activeMenu, setActiveMenu] = useState<string>('home')
+  const pathname = usePathname()
   const { count } = usePlayHistory()
 
   const menuItems: MenuItem[] = [
@@ -25,6 +26,13 @@ export function Sidebar() {
     { id: 'playlists', label: '播放列表', icon: <ListMusic className="h-5 w-5" />, href: '/' },
     { id: 'history', label: '历史播放', icon: <History className="h-5 w-5" />, href: '/history', badge: count || undefined },
   ]
+
+  const getActiveMenuId = () => {
+    if (pathname === '/history') return 'history'
+    return 'home'
+  }
+
+  const activeMenu = getActiveMenuId()
 
   return (
     <>
@@ -46,10 +54,9 @@ export function Sidebar() {
       >
         <nav className="space-y-1 p-4">
           {menuItems.map((item) => (
-            <a
+            <Link
               key={item.id}
-              href={item.href}
-              onClick={() => setActiveMenu(item.id)}
+              href={item.href || '#'}
               className={`w-full flex items-center justify-between gap-3 rounded-lg px-4 py-3 transition-colors ${
                 activeMenu === item.id
                   ? isDarkMode
@@ -69,7 +76,7 @@ export function Sidebar() {
                   {item.badge > 99 ? '99+' : item.badge}
                 </span>
               )}
-            </a>
+            </Link>
           ))}
         </nav>
 
