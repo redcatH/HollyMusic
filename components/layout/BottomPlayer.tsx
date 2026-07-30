@@ -142,7 +142,7 @@ export function BottomPlayer() {
     console.log('BottomPlayer: 加载音频', currentMusicUrl)
     let isMounted = true
 
-    audio.load(currentMusicUrl, false, handleSongEnd).then(() => {
+    audio.load(currentMusicUrl, false, handleSongEnd,{useHtml5:true}).then(() => {
       if (!isMounted) return
       console.log('BottomPlayer: 音频加载完成')
       // 加载完成后，根据 isPlaying 决定是否播放
@@ -166,26 +166,16 @@ export function BottomPlayer() {
     if (!currentMusic) return
     await tryUnlockAudio()
 
-    // if not loaded yet, load with autoplay. decide whether to use HTML5 based on platform
-    const shouldUseHtml5 = ((): boolean => {
-      if (typeof navigator === 'undefined') return false
-      const ua = navigator.userAgent || ''
-      const isMobile = /Android|iPhone|iPad|iPod/i.test(ua)
-      // Prefer HTML5 on iOS Safari or Android WebView where streaming might be required
-      const isSafari = /Version\/\d+.*Safari/.test(ua) && !/Chrome|CriOS|Android/.test(ua)
-      return isMobile && isSafari
-    })()
-
-    // if currently not playing and nothing is loaded (duration 0), load and autoplay with chosen backend
+    // if currently not playing and nothing is loaded (duration 0), load and autoplay
     if (!audio.isPlaying && !audio.isLoading && (!audio.duration || audio.duration === 0) && currentMusicUrl) {
       try {
-        await audio.load(currentMusicUrl, true, handleSongEnd, { useHtml5: shouldUseHtml5 })
+        await audio.load(currentMusicUrl, true, handleSongEnd, { useHtml5: true })
         setIsPlaying(true)
       } catch (err) {
         console.error('BottomPlayer: 自动加载并播放失败，尝试默认加载', err)
         // fallback: try loading without forcing html5
         try {
-          await audio.load(currentMusicUrl, true, handleSongEnd)
+          await audio.load(currentMusicUrl, true, handleSongEnd, { useHtml5: true })
           setIsPlaying(true)
         } catch (e) {
           console.error('BottomPlayer: 回退加载也失败', e)

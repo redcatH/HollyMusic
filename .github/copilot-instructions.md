@@ -9,7 +9,6 @@
 - 本项目基于 Next.js（app 目录）与 TypeScript，前端使用 React 19、TailwindCSS；核心目录：`app/`、`components/`、`lib/`、`hooks/`、`public/`、`custom-sources/`、`lx-env-simulator/` 等。
 - 主要关注点：音乐源聚合、播放控制、下载与代理请求，部分模拟器与历史兼容代码位于 `lx-env-simulator/` 
 - 功能参考关注点： 主要参考协议以及用来实现 lx-env-simulator `lx-music-desktop-master/`。
-- 技术栈：Next.js 16、React 19、TypeScript 5、Prisma（SQLite）、Tailwind CSS v4、zustand。
 
 ## 目标（对 Copilot 的期望）
 
@@ -21,10 +20,6 @@
 
 - 语言：TypeScript（`.ts`, `.tsx`）；尽量为导出函数与组件添加类型注解。
 - 组件：函数式组件 + React hooks；样式尽量使用 Tailwind CSS 原子类。
-- 路径别名：使用 `@/*`（根目录相对）。
-- 日志：使用 `import { logger } from '@/lib/logger'`，不要用 `console.log`。
-- 缓存：使用 `import { searchCache, urlCache } from '@/lib/cache-manager'` 导出的单例。
-- 命名：组件 PascalCase、函数 camelCase、常量 UPPER_SNAKE_CASE。
 - 导入顺序：第三方包 -> `lib/`、`hooks/` -> 同目录相对导入。
 - Lint：使用仓库的 ESLint 配置（`eslint . --ext .js,.ts,.tsx`）。
 - 不要修改或删除 `lx-env-simulator/` 内测试/兼容脚本，除非确认需要更新模拟逻辑。
@@ -38,35 +33,6 @@
 - `hooks/`：常用 hooks（`useAudio.ts`, `useDownload.ts`, `useMusicUrl.ts`, `useSearch.ts`）。
 - `custom-sources/`：第三方或自定义音源脚本（通常为 JS 脚本），新增音源需按现有格式实现并在 `music-sources.json` 中注册。
 - `lx-env-simulator/`：兼容层与测试脚本，慎改。
-
-### 常见任务速查表
-
-| 任务 | 位置 | 说明 |
-|------|------|------|
-| 音源管理 | `lib/music-source-manager.ts` | 多源优先级、音质回退 |
-| 数据库操作 | `lib/db.ts` | Prisma 封装，upsert + checksum |
-| 缓存 | `lib/cache-manager.ts` | 内存缓存，带 TTL |
-| API 路由 | `app/api/` | Next.js route handlers |
-| 自定义音源 | `custom-sources/` | 在 `config/music-sources.json` 注册 |
-| 下载工具 | `lib/server/download-utils.ts` | URL 校验、限流 |
-
-## 音源与数据相关约定
-
-- **音质回退顺序**：`flac24bit` → `flac` → `320k` → `128k`。
-- **音源热重载**：`MusicSourceManager` 每次请求会检查 `config/music-sources.json` 的 MD5，变更自动重载。
-- **音源必需接口**：`musicSearch`、`musicInfo`、`lyric`、`pic`、`musicUrl`。
-- **music-core**：CommonJS 模块（`require/module.exports`），由 `MusicSourceManager` 通过 `require()` 加载，不要转为 ES module。
-- **数据库**：Prisma + SQLite，路径通过 `DATABASE_URL` 环境变量配置；迁移用 `prisma migrate dev` 生成。
-
-## 反模式（本项目禁止）
-
-1. ❌ 不要在生产代码用 `console.log` → 用 `logger`。
-2. ❌ 不要忽略 TypeScript 类型错误。
-3. ❌ 不要提交 `.env` 文件。
-4. ❌ 不要在组件中直接调用服务端 API → 走 API 路由。
-5. ❌ 不要直接操作 DOM → 用 React refs。
-6. ❌ 不要新建缓存管理器实例 → 用导出的单例。
-7. ❌ 不要绕过 `db.ts` upsert 的 checksum 校验。
 
 ## 常见任务：示例提示（prompt examples，中文）
 

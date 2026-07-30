@@ -4,6 +4,7 @@
 import { create } from 'zustand'
 import type { StateCreator } from 'zustand'
 import type { MusicInfo } from '@/lib/types/music'
+import { historyDb } from './local-db'
 
 // 播放模式类型定义
 export type PlaybackMode = 'loop' | 'sequence' | 'random'
@@ -97,7 +98,7 @@ const playerStoreCreator: StateCreator<PlayerState> = (set) => ({
   }),
 
   // ✨ 核心异步方法：加载音乐和 URL
-  loadMusicAndUrl: async (musicInfo: MusicInfo, quality = '128k') => {
+  loadMusicAndUrl: async (musicInfo: MusicInfo, quality = '128k', saveToHistory = true) => {
     try {
       set({ isFetchingUrl: true, urlFetchError: null })
 
@@ -160,6 +161,12 @@ const playerStoreCreator: StateCreator<PlayerState> = (set) => ({
       }, 0)
 
       console.log('store: 音乐 URL 加载完成', currentMusic.name)
+
+      // ✨ 保存完整的 MusicInfo 到历史记录（包含 types 和 _types）
+      if (saveToHistory) {
+        await historyDb.addOrUpdate(musicInfo)
+        console.log('store: 已保存到播放历史', musicInfo.name)
+      }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : '未知错误'
       console.error('store: 音乐加载失败', errorMsg)

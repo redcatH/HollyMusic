@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import VConsoleScript from '@/components/debug/VConsoleScript'
 import { Geist, Geist_Mono } from "next/font/google";
 import { ToastContainer } from "@/components/toast/ToastContainer";
+import { BottomPlayer } from "@/components/layout/BottomPlayer";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -30,6 +31,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased m-0 p-0`}
       >
         {children}
+        <BottomPlayer />
         <ToastContainer />
         {/* vConsole: 通过 ?vconsole=1 或 NEXT_PUBLIC_ENABLE_VCONSOLE=true 启用（仅用于调试） */}
         <VConsoleScript />

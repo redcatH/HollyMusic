@@ -1,26 +1,38 @@
 'use client'
 
-import { Home, Music, Heart, ListMusic, Settings } from 'lucide-react'
+import { Home, Music, Heart, ListMusic, Settings, History } from 'lucide-react'
+import Link from 'next/link'
 import { usePlayerStore } from '@/lib/store'
-import { useState } from 'react'
+import { usePathname } from 'next/navigation'
+import { usePlayHistory } from '@/hooks/usePlayHistory'
 
 type MenuItem = {
   id: string
   label: string
   icon: React.ReactNode
   badge?: number
+  href?: string
 }
 
 export function Sidebar() {
   const { isDarkMode, sidebarOpen } = usePlayerStore()
-  const [activeMenu, setActiveMenu] = useState<string>('home')
+  const pathname = usePathname()
+  const { count } = usePlayHistory()
 
   const menuItems: MenuItem[] = [
-    { id: 'home', label: '首页', icon: <Home className="h-5 w-5" /> },
-    { id: 'search', label: '发现音乐', icon: <Music className="h-5 w-5" /> },
-    { id: 'favorites', label: '我的收藏', icon: <Heart className="h-5 w-5" /> },
-    { id: 'playlists', label: '播放列表', icon: <ListMusic className="h-5 w-5" /> },
+    { id: 'home', label: '首页', icon: <Home className="h-5 w-5" />, href: '/' },
+    { id: 'search', label: '发现音乐', icon: <Music className="h-5 w-5" />, href: '/' },
+    { id: 'favorites', label: '我的收藏', icon: <Heart className="h-5 w-5" />, href: '/' },
+    { id: 'playlists', label: '播放列表', icon: <ListMusic className="h-5 w-5" />, href: '/' },
+    { id: 'history', label: '历史播放', icon: <History className="h-5 w-5" />, href: '/history', badge: count || undefined },
   ]
+
+  const getActiveMenuId = () => {
+    if (pathname === '/history') return 'history'
+    return 'home'
+  }
+
+  const activeMenu = getActiveMenuId()
 
   return (
     <>
@@ -42,9 +54,9 @@ export function Sidebar() {
       >
         <nav className="space-y-1 p-4">
           {menuItems.map((item) => (
-            <button
+            <Link
               key={item.id}
-              onClick={() => setActiveMenu(item.id)}
+              href={item.href || '#'}
               className={`w-full flex items-center justify-between gap-3 rounded-lg px-4 py-3 transition-colors ${
                 activeMenu === item.id
                   ? isDarkMode
@@ -59,12 +71,12 @@ export function Sidebar() {
                 {item.icon}
                 <span className="text-sm font-medium">{item.label}</span>
               </div>
-              {item.badge !== undefined && (
-                <span className="inline-flex items-center justify-center h-6 w-6 rounded-full text-xs font-bold bg-red-500 text-white">
-                  {item.badge}
+              {item.badge !== undefined && item.badge > 0 && (
+                <span className="inline-flex items-center justify-center h-5 w-5 rounded-full text-xs font-bold bg-red-500 text-white">
+                  {item.badge > 99 ? '99+' : item.badge}
                 </span>
               )}
-            </button>
+            </Link>
           ))}
         </nav>
 

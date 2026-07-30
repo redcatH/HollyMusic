@@ -41,6 +41,7 @@ export function useAudio(url?: string, options: UseAudioOptions = {}) {
   const HowlerRef = useRef<any>(null)
   const SoundRef = useRef<any>(null)
   const animationFrameRef = useRef<number | undefined>(undefined)
+  const startProgressLoopRef = useRef<(() => void) | null>(null)
 
   const [state, setState] = useState<AudioState>({
     isLoading: false,
@@ -135,6 +136,10 @@ export function useAudio(url?: string, options: UseAudioOptions = {}) {
             onplay: () => {
               console.log('useAudio.load: onplay 触发，音频开始播放')
               setState((prev) => ({ ...prev, isPlaying: true }))
+              // 启动进度循环
+              if (startProgressLoopRef.current) {
+                startProgressLoopRef.current()
+              }
             },
             onpause: () => {
               console.log('useAudio.load: onpause 触发')
@@ -197,7 +202,11 @@ export function useAudio(url?: string, options: UseAudioOptions = {}) {
       setState((prev) => ({
         ...prev,
         currentTime: typeof current === 'number' ? current : 0,
-        duration: typeof duration === 'number' ? duration : 0,
+        // 如果 duration 无效（NaN 或 0），保留上一次的值，避免进度条跳动
+        duration:
+          typeof duration === 'number' && duration > 0 && Number.isFinite(duration)
+            ? duration
+            : prev.duration || 0,
       }))
 
       if (SoundRef.current.playing()) {
@@ -209,6 +218,11 @@ export function useAudio(url?: string, options: UseAudioOptions = {}) {
 
     animationFrameRef.current = requestAnimationFrame(updateLoop)
   }, [])
+
+  // 保持 startProgressLoopRef 最新
+  useEffect(() => {
+    startProgressLoopRef.current = startProgressLoop
+  }, [startProgressLoop])
 
   /**
    * 播放
