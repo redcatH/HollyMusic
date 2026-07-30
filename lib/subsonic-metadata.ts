@@ -7,6 +7,10 @@ import * as dbAPI from './db'
 import { logger } from './logger'
 import { musicSourceManager } from './music-source-manager'
 
+// 原生封面获取模块（参考 lx-music 各源 pic 实现），替代黑盒脚本与第三方聚合 API
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { getPic: getPicNative } = require('./music-core/music-pic')
+
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function handleCoverArtAsync(request: NextRequest, authRes: AuthResult): Promise<Response> {
   try {
@@ -43,61 +47,18 @@ export async function handleCoverArtAsync(request: NextRequest, authRes: AuthRes
       return serveDefaultCoverArt()
     }
 
-    const { name, singer, albumName } = musicInfo
-    const title = name || ''
-    const artist = singer || ''
-    const album = albumName || ''
-
-    // 1) 优先尝试通过已加载的本地音源获取封面
+    // 通过原生音源模块获取封面 URL（参考 lx-music 各源 pic 实现）
+    // 优先级：DB 已存的 img(wy/mg) → 拼 URL(tx) → 实时请求(kw/kg)
     try {
-      const pic = await musicSourceManager.getPic(musicInfo, 5000)
-      if (pic) {
-        if ((pic as Buffer).constructor === Buffer) {
-          const buf = pic as Buffer
-          return new Response(new Uint8Array(buf), {
-            status: 200,
-            headers: {
-              'Content-Type': 'image/jpeg',
-              'Content-Length': String(buf.length),
-              'Cache-Control': 'public, max-age=86400'
-            }
-          })
-        }
-
-        const picStr = String(pic)
-        if (picStr.startsWith('http://') || picStr.startsWith('https://') || picStr.startsWith('//')) {
-          const fetched = await fetchImageFromUrl(picStr)
-          if (fetched) return fetched
-        }
-
-        // 其它字符串形式（data URI 或相对路径）尝试处理
-        if (picStr.startsWith('data:')) {
-          const comma = picStr.indexOf(',')
-          if (comma > 0) {
-            const b64 = picStr.slice(comma + 1)
-            const buf = Buffer.from(b64, 'base64')
-            return new Response(new Uint8Array(buf), {
-              status: 200,
-              headers: {
-                'Content-Type': 'image/jpeg',
-                'Content-Length': String(buf.length),
-                'Cache-Control': 'public, max-age=86400'
-              }
-            })
-          }
-        }
+      const picUrl = await getPicNative(musicInfo)
+      if (picUrl) {
+        const fetched = await fetchImageFromUrl(picUrl)
+        if (fetched) return fetched
       }
     } catch (err) {
-      logger.debug('[handleCoverArtAsync] musicSourceManager.getPic failed:', err)
+      logger.debug('[handleCoverArtAsync] getPic failed:', err)
     }
 
-    // 2) 调用第三方封面 API 获取图片
-    const coverResponse = await fetchCoverFromAPI(title, album, artist)
-    if (coverResponse) {
-      return coverResponse
-    }
-
-    // API 获取失败，返回默认图片
     return serveDefaultCoverArt()
   } catch (err) {
     logger.error('[getCoverArt] Error:', err)
@@ -137,125 +98,6 @@ function serveDefaultCoverArt(): Response {
       error: { code: 70, message: 'Cover art not found' }
     })
     return createSubsonicResponse(xml)
-  }
-}
-
-/**
- * 调用第三方封面 API 获取图片
- * API: https://api.lrc.cx/cover
- * 参数说明：
- * - title: 歌曲标题
- * - album: 专辑名
- * - artist: 作者
- * 
- * 优先级：title > album > artist
- * 只传一个参数到 API
- * 
- * 响应可能是：
- * 1. 直接返回图片文件（Content-Type: image/jpeg 等）
- * 2. Location 重定向到图片 URL
- */
-async function fetchCoverFromAPI(title: string, album: string, artist: string): Promise<Response | null> {
-  try {
-    // 构建参数对象 - 优化：信息越全越好
-    // 规则：
-    // - 如果同时有 title/album/artist，则一并传递（获取歌曲封面）
-    // - 如果没有 title，但有 album，则以 album 为主（获取专辑封面），可同时传 artist
-    // - 如果只有 artist，则只传 artist（获取歌手图片）
-    const params: Record<string, string> = {}
-
-    const titleTrimmed = title.trim()
-    const albumTrimmed = album.trim()
-    const artistTrimmed = artist.trim()
-
-    if (titleTrimmed && albumTrimmed && artistTrimmed) {
-      // 最完整的信息：传全部参数以提高命中率（歌曲封面）
-      params.title = titleTrimmed
-      params.album = albumTrimmed
-      params.artist = artistTrimmed
-    } else if (titleTrimmed) {
-      // 有歌曲标题（优先以歌曲信息搜索），同时如果有 artist/album，也可以一并传
-      params.title = titleTrimmed
-      if (albumTrimmed) params.album = albumTrimmed
-      if (artistTrimmed) params.artist = artistTrimmed
-    } else if (albumTrimmed) {
-      // 没有标题，以专辑为主（可带 artist）
-      params.album = albumTrimmed
-      if (artistTrimmed) params.artist = artistTrimmed
-    } else if (artistTrimmed) {
-      // 只有歌手名，搜索歌手图片
-      params.artist = artistTrimmed
-    } else {
-      // 没有有效参数
-      return null
-    }
-    
-    const searchParams = new URLSearchParams(params)
-    const url = `https://api.lrc.cx/cover?${searchParams.toString()}`
-    
-    logger.info('[fetchCoverFromAPI] Request URL: %s', url)
-    
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 5000) // 5秒超时
-
-    const response = await fetch(url, {
-      method: 'GET',
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      },
-      redirect: 'follow' // 自动跟随重定向
-    })
-    
-    clearTimeout(timeoutId)
-
-    if (!response.ok) {
-      // 即使不是 200，也可能是重定向后的成功响应
-      console.log('[fetchCoverFromAPI] Response status:', response.status)
-      
-      // 如果是 3xx 状态码但跟随重定向失败，检查 Location 头
-      if (response.status >= 300 && response.status < 400) {
-        const location = response.headers.get('location')
-        if (location) {
-          console.log('[fetchCoverFromAPI] Got redirect location:', location)
-          // 尝试获取重定向后的资源
-          return fetchImageFromUrl(location)
-        }
-      }
-      
-      logger.warn('[fetchCoverFromAPI] API returned status:', response.status)
-      return null
-    }
-
-    // 检查响应的 Content-Type，确保是图片
-    const contentType = response.headers.get('content-type')
-    if (!contentType || !contentType.startsWith('image/')) {
-      logger.warn('[fetchCoverFromAPI] Response is not an image, Content-Type:', contentType)
-      return null
-    }
-
-    // 获取图片 buffer
-    const buffer = await response.arrayBuffer()
-    
-    if (!buffer || buffer.byteLength === 0) {
-      logger.warn('[fetchCoverFromAPI] Empty image response')
-      return null
-    }
-
-    logger.info('[fetchCoverFromAPI] Got cover image, size:', buffer.byteLength)
-    
-    // 返回图片响应
-    return new Response(buffer, {
-      status: 200,
-      headers: {
-        'Content-Type': contentType,
-        'Content-Length': String(buffer.byteLength),
-        'Cache-Control': 'public, max-age=86400'
-      }
-    })
-  } catch (err) {
-    logger.warn('[fetchCoverFromAPI] Error fetching cover:', err)
-    return null
   }
 }
 
