@@ -4,6 +4,7 @@ import { handleSearch } from '@/lib/subsonic-search'
 import { handleStar, handleUnstar } from '@/lib/subsonic-favorites'
 import { handleCoverArtAsync, handleGetLyricsAsync, handleGetLyricsBySongIdAsync, handleGetAlbumAsync } from '@/lib/subsonic-metadata'
 import { handleGetSongAsync } from '@/lib/subsonic-song'
+import { handleGetRandomSongs } from '@/lib/subsonic-random'
 import { handleGetStarred } from '@/lib/subsonic-getstarred'
 import { handleGetPlaylists, handleGetPlaylist, handleCreatePlaylist, handleDeletePlaylist, handleUpdatePlaylist } from '@/lib/subsonic-playlist'
 import { formatSubsonicXML, createSubsonicResponse } from '@/lib/subsonic'
@@ -121,6 +122,9 @@ async function handleMethod(request: NextRequest, method: string) {
     case 'getSimilarSongs2':
       // 相似歌曲暂不实现，返回空列表
       return handleGetSimilarSongs(request, authRes)
+    case 'getRandomSongs':
+      // 随机歌曲（从 DB 已入库曲目中随机抽取）
+      return handleGetRandomSongs(request)
     // case 'getAlbumList':
     //   const getAlbumList = '<subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1"><albumList2><album id="412776666696599617" coverArt="al-412776666696599617" songCount="0" duration="2025" year="2025" name="安和桥北" created="2025-11-27T16:16:23"/><album id="412759344724095257" coverArt="al-412759344724095257" songCount="0" duration="2025" year="2025" name="十一月的萧邦" created="2025-11-27T15:07:33"/></albumList2></subsonic-response>';
     //       return new Response(getAlbumList, {
