@@ -1,12 +1,12 @@
 import { NextRequest } from 'next/server'
 import { formatSubsonicXML, createSubsonicResponse } from '@/lib/subsonic'
 import type { MusicInfo } from '@/lib/types/music'
-import { upsertMusicInfo } from '@/lib/db'
+import { upsertMusicInfo, getStorageSongmidForMusicInfo } from '@/lib/db'
 import { searchCache } from '@/lib/cache-manager'
 import { logger } from '@/lib/logger'
 import { buildSubsonicSearchCacheKey } from '@/lib/cache-key'
 import { getSearchCacheTTL } from '@/lib/cache-config'
-// removed encodeMusicInfo import — song id will use original songmid/songId
+// song id 统一使用 `source-songmid` 复合格式，保证跨源唯一
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -54,6 +54,9 @@ export async function handleSearch(request: NextRequest) {
         if (res && Array.isArray(res.list)) {
           for (const item of res.list) {
             const raw = item as any
+            // musicInfo.songmid 保持各音源原始值（kg 为 Audioid，其他为原 songmid/songId），
+            // 这是"原始数据"，会原样存入 DB 的 data 列，播放时拉起的就是它，保证正常播放。
+            // 对外 id 的唯一性由 upsertMusicInfo 的 songmid 列存储策略保证（见 db.ts）。
             const musicInfo: MusicInfo = {
               name: raw.name || raw.title || '',
               singer: raw.singer || raw.artist || '',
@@ -122,7 +125,7 @@ export async function handleSearch(request: NextRequest) {
         songCount: 0,
         songs: [] as string[],
       }
-      const songKey = `${s.source}-${s.songmid || s.songId || (albumEntry.songs.length + 1)}`
+      const songKey = `${s.source}-${getStorageSongmidForMusicInfo(s) || s.songId || (albumEntry.songs.length + 1)}`
       albumEntry.songCount = (albumEntry.songCount || 0) + 1
       albumEntry.songs.push(songKey)
       albumMap.set(albumKey, albumEntry)
@@ -145,9 +148,11 @@ export async function handleSearch(request: NextRequest) {
 
     // build XML children following Subsonic searchResult3 song attributes
     const songNodes = sliced.map((s, idx) => {
-      const songKey = `${s.source}-${s.songmid || s.songId || idx}`
-      
-      // song id will use original `s.songmid || s.songId` directly
+      // 对外 song id = `source-{存储songmid}`，与 DB 的 songmid 列一致，
+      // 使 stream 等接口能通过 (source, 存储songmid) 精确命中 DB 记录。
+      // 注意：存储键可能与 mi.songmid 不同（kg 用 FileHash 而非 Audioid）。
+      const songId = `${s.source}-${getStorageSongmidForMusicInfo(s) || s.songId || idx}`
+
       const parent = s.albumId || s.albummid || ''
       const title = escapeXml(String(s.name || s.title || ''))
       const album = escapeXml(String(s.albumName || s.album || ''))
@@ -168,13 +173,13 @@ export async function handleSearch(request: NextRequest) {
       const albumKey = (s.albumId || s.albummid || `${s.source}-album-${(s.albumName || s.album || '').replace(/\s+/g, '-')}`) as string
       const albumEntry = albumMap.get(albumKey)
       if (albumEntry && Array.isArray(albumEntry.songs)) {
-        const pos = albumEntry.songs.indexOf(songKey)
+        const pos = albumEntry.songs.indexOf(songId)
         if (pos >= 0) trackAttr = String(pos + 1)
       }
 
       const trackPart = trackAttr ? ` track="${trackAttr}"` : ''
 
-      return `<song id="${s.songmid || s.songId}" parent="${parent}" title="${title}" album="${album}" artist="${artist}" isDir="false" coverArt="${coverArt}" duration="${duration}" bitRate="${bitRate}" size="${sizeNum}" suffix="${suffix}" contentType="${contentType}" isVideo="false" path="${pathAttr}" albumId="${albumId}" artistId="${artistId}" type="music"${trackPart}/>`
+      return `<song id="${songId}" parent="${parent}" title="${title}" album="${album}" artist="${artist}" isDir="false" coverArt="${coverArt}" duration="${duration}" bitRate="${bitRate}" size="${sizeNum}" suffix="${suffix}" contentType="${contentType}" isVideo="false" path="${pathAttr}" albumId="${albumId}" artistId="${artistId}" type="music"${trackPart}/>`
     }).join('')
 
     // emit artists first, then albums, then songs
