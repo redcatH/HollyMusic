@@ -37,7 +37,6 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
             {children}
           </main>
         </div>
-        <BottomPlayer />
       </div>
     </div>
   )
