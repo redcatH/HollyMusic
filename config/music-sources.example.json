@@ -7,7 +7,8 @@
       "priority": 1,
       "timeout": 15000,
       "name": "音源名称",
-      "description": "音源描述"
+      "description": "音源描述",
+      "pt": ["tx", "wy", "kw", "kg", "mg"]
     }
   ],
   "_comments": {
@@ -16,6 +17,7 @@
     "priority": "优先级，数字越小优先级越高，获取播放URL时按优先级尝试",
     "timeout": "请求超时时间（毫秒），默认15000ms",
     "name": "音源名称，用于日志和管理界面显示",
-    "description": "音源描述，用于说明音源的特点和用途"
+    "description": "音源描述，用于说明音源的特点和用途",
+    "pt": "该音源支持的平台列表 (tx=QQ音乐, wy=网易云, kw=酷我, kg=酷狗, mg=咪咕)。搜索平台 = 所有 enabled 音源的 pt 去重并集；全部省略则搜索默认全部 5 平台"
   }
 }

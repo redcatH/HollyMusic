@@ -92,6 +92,11 @@ export class ConfigValidator {
       validated.description = src.description
     }
 
+    // 可选：保留音源支持的平台列表，用于驱动搜索平台
+    if (Array.isArray(src.pt)) {
+      validated.pt = src.pt.filter((p): p is string => typeof p === 'string' && p.trim() !== '')
+    }
+
     return validated
   }
 

@@ -6,6 +6,7 @@ import { searchCache } from '@/lib/cache-manager'
 import { logger } from '@/lib/logger'
 import { buildSubsonicSearchCacheKey } from '@/lib/cache-key'
 import { getSearchCacheTTL } from '@/lib/cache-config'
+import { getSearchSources } from '@/lib/search-config'
 // song id 统一使用 `source-songmid` 复合格式，保证跨源唯一
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -31,7 +32,7 @@ export async function handleSearch(request: NextRequest) {
   const songOffset = parseOffset(url.searchParams.get('songOffset') ?? undefined)
 
   // aggregate sources used for search (moved outside try so cache key can be computed)
-  const sources = ['tx','wy', 'kw', 'kg', 'mg']
+  const sources = getSearchSources()
   const cacheKey = buildSubsonicSearchCacheKey(q, sources, songCount, songOffset)
   const cachedXml = searchCache.get(cacheKey) as string | null
   if (cachedXml) {
