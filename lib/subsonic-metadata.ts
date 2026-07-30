@@ -38,8 +38,8 @@ export async function handleCoverArtAsync(request: NextRequest, authRes: AuthRes
         // 未来可实现：根据 artist id 查找代表曲目或专辑封面
         return serveDefaultCoverArt()
       } else {
-        // 默认按歌曲 id 处理
-        musicInfo = await dbAPI.getMusicInfoBySongmid(id)
+        // 默认按歌曲 id 处理（song id 为 `source-songmid` 复合格式，或旧版纯 songmid）
+        musicInfo = await dbAPI.resolveMusicInfoById(id)
         if (!musicInfo) return serveDefaultCoverArt()
       }
     } catch (err) {
@@ -172,8 +172,8 @@ export async function handleGetLyricsAsync(request: NextRequest, authRes: AuthRe
       return createSubsonicResponse(xml)
     }
 
-    // 根据 id（songmid）获取 MusicInfo
-    const musicInfo = await dbAPI.getMusicInfoBySongmid(id)
+    // 根据 id 获取 MusicInfo（song id 为 `source-songmid` 复合格式，或旧版纯 songmid）
+    const musicInfo = await dbAPI.resolveMusicInfoById(id)
     
     if (!musicInfo) {
       // 无歌词

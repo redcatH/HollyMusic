@@ -1,0 +1,2058 @@
+{
+  "keyword": "周杰伦",
+  "limit": 20,
+  "timestamp": "2026-07-30T07-59-29",
+  "idStats": {
+    "kw": {
+      "纯数字": 20,
+      "字母数字": 0,
+      "含特殊符号": 0,
+      "其他": 0,
+      "长度分布": {
+        "6位": 13,
+        "7位": 4,
+        "5位": 2,
+        "9位": 1
+      }
+    },
+    "kg": {
+      "纯数字": 28,
+      "字母数字": 0,
+      "含特殊符号": 0,
+      "其他": 0,
+      "长度分布": {
+        "8位": 1,
+        "6位": 19,
+        "9位": 7,
+        "7位": 1
+      }
+    },
+    "tx": {
+      "纯数字": 0,
+      "字母数字": 20,
+      "含特殊符号": 0,
+      "其他": 0,
+      "长度分布": {
+        "14位": 20
+      }
+    },
+    "wy": {
+      "纯数字": 20,
+      "字母数字": 0,
+      "含特殊符号": 0,
+      "其他": 0,
+      "长度分布": {
+        "9位": 11,
+        "7位": 2,
+        "6位": 5,
+        "10位": 2
+      }
+    },
+    "mg": {
+      "纯数字": 37,
+      "字母数字": 0,
+      "含特殊符号": 0,
+      "其他": 0,
+      "长度分布": {
+        "10位": 26,
+        "4位": 4,
+        "3位": 1,
+        "7位": 3,
+        "6位": 3
+      }
+    }
+  },
+  "failures": {},
+  "rawSamples": {
+    "kw": [
+      {
+        "MUSICRID": "MUSIC_228908",
+        "SONGNAME": "晴天",
+        "ARTIST": "周杰伦",
+        "ALBUMID": "1293",
+        "DURATION": "269"
+      },
+      {
+        "MUSICRID": "MUSIC_3195905",
+        "SONGNAME": "红尘客栈",
+        "ARTIST": "周杰伦",
+        "ALBUMID": "264333",
+        "DURATION": "274"
+      },
+      {
+        "MUSICRID": "MUSIC_94237",
+        "SONGNAME": "七里香",
+        "ARTIST": "周杰伦",
+        "ALBUMID": "4533",
+        "DURATION": "299"
+      }
+    ],
+    "kg": [
+      {
+        "Audioid": 20505418,
+        "FileHash": "B3A52A7A958BF0AED0EBFBA2E9A818B7",
+        "SongName": "晴天",
+        "AlbumID": "966846"
+      },
+      {
+        "Audioid": 332453,
+        "FileHash": "8909E1809908CD8E3BF6CF85D98B93F0",
+        "SongName": "稻香",
+        "AlbumID": "960399"
+      },
+      {
+        "Audioid": 298691834,
+        "FileHash": "85852CFBFF0C3E4F35985C5706FEFA3D",
+        "SongName": "稻香",
+        "AlbumID": "533695"
+      }
+    ],
+    "tx": [
+      {
+        "mid": "0039MnYb0qxYhV",
+        "id": 97773,
+        "media_mid": "003Qui1q2u1Zho",
+        "name": "晴天",
+        "interval": 269
+      },
+      {
+        "mid": "001Bbywq2gicae",
+        "id": 102065750,
+        "media_mid": "004UlK9x0jeuow",
+        "name": "搁浅",
+        "interval": 240
+      },
+      {
+        "mid": "003xv4w313tZHV",
+        "id": 5177680,
+        "media_mid": "000d5VXa1mFK4G",
+        "name": "红尘客栈",
+        "interval": 274
+      }
+    ],
+    "wy": [
+      {
+        "id": 509781655,
+        "name": "想你就写信 (Live)",
+        "dt": 238698
+      },
+      {
+        "id": 5257138,
+        "name": "屋顶",
+        "dt": 319039
+      },
+      {
+        "id": 210049,
+        "name": "布拉格广场",
+        "dt": 294600
+      }
+    ],
+    "mg": [
+      {
+        "songId": "1140505222",
+        "copyrightId": "60054704965",
+        "name": "圣诞星（feat. 杨瑞代）",
+        "albumId": "1140505221"
+      },
+      {
+        "songId": "1142543097",
+        "copyrightId": "6902739Z01T",
+        "name": "圣诞星 (feat. 杨瑞代)",
+        "albumId": "1142521343"
+      },
+      {
+        "songId": "6868",
+        "copyrightId": "60054701941",
+        "name": "我的地盘",
+        "albumId": "7949"
+      }
+    ]
+  },
+  "songs": {
+    "kw": [
+      {
+        "source": "kw",
+        "songmid": "228908",
+        "name": "晴天",
+        "singer": "周杰伦",
+        "albumId": "1293",
+        "albumName": "叶惠美",
+        "_raw": {
+          "MUSICRID": "MUSIC_228908",
+          "SONGNAME": "晴天",
+          "ARTIST": "周杰伦",
+          "ALBUMID": "1293",
+          "DURATION": "269"
+        }
+      },
+      {
+        "source": "kw",
+        "songmid": "3195905",
+        "name": "红尘客栈",
+        "singer": "周杰伦",
+        "albumId": "264333",
+        "albumName": "十二新作",
+        "_raw": {
+          "MUSICRID": "MUSIC_3195905",
+          "SONGNAME": "红尘客栈",
+          "ARTIST": "周杰伦",
+          "ALBUMID": "264333",
+          "DURATION": "274"
+        }
+      },
+      {
+        "source": "kw",
+        "songmid": "94237",
+        "name": "七里香",
+        "singer": "周杰伦",
+        "albumId": "4533",
+        "albumName": "七里香",
+        "_raw": {
+          "MUSICRID": "MUSIC_94237",
+          "SONGNAME": "七里香",
+          "ARTIST": "周杰伦",
+          "ALBUMID": "4533",
+          "DURATION": "299"
+        }
+      },
+      {
+        "source": "kw",
+        "songmid": "118980",
+        "name": "夜曲",
+        "singer": "周杰伦",
+        "albumId": "14466",
+        "albumName": "十一月的萧邦",
+        "_raw": {
+          "MUSICRID": "MUSIC_118980",
+          "SONGNAME": "夜曲",
+          "ARTIST": "周杰伦",
+          "ALBUMID": "14466",
+          "DURATION": "226"
+        }
+      },
+      {
+        "source": "kw",
+        "songmid": "324244",
+        "name": "青花瓷",
+        "singer": "周杰伦",
+        "albumId": "12449",
+        "albumName": "我很忙",
+        "_raw": {
+          "MUSICRID": "MUSIC_324244",
+          "SONGNAME": "青花瓷",
+          "ARTIST": "周杰伦",
+          "ALBUMID": "12449",
+          "DURATION": "239"
+        }
+      },
+      {
+        "source": "kw",
+        "songmid": "94239",
+        "name": "搁浅",
+        "singer": "周杰伦",
+        "albumId": "4533",
+        "albumName": "七里香",
+        "_raw": {
+          "MUSICRID": "MUSIC_94239",
+          "SONGNAME": "搁浅",
+          "ARTIST": "周杰伦",
+          "ALBUMID": "4533",
+          "DURATION": "240"
+        }
+      },
+      {
+        "source": "kw",
+        "songmid": "7149583",
+        "name": "告白气球",
+        "singer": "周杰伦",
+        "albumId": "555949",
+        "albumName": "周杰伦的床边故事",
+        "_raw": {
+          "MUSICRID": "MUSIC_7149583",
+          "SONGNAME": "告白气球",
+          "ARTIST": "周杰伦",
+          "ALBUMID": "555949",
+          "DURATION": "215"
+        }
+      },
+      {
+        "source": "kw",
+        "songmid": "440613",
+        "name": "稻香",
+        "singer": "周杰伦",
+        "albumId": "29218",
+        "albumName": "魔杰座",
+        "_raw": {
+          "MUSICRID": "MUSIC_440613",
+          "SONGNAME": "稻香",
+          "ARTIST": "周杰伦",
+          "ALBUMID": "29218",
+          "DURATION": "223"
+        }
+      },
+      {
+        "source": "kw",
+        "songmid": "440616",
+        "name": "兰亭序",
+        "singer": "周杰伦",
+        "albumId": "29218",
+        "albumName": "魔杰座",
+        "_raw": {
+          "MUSICRID": "MUSIC_440616",
+          "SONGNAME": "兰亭序",
+          "ARTIST": "周杰伦",
+          "ALBUMID": "29218",
+          "DURATION": "253"
+        }
+      },
+      {
+        "source": "kw",
+        "songmid": "6871880",
+        "name": "一路向北",
+        "singer": "周杰伦",
+        "albumId": "539848",
+        "albumName": "J III MP3 Player",
+        "_raw": {
+          "MUSICRID": "MUSIC_6871880",
+          "SONGNAME": "一路向北",
+          "ARTIST": "周杰伦",
+          "ALBUMID": "539848",
+          "DURATION": "294"
+        }
+      },
+      {
+        "source": "kw",
+        "songmid": "440615",
+        "name": "花海",
+        "singer": "周杰伦",
+        "albumId": "29218",
+        "albumName": "魔杰座",
+        "_raw": {
+          "MUSICRID": "MUSIC_440615",
+          "SONGNAME": "花海",
+          "ARTIST": "周杰伦",
+          "ALBUMID": "29218",
+          "DURATION": "264"
+        }
+      },
+      {
+        "source": "kw",
+        "songmid": "118987",
+        "name": "枫",
+        "singer": "周杰伦",
+        "albumId": "14466",
+        "albumName": "十一月的萧邦",
+        "_raw": {
+          "MUSICRID": "MUSIC_118987",
+          "SONGNAME": "枫",
+          "ARTIST": "周杰伦",
+          "ALBUMID": "14466",
+          "DURATION": "275"
+        }
+      },
+      {
+        "source": "kw",
+        "songmid": "550531860",
+        "name": "那天下雨了",
+        "singer": "周杰伦",
+        "albumId": "87758985",
+        "albumName": "太阳之子",
+        "_raw": {
+          "MUSICRID": "MUSIC_550531860",
+          "SONGNAME": "那天下雨了",
+          "ARTIST": "周杰伦",
+          "ALBUMID": "87758985",
+          "DURATION": "223"
+        }
+      },
+      {
+        "source": "kw",
+        "songmid": "118990",
+        "name": "发如雪",
+        "singer": "周杰伦",
+        "albumId": "14466",
+        "albumName": "十一月的萧邦",
+        "_raw": {
+          "MUSICRID": "MUSIC_118990",
+          "SONGNAME": "发如雪",
+          "ARTIST": "周杰伦",
+          "ALBUMID": "14466",
+          "DURATION": "299"
+        }
+      },
+      {
+        "source": "kw",
+        "songmid": "235498",
+        "name": "半岛铁盒",
+        "singer": "周杰伦",
+        "albumId": "1290",
+        "albumName": "八度空间",
+        "_raw": {
+          "MUSICRID": "MUSIC_235498",
+          "SONGNAME": "半岛铁盒",
+          "ARTIST": "周杰伦",
+          "ALBUMID": "1290",
+          "DURATION": "319"
+        }
+      },
+      {
+        "source": "kw",
+        "songmid": "324243",
+        "name": "蒲公英的约定",
+        "singer": "周杰伦",
+        "albumId": "12449",
+        "albumName": "我很忙",
+        "_raw": {
+          "MUSICRID": "MUSIC_324243",
+          "SONGNAME": "蒲公英的约定",
+          "ARTIST": "周杰伦",
+          "ALBUMID": "12449",
+          "DURATION": "247"
+        }
+      },
+      {
+        "source": "kw",
+        "songmid": "440623",
+        "name": "说好的幸福呢",
+        "singer": "周杰伦",
+        "albumId": "29218",
+        "albumName": "魔杰座",
+        "_raw": {
+          "MUSICRID": "MUSIC_440623",
+          "SONGNAME": "说好的幸福呢",
+          "ARTIST": "周杰伦",
+          "ALBUMID": "29218",
+          "DURATION": "256"
+        }
+      },
+      {
+        "source": "kw",
+        "songmid": "588552",
+        "name": "爱在西元前",
+        "singer": "周杰伦",
+        "albumId": "1287",
+        "albumName": "范特西",
+        "_raw": {
+          "MUSICRID": "MUSIC_588552",
+          "SONGNAME": "爱在西元前",
+          "ARTIST": "周杰伦",
+          "ALBUMID": "1287",
+          "DURATION": "234"
+        }
+      },
+      {
+        "source": "kw",
+        "songmid": "728677",
+        "name": "烟花易冷",
+        "singer": "周杰伦",
+        "albumId": "49449",
+        "albumName": "跨时代",
+        "_raw": {
+          "MUSICRID": "MUSIC_728677",
+          "SONGNAME": "烟花易冷",
+          "ARTIST": "周杰伦",
+          "ALBUMID": "49449",
+          "DURATION": "263"
+        }
+      },
+      {
+        "source": "kw",
+        "songmid": "3197116",
+        "name": "明明就",
+        "singer": "周杰伦",
+        "albumId": "264333",
+        "albumName": "十二新作",
+        "_raw": {
+          "MUSICRID": "MUSIC_3197116",
+          "SONGNAME": "明明就",
+          "ARTIST": "周杰伦",
+          "ALBUMID": "264333",
+          "DURATION": "260"
+        }
+      }
+    ],
+    "kg": [
+      {
+        "source": "kg",
+        "songmid": 20505418,
+        "hash": "B3A52A7A958BF0AED0EBFBA2E9A818B7",
+        "name": "晴天",
+        "singer": "周杰伦",
+        "albumId": "966846",
+        "albumName": "叶惠美",
+        "_raw": {
+          "Audioid": 20505418,
+          "FileHash": "B3A52A7A958BF0AED0EBFBA2E9A818B7",
+          "SongName": "晴天",
+          "AlbumID": "966846"
+        }
+      },
+      {
+        "source": "kg",
+        "songmid": 332453,
+        "hash": "8909E1809908CD8E3BF6CF85D98B93F0",
+        "name": "稻香",
+        "singer": "周杰伦",
+        "albumId": "960399",
+        "albumName": "魔杰座",
+        "_raw": {
+          "Audioid": 332453,
+          "FileHash": "8909E1809908CD8E3BF6CF85D98B93F0",
+          "SongName": "稻香",
+          "AlbumID": "960399"
+        }
+      },
+      {
+        "source": "kg",
+        "songmid": 298691834,
+        "hash": "85852CFBFF0C3E4F35985C5706FEFA3D",
+        "name": "稻香",
+        "singer": "周杰伦",
+        "albumId": "533695",
+        "albumName": "巨星金曲",
+        "_raw": {
+          "Audioid": 298691834,
+          "FileHash": "85852CFBFF0C3E4F35985C5706FEFA3D",
+          "SongName": "稻香",
+          "AlbumID": "533695"
+        }
+      },
+      {
+        "source": "kg",
+        "songmid": 254112,
+        "hash": "8141FAA45AAD5BCFF5FF9873B89709E3",
+        "name": "搁浅",
+        "singer": "周杰伦",
+        "albumId": "971783",
+        "albumName": "七里香",
+        "_raw": {
+          "Audioid": 254112,
+          "FileHash": "8141FAA45AAD5BCFF5FF9873B89709E3",
+          "SongName": "搁浅",
+          "AlbumID": "971783"
+        }
+      },
+      {
+        "source": "kg",
+        "songmid": 339796,
+        "hash": "37A8F50A9EC3B267C3CC6BEC633D9C4A",
+        "name": "青花瓷",
+        "singer": "周杰伦",
+        "albumId": "979856",
+        "albumName": "我很忙",
+        "_raw": {
+          "Audioid": 339796,
+          "FileHash": "37A8F50A9EC3B267C3CC6BEC633D9C4A",
+          "SongName": "青花瓷",
+          "AlbumID": "979856"
+        }
+      },
+      {
+        "source": "kg",
+        "songmid": 298693754,
+        "hash": "E62D487FAC0C438A66FD7A52F8451F9D",
+        "name": "青花瓷",
+        "singer": "周杰伦",
+        "albumId": "1740508",
+        "albumName": "爱在飞翔",
+        "_raw": {
+          "Audioid": 298693754,
+          "FileHash": "E62D487FAC0C438A66FD7A52F8451F9D",
+          "SongName": "青花瓷",
+          "AlbumID": "1740508"
+        }
+      },
+      {
+        "source": "kg",
+        "songmid": 832771,
+        "hash": "A14373681262867AB43FEF5467F4CC1D",
+        "name": "蒲公英的约定",
+        "singer": "周杰伦",
+        "albumId": "979856",
+        "albumName": "我很忙",
+        "_raw": {
+          "Audioid": 832771,
+          "FileHash": "A14373681262867AB43FEF5467F4CC1D",
+          "SongName": "蒲公英的约定",
+          "AlbumID": "979856"
+        }
+      },
+      {
+        "source": "kg",
+        "songmid": 582129,
+        "hash": "48729371F20FB048EF4E51D4CD41DBF5",
+        "name": "红尘客栈",
+        "singer": "周杰伦",
+        "albumId": "982051",
+        "albumName": "十二新作",
+        "_raw": {
+          "Audioid": 582129,
+          "FileHash": "48729371F20FB048EF4E51D4CD41DBF5",
+          "SongName": "红尘客栈",
+          "AlbumID": "982051"
+        }
+      },
+      {
+        "source": "kg",
+        "songmid": 2561552,
+        "hash": "9218D81686C6AC681BC7CA621958AD6D",
+        "name": "七里香",
+        "singer": "周杰伦",
+        "albumId": "971783",
+        "albumName": "七里香",
+        "_raw": {
+          "Audioid": 2561552,
+          "FileHash": "9218D81686C6AC681BC7CA621958AD6D",
+          "SongName": "七里香",
+          "AlbumID": "971783"
+        }
+      },
+      {
+        "source": "kg",
+        "songmid": 298694008,
+        "hash": "76CA0266368053FF51EB8DF41D0CF1E1",
+        "name": "七里香",
+        "singer": "周杰伦",
+        "albumId": "885424",
+        "albumName": "心情出口",
+        "_raw": {
+          "Audioid": 298694008,
+          "FileHash": "76CA0266368053FF51EB8DF41D0CF1E1",
+          "SongName": "七里香",
+          "AlbumID": "885424"
+        }
+      },
+      {
+        "source": "kg",
+        "songmid": 167645,
+        "hash": "4EC10B1B7B9BEB2F0ADB89BBEC5F664B",
+        "name": "兰亭序",
+        "singer": "周杰伦",
+        "albumId": "960399",
+        "albumName": "魔杰座",
+        "_raw": {
+          "Audioid": 167645,
+          "FileHash": "4EC10B1B7B9BEB2F0ADB89BBEC5F664B",
+          "SongName": "兰亭序",
+          "AlbumID": "960399"
+        }
+      },
+      {
+        "source": "kg",
+        "songmid": 338638,
+        "hash": "16C8AB298231370293D16BCF9E5FF9B6",
+        "name": "夜曲",
+        "singer": "周杰伦",
+        "albumId": "958909",
+        "albumName": "十一月的萧邦",
+        "_raw": {
+          "Audioid": 338638,
+          "FileHash": "16C8AB298231370293D16BCF9E5FF9B6",
+          "SongName": "夜曲",
+          "AlbumID": "958909"
+        }
+      },
+      {
+        "source": "kg",
+        "songmid": 338638,
+        "hash": "F68DDC4048A40D82DD2594A294F4BAF7",
+        "name": "夜曲",
+        "singer": "周杰伦",
+        "albumId": "555888",
+        "albumName": "寂寞边境 月光爱人 情歌精选",
+        "_raw": {
+          "Audioid": 338638,
+          "FileHash": "F68DDC4048A40D82DD2594A294F4BAF7",
+          "SongName": "夜曲",
+          "AlbumID": "555888"
+        }
+      },
+      {
+        "source": "kg",
+        "songmid": 316558,
+        "hash": "0D7E8C11C961A17EB8779FEB0CA772E3",
+        "name": "枫",
+        "singer": "周杰伦",
+        "albumId": "958909",
+        "albumName": "十一月的萧邦",
+        "_raw": {
+          "Audioid": 316558,
+          "FileHash": "0D7E8C11C961A17EB8779FEB0CA772E3",
+          "SongName": "枫",
+          "AlbumID": "958909"
+        }
+      },
+      {
+        "source": "kg",
+        "songmid": 298888513,
+        "hash": "F73F22FB046CA1A135C70417163AF82E",
+        "name": "一路向北",
+        "singer": "周杰伦",
+        "albumId": "1739223",
+        "albumName": "J III MP3 Player",
+        "_raw": {
+          "Audioid": 298888513,
+          "FileHash": "F73F22FB046CA1A135C70417163AF82E",
+          "SongName": "一路向北",
+          "AlbumID": "1739223"
+        }
+      },
+      {
+        "source": "kg",
+        "songmid": 327803,
+        "hash": "FAF6B9ADBB45D17D7B00DA79A16BB333",
+        "name": "一路向北",
+        "singer": "周杰伦",
+        "albumId": "958909",
+        "albumName": "十一月的萧邦",
+        "_raw": {
+          "Audioid": 327803,
+          "FileHash": "FAF6B9ADBB45D17D7B00DA79A16BB333",
+          "SongName": "一路向北",
+          "AlbumID": "958909"
+        }
+      },
+      {
+        "source": "kg",
+        "songmid": 301293698,
+        "hash": "688857974673645CE89EDA26A36DB19D",
+        "name": "告白气球",
+        "singer": "周杰伦",
+        "albumId": "1645030",
+        "albumName": "周杰伦的床边故事",
+        "_raw": {
+          "Audioid": 301293698,
+          "FileHash": "688857974673645CE89EDA26A36DB19D",
+          "SongName": "告白气球",
+          "AlbumID": "1645030"
+        }
+      },
+      {
+        "source": "kg",
+        "songmid": 338517,
+        "hash": "892B7AD62499C97A1A994454423E30F6",
+        "name": "说好的幸福呢",
+        "singer": "周杰伦",
+        "albumId": "960399",
+        "albumName": "魔杰座",
+        "_raw": {
+          "Audioid": 338517,
+          "FileHash": "892B7AD62499C97A1A994454423E30F6",
+          "SongName": "说好的幸福呢",
+          "AlbumID": "960399"
+        }
+      },
+      {
+        "source": "kg",
+        "songmid": 339589,
+        "hash": "1F7E7659B9FFF4FB6F71562A61BBC25F",
+        "name": "发如雪",
+        "singer": "周杰伦",
+        "albumId": "958909",
+        "albumName": "十一月的萧邦",
+        "_raw": {
+          "Audioid": 339589,
+          "FileHash": "1F7E7659B9FFF4FB6F71562A61BBC25F",
+          "SongName": "发如雪",
+          "AlbumID": "958909"
+        }
+      },
+      {
+        "source": "kg",
+        "songmid": 327075,
+        "hash": "3328808CECBD1A1038166003840FDDD7",
+        "name": "花海",
+        "singer": "周杰伦",
+        "albumId": "960399",
+        "albumName": "魔杰座",
+        "_raw": {
+          "Audioid": 327075,
+          "FileHash": "3328808CECBD1A1038166003840FDDD7",
+          "SongName": "花海",
+          "AlbumID": "960399"
+        }
+      },
+      {
+        "source": "kg",
+        "songmid": 316913,
+        "hash": "5971DE0B235D5B2708D6A6FEB3D31B6F",
+        "name": "退后",
+        "singer": "周杰伦",
+        "albumId": "965291",
+        "albumName": "依然范特西",
+        "_raw": {
+          "Audioid": 316913,
+          "FileHash": "5971DE0B235D5B2708D6A6FEB3D31B6F",
+          "SongName": "退后",
+          "AlbumID": "965291"
+        }
+      },
+      {
+        "source": "kg",
+        "songmid": 301308595,
+        "hash": "C655BA959838B5B88F7DB56712B06AD6",
+        "name": "退后",
+        "singer": "周杰伦",
+        "albumId": "2397486",
+        "albumName": "2006年第41周华语歌曲排行TOP20",
+        "_raw": {
+          "Audioid": 301308595,
+          "FileHash": "C655BA959838B5B88F7DB56712B06AD6",
+          "SongName": "退后",
+          "AlbumID": "2397486"
+        }
+      },
+      {
+        "source": "kg",
+        "songmid": 582068,
+        "hash": "D85C14E02008B7A2F97D55CDC29C2221",
+        "name": "明明就",
+        "singer": "周杰伦",
+        "albumId": "982051",
+        "albumName": "十二新作",
+        "_raw": {
+          "Audioid": 582068,
+          "FileHash": "D85C14E02008B7A2F97D55CDC29C2221",
+          "SongName": "明明就",
+          "AlbumID": "982051"
+        }
+      },
+      {
+        "source": "kg",
+        "songmid": 328215,
+        "hash": "237FD34BF80D05228D4A43F6CD5BEECF",
+        "name": "给我一首歌的时间",
+        "singer": "周杰伦",
+        "albumId": "960399",
+        "albumName": "魔杰座",
+        "_raw": {
+          "Audioid": 328215,
+          "FileHash": "237FD34BF80D05228D4A43F6CD5BEECF",
+          "SongName": "给我一首歌的时间",
+          "AlbumID": "960399"
+        }
+      },
+      {
+        "source": "kg",
+        "songmid": 728206,
+        "hash": "90E34F0C582168E7EA857915771AB220",
+        "name": "珊瑚海",
+        "singer": "周杰伦、Lara梁心颐",
+        "albumId": "958909",
+        "albumName": "十一月的萧邦",
+        "_raw": {
+          "Audioid": 728206,
+          "FileHash": "90E34F0C582168E7EA857915771AB220",
+          "SongName": "珊瑚海",
+          "AlbumID": "958909"
+        }
+      },
+      {
+        "source": "kg",
+        "songmid": 234181155,
+        "hash": "68ACF273549AD5DADC3A90A07A386AF0",
+        "name": "珊瑚海",
+        "singer": "Lara梁心颐、周杰伦",
+        "albumId": "2590774",
+        "albumName": "下雨天",
+        "_raw": {
+          "Audioid": 234181155,
+          "FileHash": "68ACF273549AD5DADC3A90A07A386AF0",
+          "SongName": "珊瑚海",
+          "AlbumID": "2590774"
+        }
+      },
+      {
+        "source": "kg",
+        "songmid": 728206,
+        "hash": "E1C4FFE8A623AB88421CAB8F110FB42D",
+        "name": "珊瑚海",
+        "singer": "周杰伦、Lara梁心颐",
+        "albumId": "535116",
+        "albumName": "绝赞K情歌",
+        "_raw": {
+          "Audioid": 728206,
+          "FileHash": "E1C4FFE8A623AB88421CAB8F110FB42D",
+          "SongName": "珊瑚海",
+          "AlbumID": "535116"
+        }
+      },
+      {
+        "source": "kg",
+        "songmid": 327516,
+        "hash": "2F6D441163A92AEE5E52B8E94F36A3C7",
+        "name": "最长的电影",
+        "singer": "周杰伦",
+        "albumId": "979856",
+        "albumName": "我很忙",
+        "_raw": {
+          "Audioid": 327516,
+          "FileHash": "2F6D441163A92AEE5E52B8E94F36A3C7",
+          "SongName": "最长的电影",
+          "AlbumID": "979856"
+        }
+      }
+    ],
+    "tx": [
+      {
+        "source": "tx",
+        "songmid": "0039MnYb0qxYhV",
+        "songId": 97773,
+        "strMediaMid": "003Qui1q2u1Zho",
+        "name": "晴天",
+        "singer": "周杰伦",
+        "albumId": "000MkMni19ClKG",
+        "albumName": "叶惠美",
+        "_raw": {
+          "mid": "0039MnYb0qxYhV",
+          "id": 97773,
+          "media_mid": "003Qui1q2u1Zho",
+          "name": "晴天",
+          "interval": 269
+        }
+      },
+      {
+        "source": "tx",
+        "songmid": "001Bbywq2gicae",
+        "songId": 102065750,
+        "strMediaMid": "004UlK9x0jeuow",
+        "name": "搁浅",
+        "singer": "周杰伦",
+        "albumId": "003DFRzD192KKD",
+        "albumName": "七里香",
+        "_raw": {
+          "mid": "001Bbywq2gicae",
+          "id": 102065750,
+          "media_mid": "004UlK9x0jeuow",
+          "name": "搁浅",
+          "interval": 240
+        }
+      },
+      {
+        "source": "tx",
+        "songmid": "003xv4w313tZHV",
+        "songId": 5177680,
+        "strMediaMid": "000d5VXa1mFK4G",
+        "name": "红尘客栈",
+        "singer": "周杰伦",
+        "albumId": "003Ow85E3pnoqi",
+        "albumName": "十二新作",
+        "_raw": {
+          "mid": "003xv4w313tZHV",
+          "id": 5177680,
+          "media_mid": "000d5VXa1mFK4G",
+          "name": "红尘客栈",
+          "interval": 274
+        }
+      },
+      {
+        "source": "tx",
+        "songmid": "002qU5aY3Qu24y",
+        "songId": 410316,
+        "strMediaMid": "0015zR8B3gjJLl",
+        "name": "青花瓷",
+        "singer": "周杰伦",
+        "albumId": "002eFUFm2XYZ7z",
+        "albumName": "我很忙",
+        "_raw": {
+          "mid": "002qU5aY3Qu24y",
+          "id": 410316,
+          "media_mid": "0015zR8B3gjJLl",
+          "name": "青花瓷",
+          "interval": 239
+        }
+      },
+      {
+        "source": "tx",
+        "songmid": "003aAYrm3GE0Ac",
+        "songId": 449205,
+        "strMediaMid": "0020wJDo3cx0j3",
+        "name": "稻香",
+        "singer": "周杰伦",
+        "albumId": "002Neh8l0uciQZ",
+        "albumName": "魔杰座",
+        "_raw": {
+          "mid": "003aAYrm3GE0Ac",
+          "id": 449205,
+          "media_mid": "0020wJDo3cx0j3",
+          "name": "稻香",
+          "interval": 223
+        }
+      },
+      {
+        "source": "tx",
+        "songmid": "0044SaFh0apuR2",
+        "songId": 649556362,
+        "strMediaMid": "0044SaFh0apuR2",
+        "name": "那天下雨了",
+        "singer": "周杰伦",
+        "albumId": "0041WVfh2vtlJE",
+        "albumName": "太阳之子",
+        "_raw": {
+          "mid": "0044SaFh0apuR2",
+          "id": 649556362,
+          "media_mid": "0044SaFh0apuR2",
+          "name": "那天下雨了",
+          "interval": 223
+        }
+      },
+      {
+        "source": "tx",
+        "songmid": "003OUlho2HcRHC",
+        "songId": 107192078,
+        "strMediaMid": "003gbY6c0g1L4Q",
+        "name": "告白气球",
+        "singer": "周杰伦",
+        "albumId": "003RMaRI1iFoYd",
+        "albumName": "周杰伦的床边故事",
+        "_raw": {
+          "mid": "003OUlho2HcRHC",
+          "id": 107192078,
+          "media_mid": "003gbY6c0g1L4Q",
+          "name": "告白气球",
+          "interval": 215
+        }
+      },
+      {
+        "source": "tx",
+        "songmid": "004Z8Ihr0JIu5s",
+        "songId": 102065756,
+        "strMediaMid": "0012Ez0a1tFcOI",
+        "name": "七里香",
+        "singer": "周杰伦",
+        "albumId": "003DFRzD192KKD",
+        "albumName": "七里香",
+        "_raw": {
+          "mid": "004Z8Ihr0JIu5s",
+          "id": 102065756,
+          "media_mid": "0012Ez0a1tFcOI",
+          "name": "七里香",
+          "interval": 299
+        }
+      },
+      {
+        "source": "tx",
+        "songmid": "001xd0HI0X9GNq",
+        "songId": 5105986,
+        "strMediaMid": "003jT4SU22clE5",
+        "name": "一路向北",
+        "singer": "周杰伦",
+        "albumId": "002MAeob3zLXwZ",
+        "albumName": "J III MP3 Player",
+        "_raw": {
+          "mid": "001xd0HI0X9GNq",
+          "id": 5105986,
+          "media_mid": "003jT4SU22clE5",
+          "name": "一路向北",
+          "interval": 294
+        }
+      },
+      {
+        "source": "tx",
+        "songmid": "00128N3r2SYKMF",
+        "songId": 449201,
+        "strMediaMid": "003VLsik0ztbIb",
+        "name": "兰亭序",
+        "singer": "周杰伦",
+        "albumId": "002Neh8l0uciQZ",
+        "albumName": "魔杰座",
+        "_raw": {
+          "mid": "00128N3r2SYKMF",
+          "id": 449201,
+          "media_mid": "003VLsik0ztbIb",
+          "name": "兰亭序",
+          "interval": 253
+        }
+      },
+      {
+        "source": "tx",
+        "songmid": "003KtYhg4frNXC",
+        "songId": 718479,
+        "strMediaMid": "0044M6Un0RXph2",
+        "name": "枫",
+        "singer": "周杰伦",
+        "albumId": "0024bjiL2aocxT",
+        "albumName": "十一月的萧邦",
+        "_raw": {
+          "mid": "003KtYhg4frNXC",
+          "id": 718479,
+          "media_mid": "0044M6Un0RXph2",
+          "name": "枫",
+          "interval": 275
+        }
+      },
+      {
+        "source": "tx",
+        "songmid": "001zMQr71F1Qo8",
+        "songId": 718477,
+        "strMediaMid": "0024jrso28p8VA",
+        "name": "夜曲",
+        "singer": "周杰伦",
+        "albumId": "0024bjiL2aocxT",
+        "albumName": "十一月的萧邦",
+        "_raw": {
+          "mid": "001zMQr71F1Qo8",
+          "id": 718477,
+          "media_mid": "0024jrso28p8VA",
+          "name": "夜曲",
+          "interval": 226
+        }
+      },
+      {
+        "source": "tx",
+        "songmid": "000oW8J53xPhZA",
+        "songId": 3585884,
+        "strMediaMid": "001mxHU44PEhTP",
+        "name": "明明就",
+        "singer": "周杰伦",
+        "albumId": "003Ow85E3pnoqi",
+        "albumName": "十二新作",
+        "_raw": {
+          "mid": "000oW8J53xPhZA",
+          "id": 3585884,
+          "media_mid": "001mxHU44PEhTP",
+          "name": "明明就",
+          "interval": 260
+        }
+      },
+      {
+        "source": "tx",
+        "songmid": "003cI52o4daJJL",
+        "songId": 449198,
+        "strMediaMid": "003okWvo1qZu9c",
+        "name": "花海",
+        "singer": "周杰伦",
+        "albumId": "002Neh8l0uciQZ",
+        "albumName": "魔杰座",
+        "_raw": {
+          "mid": "003cI52o4daJJL",
+          "id": 449198,
+          "media_mid": "003okWvo1qZu9c",
+          "name": "花海",
+          "interval": 264
+        }
+      },
+      {
+        "source": "tx",
+        "songmid": "002OKIox28ad9a",
+        "songId": 97761,
+        "strMediaMid": "0019GXTz1OM6Wu",
+        "name": "半岛铁盒",
+        "singer": "周杰伦",
+        "albumId": "004MGitN0zEHpb",
+        "albumName": "八度空间",
+        "_raw": {
+          "mid": "002OKIox28ad9a",
+          "id": 97761,
+          "media_mid": "0019GXTz1OM6Wu",
+          "name": "半岛铁盒",
+          "interval": 319
+        }
+      },
+      {
+        "source": "tx",
+        "songmid": "0042QMDR1VzSsx",
+        "songId": 449200,
+        "strMediaMid": "001a8tgu4DggDy",
+        "name": "说好的幸福呢",
+        "singer": "周杰伦",
+        "albumId": "002Neh8l0uciQZ",
+        "albumName": "魔杰座",
+        "_raw": {
+          "mid": "0042QMDR1VzSsx",
+          "id": 449200,
+          "media_mid": "001a8tgu4DggDy",
+          "name": "说好的幸福呢",
+          "interval": 256
+        }
+      },
+      {
+        "source": "tx",
+        "songmid": "0027oMO61wWi55",
+        "songId": 718475,
+        "strMediaMid": "002A6j2q1tdUUP",
+        "name": "发如雪",
+        "singer": "周杰伦",
+        "albumId": "0024bjiL2aocxT",
+        "albumName": "十一月的萧邦",
+        "_raw": {
+          "mid": "0027oMO61wWi55",
+          "id": 718475,
+          "media_mid": "002A6j2q1tdUUP",
+          "name": "发如雪",
+          "interval": 299
+        }
+      },
+      {
+        "source": "tx",
+        "songmid": "001L1lqm4UAdyo",
+        "songId": 102066449,
+        "strMediaMid": "003mWw430UgYke",
+        "name": "退后",
+        "singer": "周杰伦",
+        "albumId": "002jLGWe16Tf1H",
+        "albumName": "依然范特西",
+        "_raw": {
+          "mid": "001L1lqm4UAdyo",
+          "id": 102066449,
+          "media_mid": "003mWw430UgYke",
+          "name": "退后",
+          "interval": 261
+        }
+      },
+      {
+        "source": "tx",
+        "songmid": "0022b7OX2STU86",
+        "songId": 680284,
+        "strMediaMid": "001Zeo1P4a5j0v",
+        "name": "我落泪情绪零碎",
+        "singer": "周杰伦",
+        "albumId": "000bviBl4FjTpO",
+        "albumName": "跨时代",
+        "_raw": {
+          "mid": "0022b7OX2STU86",
+          "id": 680284,
+          "media_mid": "001Zeo1P4a5j0v",
+          "name": "我落泪情绪零碎",
+          "interval": 257
+        }
+      },
+      {
+        "source": "tx",
+        "songmid": "004Yi5BD3ksoAN",
+        "songId": 102340965,
+        "strMediaMid": "00140o6q3Jvfzr",
+        "name": "蒲公英的约定",
+        "singer": "周杰伦",
+        "albumId": "002eFUFm2XYZ7z",
+        "albumName": "我很忙",
+        "_raw": {
+          "mid": "004Yi5BD3ksoAN",
+          "id": 102340965,
+          "media_mid": "00140o6q3Jvfzr",
+          "name": "蒲公英的约定",
+          "interval": 247
+        }
+      }
+    ],
+    "wy": [
+      {
+        "source": "wy",
+        "songmid": "509781655",
+        "name": "想你就写信 (Live)",
+        "singer": "周杰伦、李硕、张鑫",
+        "albumId": 36412633,
+        "albumName": "中国新歌声第二季 第13期",
+        "_raw": {
+          "id": 509781655,
+          "name": "想你就写信 (Live)",
+          "dt": 238698
+        }
+      },
+      {
+        "source": "wy",
+        "songmid": "5257138",
+        "name": "屋顶",
+        "singer": "周杰伦、温岚、吴宗宪",
+        "albumId": 512175,
+        "albumName": "男女情歌对唱冠军全记录",
+        "_raw": {
+          "id": 5257138,
+          "name": "屋顶",
+          "dt": 319039
+        }
+      },
+      {
+        "source": "wy",
+        "songmid": "210049",
+        "name": "布拉格广场",
+        "singer": "蔡依林、周杰伦",
+        "albumId": 21349,
+        "albumName": "看我72变",
+        "_raw": {
+          "id": 210049,
+          "name": "布拉格广场",
+          "dt": 294600
+        }
+      },
+      {
+        "source": "wy",
+        "songmid": "1888354230",
+        "name": "默 (Live)",
+        "singer": "李荣浩、周杰伦",
+        "albumId": 135010288,
+        "albumName": "2021中国好声音 第1期",
+        "_raw": {
+          "id": 1888354230,
+          "name": "默 (Live)",
+          "dt": 133290
+        }
+      },
+      {
+        "source": "wy",
+        "songmid": "490595315",
+        "name": "因为爱情 (Live)",
+        "singer": "周杰伦、那英",
+        "albumId": 35757091,
+        "albumName": "中国新歌声第二季 第1期",
+        "_raw": {
+          "id": 490595315,
+          "name": "因为爱情 (Live)",
+          "dt": 202051
+        }
+      },
+      {
+        "source": "wy",
+        "songmid": "255020",
+        "name": "刀马旦",
+        "singer": "李玟、周杰伦",
+        "albumId": 25475,
+        "albumName": "Promise",
+        "_raw": {
+          "id": 255020,
+          "name": "刀马旦",
+          "dt": 192075
+        }
+      },
+      {
+        "source": "wy",
+        "songmid": "490602328",
+        "name": "沧海一声笑 (Live)",
+        "singer": "那英、周杰伦、刘欢、陈奕迅",
+        "albumId": 35757091,
+        "albumName": "中国新歌声第二季 第1期",
+        "_raw": {
+          "id": 490602328,
+          "name": "沧海一声笑 (Live)",
+          "dt": 177783
+        }
+      },
+      {
+        "source": "wy",
+        "songmid": "490602323",
+        "name": "一笑而过 + 你的背包 (Live)",
+        "singer": "周杰伦、刘欢",
+        "albumId": 35757091,
+        "albumName": "中国新歌声第二季 第1期",
+        "_raw": {
+          "id": 490602323,
+          "name": "一笑而过 + 你的背包 (Live)",
+          "dt": 167391
+        }
+      },
+      {
+        "source": "wy",
+        "songmid": "288750",
+        "name": "山歌好比春江水.多谢了(Live)",
+        "singer": "宋祖英、周杰伦",
+        "albumId": 28650,
+        "albumName": "中国北京鸟巢夏季音乐会",
+        "_raw": {
+          "id": 288750,
+          "name": "山歌好比春江水.多谢了(Live)",
+          "dt": 287333
+        }
+      },
+      {
+        "source": "wy",
+        "songmid": "1317494434",
+        "name": "屋顶 (Live)",
+        "singer": "周杰伦、宿涵、张神儿",
+        "albumId": 73876816,
+        "albumName": "2018中国好声音 澳门演唱会",
+        "_raw": {
+          "id": 1317494434,
+          "name": "屋顶 (Live)",
+          "dt": 312949
+        }
+      },
+      {
+        "source": "wy",
+        "songmid": "209917",
+        "name": "海盗",
+        "singer": "蔡依林、周杰伦",
+        "albumId": 21343,
+        "albumName": "城堡",
+        "_raw": {
+          "id": 209917,
+          "name": "海盗",
+          "dt": 277347
+        }
+      },
+      {
+        "source": "wy",
+        "songmid": "210062",
+        "name": "骑士精神",
+        "singer": "蔡依林、周杰伦",
+        "albumId": 21349,
+        "albumName": "看我72变",
+        "_raw": {
+          "id": 210062,
+          "name": "骑士精神",
+          "dt": 257572
+        }
+      },
+      {
+        "source": "wy",
+        "songmid": "400161754",
+        "name": "刀马旦",
+        "singer": "李玟、周杰伦",
+        "albumId": 34429091,
+        "albumName": "爱舞炫 盛装舞曲精选",
+        "_raw": {
+          "id": 400161754,
+          "name": "刀马旦",
+          "dt": 192075
+        }
+      },
+      {
+        "source": "wy",
+        "songmid": "400876427",
+        "name": "Try (Kung Fu Panda 3 Official Theme Song)",
+        "singer": "派伟俊、周杰伦",
+        "albumId": 34439096,
+        "albumName": "Kung Fu Panda 3 (Music from the Motion Picture)",
+        "_raw": {
+          "id": 400876427,
+          "name": "Try (Kung Fu Panda 3 Official Theme Song)",
+          "dt": 240313
+        }
+      },
+      {
+        "source": "wy",
+        "songmid": "400162858",
+        "name": "布拉格广场",
+        "singer": "蔡依林、周杰伦",
+        "albumId": 34429108,
+        "albumName": "J女神 影音典藏精选",
+        "_raw": {
+          "id": 400162858,
+          "name": "布拉格广场",
+          "dt": 294600
+        }
+      },
+      {
+        "source": "wy",
+        "songmid": "866049359",
+        "name": "让我一次爱个够 + 因为爱所以爱 + 抚仙湖 + 等你下课 + 霍元甲 + 万里长城永不倒 (Live)",
+        "singer": "庾澄庆、周杰伦、谢霆锋、李健",
+        "albumId": 71747366,
+        "albumName": "2018中国好声音 第1期",
+        "_raw": {
+          "id": 866049359,
+          "name": "让我一次爱个够 + 因为爱所以爱 + 抚仙湖 + 等你下课 + 霍元甲 + 万里长城永不倒 (Live)",
+          "dt": 712240
+        }
+      },
+      {
+        "source": "wy",
+        "songmid": "509781651",
+        "name": "乌克丽丽 (Live)",
+        "singer": "周杰伦、陈颖恩、肖邦妮、朱文婷",
+        "albumId": 36412633,
+        "albumName": "中国新歌声第二季 第13期",
+        "_raw": {
+          "id": 509781651,
+          "name": "乌克丽丽 (Live)",
+          "dt": 193290
+        }
+      },
+      {
+        "source": "wy",
+        "songmid": "400579242",
+        "name": "骑士精神",
+        "singer": "蔡依林、周杰伦",
+        "albumId": 34432052,
+        "albumName": "星座圣典",
+        "_raw": {
+          "id": 400579242,
+          "name": "骑士精神",
+          "dt": 257572
+        }
+      },
+      {
+        "source": "wy",
+        "songmid": "5257160",
+        "name": "刀马旦",
+        "singer": "周杰伦、李玟",
+        "albumId": 512175,
+        "albumName": "男女情歌对唱冠军全记录",
+        "_raw": {
+          "id": 5257160,
+          "name": "刀马旦",
+          "dt": 192075
+        }
+      },
+      {
+        "source": "wy",
+        "songmid": "518076026",
+        "name": "黄浦江深",
+        "singer": "宋祖英、周杰伦",
+        "albumId": 36774064,
+        "albumName": "宋祖英演唱精选集",
+        "_raw": {
+          "id": 518076026,
+          "name": "黄浦江深",
+          "dt": 242506
+        }
+      }
+    ],
+    "mg": [
+      {
+        "source": "mg",
+        "songmid": "1140505222",
+        "copyrightId": "60054704965",
+        "name": "圣诞星（feat. 杨瑞代）",
+        "singer": "周杰伦",
+        "albumId": "1140505221",
+        "albumName": "圣诞星",
+        "_raw": {
+          "songId": "1140505222",
+          "copyrightId": "60054704965",
+          "name": "圣诞星（feat. 杨瑞代）",
+          "albumId": "1140505221"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "1142543097",
+        "copyrightId": "6902739Z01T",
+        "name": "圣诞星 (feat. 杨瑞代)",
+        "singer": "周杰伦、杨瑞代",
+        "albumId": "1142521343",
+        "albumName": "太阳之子",
+        "_raw": {
+          "songId": "1142543097",
+          "copyrightId": "6902739Z01T",
+          "name": "圣诞星 (feat. 杨瑞代)",
+          "albumId": "1142521343"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "6868",
+        "copyrightId": "60054701941",
+        "name": "我的地盘",
+        "singer": "周杰伦",
+        "albumId": "7949",
+        "albumName": "七里香",
+        "_raw": {
+          "songId": "6868",
+          "copyrightId": "60054701941",
+          "name": "我的地盘",
+          "albumId": "7949"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "1104959442",
+        "copyrightId": "60054704607",
+        "name": "我的地盘 (Live)",
+        "singer": "周杰伦",
+        "albumId": "23799",
+        "albumName": "周杰伦 2004 无与伦比 演唱会 Live CD",
+        "_raw": {
+          "songId": "1104959442",
+          "copyrightId": "60054704607",
+          "name": "我的地盘 (Live)",
+          "albumId": "23799"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "1140737137",
+        "copyrightId": "60054704382",
+        "name": "东风破(Album Version)",
+        "singer": "周杰伦",
+        "albumId": "1140736658",
+        "albumName": "星座圣典",
+        "_raw": {
+          "songId": "1140737137",
+          "copyrightId": "60054704382",
+          "name": "东风破(Album Version)",
+          "albumId": "1140736658"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "461",
+        "copyrightId": "60054701925",
+        "name": "东风破",
+        "singer": "周杰伦",
+        "albumId": "8592",
+        "albumName": "叶惠美",
+        "_raw": {
+          "songId": "461",
+          "copyrightId": "60054701925",
+          "name": "东风破",
+          "albumId": "8592"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "1140735594",
+        "copyrightId": "69025900033",
+        "name": "东风破",
+        "singer": "周杰伦",
+        "albumId": "1140735111",
+        "albumName": "乐来乐快乐 第8期",
+        "_raw": {
+          "songId": "1140735594",
+          "copyrightId": "69025900033",
+          "name": "东风破",
+          "albumId": "1140735111"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "1108661659",
+        "copyrightId": "60054704449",
+        "name": "东风破 (Live)",
+        "singer": "周杰伦",
+        "albumId": "1000002120",
+        "albumName": "The Era 2010 超时代演唱会",
+        "_raw": {
+          "songId": "1108661659",
+          "copyrightId": "60054704449",
+          "name": "东风破 (Live)",
+          "albumId": "1000002120"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "2446",
+        "copyrightId": "60054701890",
+        "name": "星晴",
+        "singer": "周杰伦",
+        "albumId": "1000001899",
+        "albumName": "Jay",
+        "_raw": {
+          "songId": "2446",
+          "copyrightId": "60054701890",
+          "name": "星晴",
+          "albumId": "1000001899"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "1108662150",
+        "copyrightId": "60054704549",
+        "name": "星晴 (Live)",
+        "singer": "周杰伦",
+        "albumId": "26187",
+        "albumName": "The One演唱会",
+        "_raw": {
+          "songId": "1108662150",
+          "copyrightId": "60054704549",
+          "name": "星晴 (Live)",
+          "albumId": "26187"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "1115764399",
+        "copyrightId": "60054704387",
+        "name": "简单爱",
+        "singer": "周杰伦",
+        "albumId": "7948",
+        "albumName": "范特西",
+        "_raw": {
+          "songId": "1115764399",
+          "copyrightId": "60054704387",
+          "name": "简单爱",
+          "albumId": "7948"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "1104959493",
+        "copyrightId": "60054704515",
+        "name": "简单爱  (Live)",
+        "singer": "周杰伦",
+        "albumId": "26187",
+        "albumName": "The One演唱会",
+        "_raw": {
+          "songId": "1104959493",
+          "copyrightId": "60054704515",
+          "name": "简单爱  (Live)",
+          "albumId": "26187"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "1104959447",
+        "copyrightId": "60054704503",
+        "name": "简单爱 (Live)",
+        "singer": "周杰伦",
+        "albumId": "23799",
+        "albumName": "周杰伦 2004 无与伦比 演唱会 Live CD",
+        "_raw": {
+          "songId": "1104959447",
+          "copyrightId": "60054704503",
+          "name": "简单爱 (Live)",
+          "albumId": "23799"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "1525",
+        "copyrightId": "60054701920",
+        "name": "最后的战役",
+        "singer": "周杰伦",
+        "albumId": "7947",
+        "albumName": "八度空间",
+        "_raw": {
+          "songId": "1525",
+          "copyrightId": "60054701920",
+          "name": "最后的战役",
+          "albumId": "7947"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "1104714236",
+        "copyrightId": "60054704416",
+        "name": "最后的战役 (Live)",
+        "singer": "周杰伦",
+        "albumId": "1115512805",
+        "albumName": "周杰伦魔天伦世界巡回演唱会",
+        "_raw": {
+          "songId": "1104714236",
+          "copyrightId": "60054704416",
+          "name": "最后的战役 (Live)",
+          "albumId": "1115512805"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "1108661453",
+        "copyrightId": "60054704597",
+        "name": "最后的战役 (Live)",
+        "singer": "周杰伦",
+        "albumId": "26187",
+        "albumName": "The One演唱会",
+        "_raw": {
+          "songId": "1108661453",
+          "copyrightId": "60054704597",
+          "name": "最后的战役 (Live)",
+          "albumId": "26187"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "1139607021",
+        "copyrightId": "6902739Z004",
+        "name": "说好不哭",
+        "singer": "周杰伦、五月天 阿信",
+        "albumId": "1139605801",
+        "albumName": "最伟大的作品",
+        "_raw": {
+          "songId": "1139607021",
+          "copyrightId": "6902739Z004",
+          "name": "说好不哭",
+          "albumId": "1139605801"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "3790007",
+        "copyrightId": "60054701923",
+        "name": "晴天",
+        "singer": "周杰伦",
+        "albumId": "8592",
+        "albumName": "叶惠美",
+        "_raw": {
+          "songId": "3790007",
+          "copyrightId": "60054701923",
+          "name": "晴天",
+          "albumId": "8592"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "1125329711",
+        "copyrightId": "60054704101",
+        "name": "晴天 (Live)",
+        "singer": "周杰伦",
+        "albumId": "1125329686",
+        "albumName": "周杰伦地表最强世界巡回演唱会",
+        "_raw": {
+          "songId": "1125329711",
+          "copyrightId": "60054704101",
+          "name": "晴天 (Live)",
+          "albumId": "1125329686"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "1104959437",
+        "copyrightId": "60054704576",
+        "name": "晴天 (Live)",
+        "singer": "周杰伦",
+        "albumId": "23799",
+        "albumName": "周杰伦 2004 无与伦比 演唱会 Live CD",
+        "_raw": {
+          "songId": "1104959437",
+          "copyrightId": "60054704576",
+          "name": "晴天 (Live)",
+          "albumId": "23799"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "1141456446",
+        "copyrightId": "60054704996",
+        "name": "即兴曲",
+        "singer": "周杰伦",
+        "albumId": "1141456456",
+        "albumName": "即兴曲",
+        "_raw": {
+          "songId": "1141456446",
+          "copyrightId": "60054704996",
+          "name": "即兴曲",
+          "albumId": "1141456456"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "714126",
+        "copyrightId": "60054702005",
+        "name": "说好的幸福呢",
+        "singer": "周杰伦",
+        "albumId": "25578",
+        "albumName": "魔杰座",
+        "_raw": {
+          "songId": "714126",
+          "copyrightId": "60054702005",
+          "name": "说好的幸福呢",
+          "albumId": "25578"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "1000018171",
+        "copyrightId": "60054703884",
+        "name": "哪里都是你",
+        "singer": "周杰伦",
+        "albumId": "1000012211",
+        "albumName": "十二新作",
+        "_raw": {
+          "songId": "1000018171",
+          "copyrightId": "60054703884",
+          "name": "哪里都是你",
+          "albumId": "1000012211"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "1104714232",
+        "copyrightId": "60054704447",
+        "name": "哪里都是你(Live)",
+        "singer": "周杰伦",
+        "albumId": "1115512805",
+        "albumName": "周杰伦魔天伦世界巡回演唱会",
+        "_raw": {
+          "songId": "1104714232",
+          "copyrightId": "60054704447",
+          "name": "哪里都是你(Live)",
+          "albumId": "1115512805"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "898576",
+        "copyrightId": "60054702006",
+        "name": "兰亭序",
+        "singer": "周杰伦",
+        "albumId": "25578",
+        "albumName": "魔杰座",
+        "_raw": {
+          "songId": "898576",
+          "copyrightId": "60054702006",
+          "name": "兰亭序",
+          "albumId": "25578"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "3888165",
+        "copyrightId": "60054700493",
+        "name": "说了再见 ",
+        "singer": "周杰伦",
+        "albumId": "63205",
+        "albumName": "跨时代",
+        "_raw": {
+          "songId": "3888165",
+          "copyrightId": "60054700493",
+          "name": "说了再见 ",
+          "albumId": "63205"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "1002150458",
+        "copyrightId": "6005479Z005",
+        "name": "美人鱼",
+        "singer": "周杰伦",
+        "albumId": "1002146147",
+        "albumName": "哎呦，不错哦",
+        "_raw": {
+          "songId": "1002150458",
+          "copyrightId": "6005479Z005",
+          "name": "美人鱼",
+          "albumId": "1002146147"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "1125329716",
+        "copyrightId": "60054704098",
+        "name": "美人鱼 (Live)",
+        "singer": "周杰伦",
+        "albumId": "1125329686",
+        "albumName": "周杰伦地表最强世界巡回演唱会",
+        "_raw": {
+          "songId": "1125329716",
+          "copyrightId": "60054704098",
+          "name": "美人鱼 (Live)",
+          "albumId": "1125329686"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "3215",
+        "copyrightId": "60054701958",
+        "name": "一路向北 (电影《头文字Ｄ》插曲)",
+        "singer": "周杰伦",
+        "albumId": "8591",
+        "albumName": "十一月的萧邦",
+        "_raw": {
+          "songId": "3215",
+          "copyrightId": "60054701958",
+          "name": "一路向北 (电影《头文字Ｄ》插曲)",
+          "albumId": "8591"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "1104714235",
+        "copyrightId": "60054704427",
+        "name": "一路向北(Live)",
+        "singer": "周杰伦",
+        "albumId": "1115512805",
+        "albumName": "周杰伦魔天伦世界巡回演唱会",
+        "_raw": {
+          "songId": "1104714235",
+          "copyrightId": "60054704427",
+          "name": "一路向北(Live)",
+          "albumId": "1115512805"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "3888182",
+        "copyrightId": "60054700492",
+        "name": "我落泪情绪零碎",
+        "singer": "周杰伦",
+        "albumId": "63205",
+        "albumName": "跨时代",
+        "_raw": {
+          "songId": "3888182",
+          "copyrightId": "60054700492",
+          "name": "我落泪情绪零碎",
+          "albumId": "63205"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "1002150541",
+        "copyrightId": "6005479Z009",
+        "name": "天涯过客",
+        "singer": "周杰伦",
+        "albumId": "1002146147",
+        "albumName": "哎呦，不错哦",
+        "_raw": {
+          "songId": "1002150541",
+          "copyrightId": "6005479Z009",
+          "name": "天涯过客",
+          "albumId": "1002146147"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "697066",
+        "copyrightId": "60054702010",
+        "name": "稻香",
+        "singer": "周杰伦",
+        "albumId": "25578",
+        "albumName": "魔杰座",
+        "_raw": {
+          "songId": "697066",
+          "copyrightId": "60054702010",
+          "name": "稻香",
+          "albumId": "25578"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "1125329710",
+        "copyrightId": "60054704102",
+        "name": "稻香 (Live)",
+        "singer": "周杰伦",
+        "albumId": "1125329686",
+        "albumName": "周杰伦地表最强世界巡回演唱会",
+        "_raw": {
+          "songId": "1125329710",
+          "copyrightId": "60054704102",
+          "name": "稻香 (Live)",
+          "albumId": "1125329686"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "1106865077",
+        "copyrightId": "60054704437",
+        "name": "稻香 (Live)",
+        "singer": "周杰伦",
+        "albumId": "1000002120",
+        "albumName": "The Era 2010 超时代演唱会",
+        "_raw": {
+          "songId": "1106865077",
+          "copyrightId": "60054704437",
+          "name": "稻香 (Live)",
+          "albumId": "1000002120"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "1000013849",
+        "copyrightId": "60054703845",
+        "name": "手语",
+        "singer": "周杰伦",
+        "albumId": "1000012211",
+        "albumName": "十二新作",
+        "_raw": {
+          "songId": "1000013849",
+          "copyrightId": "60054703845",
+          "name": "手语",
+          "albumId": "1000012211"
+        }
+      },
+      {
+        "source": "mg",
+        "songmid": "1104714234",
+        "copyrightId": "60054704469",
+        "name": "手语(Live)",
+        "singer": "周杰伦",
+        "albumId": "1115512805",
+        "albumName": "周杰伦魔天伦世界巡回演唱会",
+        "_raw": {
+          "songId": "1104714234",
+          "copyrightId": "60054704469",
+          "name": "手语(Live)",
+          "albumId": "1115512805"
+        }
+      }
+    ]
+  }
+}

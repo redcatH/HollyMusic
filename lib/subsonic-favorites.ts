@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server'
 import { formatSubsonicXML, createSubsonicResponse } from './subsonic'
 import favorites, { FavoriteItem } from './favorites'
-import dbAPI from './db'
 import { type AuthResult } from './auth'
 
 function parseListParam(raw: string | null): string[] {
@@ -9,22 +8,14 @@ function parseListParam(raw: string | null): string[] {
   return raw.split(/[,;\s]+/).map(s => s.trim()).filter(Boolean)
 }
 
-async function ensureSourceForSong(item: FavoriteItem) {
-  if (item.source) return item
-  
-  try {
-    const mi = await dbAPI.getMusicInfoBySongmid(item.itemId)
-    if (mi?.source) {
-      item.source = mi.source
-      console.log('[star] Resolved source for song', item.itemId, 'source:', item.source)
-    } else {
-      console.warn('[star] Could not resolve source for song', item.itemId)
-    }
-  } catch (err) {
-    console.warn('[star] Error resolving source for song', item.itemId, err)
-  }
-  
-  return item
+/**
+ * 从 `source-songmid` 复合 id 解析出 source。
+ * song id 统一为该格式（见 subsonic-search / subsonic-getstarred），source 为第一个 '-' 之前的部分。
+ */
+function parseSourceFromId(id: string): string | null {
+  if (!id.includes('-')) return null
+  const src = id.substring(0, id.indexOf('-'))
+  return src || null
 }
 
 export async function handleStar(request: NextRequest, authRes: AuthResult): Promise<Response> {
@@ -40,16 +31,14 @@ export async function handleStar(request: NextRequest, authRes: AuthResult): Pro
 
     const userId = authRes.user!.id
 
-    // Create song items - source must be resolved from database since client doesn't provide it
-    const items: FavoriteItem[] = ids.map(id => ({ itemType: 'song' as const, itemId: id, source: null }))
+    // song id 统一为 `source-songmid` 复合格式，直接从 id 解析出 source
+    const items: FavoriteItem[] = ids.map(id => ({
+      itemType: 'song' as const,
+      itemId: id,
+      source: parseSourceFromId(id),
+    }))
 
-    // Resolve source for all song items from database
-    const resolved: FavoriteItem[] = []
-    for (const it of items) {
-      resolved.push(await ensureSourceForSong(it))
-    }
-
-    const { created } = await favorites.starItems(userId, resolved)
+    const { created } = await favorites.starItems(userId, items)
     console.debug('[star] created:', created)
 
     const xml = formatSubsonicXML({ status: 'ok' })

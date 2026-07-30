@@ -57,19 +57,28 @@ export async function getMusicInfo(source: string, songmid: string): Promise<Mus
   }
 }
 
-export async function getMusicInfoBySongmid(songmid: string): Promise<MusicInfo | null> {
-  try {
-    const row = await prisma.musicInfo.findFirst({
-      where: {
-        songmid,
-      },
-    })
-    if (!row || !row.data) return null
-    return JSON.parse(row.data) as MusicInfo
-  } catch (e) {
-    console.warn('getMusicInfoBySongmid error', e)
-    return null
-  }
+/**
+ * 统一的 id → MusicInfo 解析入口。
+ *
+ * 对外 song id 统一为 `source-songmid` 复合格式（见 subsonic-search / subsonic-getstarred），
+ * 其中 songmid 为存储键（kg 用 FileHash，其他源用原 songmid，见 getStorageSongmid）。
+ * 本函数解析出 (source, songmid) 后走精确匹配 getMusicInfo（findUnique 复合唯一键），
+ * 不做全库模糊回退，保证 id → DB 记录的映射唯一正确，避免播错歌。
+ *
+ * 所有接口（stream/getSong/getCoverArt/getLyrics/getStarred/playlist）都通过此入口解析 id。
+ */
+export async function resolveMusicInfoById(id: string): Promise<MusicInfo | null> {
+  if (!id) return null
+
+  // 按 `source-songmid` 解析（source 为第一个 '-' 之前的部分）
+  // kg 的存储键 FileHash 是纯 hex 不含 '-'，其他源的 songmid 也都不含 '-'，故取第一个 '-' 即可
+  if (!id.includes('-')) return null
+  const idx = id.indexOf('-')
+  const src = id.substring(0, idx)
+  const mid = id.substring(idx + 1)
+  if (!src || !mid) return null
+
+  return getMusicInfo(src, mid)
 }
 
 export async function getFirstMusicInfoByAlbumId(albumId: string): Promise<MusicInfo | null> {
@@ -86,16 +95,50 @@ export async function getFirstMusicInfoByAlbumId(albumId: string): Promise<Music
   }
 }
 
+/**
+ * 计算用于 DB 查询/对外 id 的 songmid（存储键）。
+ *
+ * 关键设计：分离"原始数据"与"查询键"。
+ * - `data` 列存原始 musicInfo（songmid 保持各音源原值，如 kg 的 Audioid），
+ *   播放时从 data 列拉起原始数据，保证外部脚本拿到正确的结构。
+ * - `songmid` 列（复合唯一键的一部分、对外 id 的一部分）存"存储键"：
+ *   kg 源的 Audioid 不唯一（同一首歌多个版本 Audioid 相同但 FileHash 不同），
+ *   故 kg 用 FileHash 作存储键以保证 (source, songmid) 真正唯一；
+ *   其他源的原始 songmid 已唯一，直接用。
+ *
+ * 这样对外 id = `source-{存储songmid}`，resolveMusicInfoById 解析后用 (source, 存储songmid)
+ * 精确命中 DB 行，再从 data 列读出原始 musicInfo。
+ */
+function getStorageSongmid(mi: MusicInfo): string {
+  if (mi.source === 'kg') {
+    // kg 优先用 FileHash（唯一），回退到原 songmid
+    const hash = (mi as any).hash
+    if (hash) return String(hash)
+  }
+  return String(mi.songmid)
+}
+
+/**
+ * 计算对外 id 用的 songmid（存储键）。
+ * 供 search/getStarred 等输出 song id 时使用，保证 id 与 DB 的 songmid 列一致，
+ * 使 resolveMusicInfoById 能精确命中。
+ */
+export function getStorageSongmidForMusicInfo(mi: MusicInfo): string {
+  return getStorageSongmid(mi)
+}
+
 export async function upsertMusicInfo(mi: MusicInfo): Promise<{ action: 'insert' | 'update' | 'noop' }> {
   try {
     const checksum = computeChecksum(mi)
     const dataJson = JSON.stringify(mi)
+    // 存储键：kg 用 FileHash，其他源用原 songmid（详见 getStorageSongmid）
+    const storageSongmid = getStorageSongmid(mi)
 
     const existing = await prisma.musicInfo.findUnique({
       where: {
         source_songmid: {
           source: mi.source,
-          songmid: mi.songmid,
+          songmid: storageSongmid,
         },
       },
       select: {
@@ -112,7 +155,7 @@ export async function upsertMusicInfo(mi: MusicInfo): Promise<{ action: 'insert'
       await prisma.musicInfo.create({
         data: {
           source: mi.source,
-          songmid: mi.songmid,
+          songmid: storageSongmid,
           data: dataJson,
           checksum,
           // denormalized/searchable fields
@@ -158,7 +201,7 @@ export async function upsertMusicInfo(mi: MusicInfo): Promise<{ action: 'insert'
       where: {
         source_songmid: {
           source: mi.source,
-          songmid: mi.songmid,
+          songmid: storageSongmid,
         },
       },
       data: {
@@ -197,9 +240,9 @@ export async function upsertMusicInfo(mi: MusicInfo): Promise<{ action: 'insert'
 
 const dbAPI = {
   getMusicInfo,
-  getMusicInfoBySongmid,
   getFirstMusicInfoByAlbumId,
   upsertMusicInfo,
+  resolveMusicInfoById,
 }
 
 export default dbAPI
