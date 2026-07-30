@@ -69,7 +69,7 @@ export async function handleGetPlaylists(request: NextRequest, authRes: AuthResu
             }
         }).join('\n')
 
-        const xml =formatSubsonicXML({status:'ok',children:`<playlists><allowedUser/>${playlistNodes}</playlists>`})
+        const xml =formatSubsonicXML({status:'ok',children:`<playlists>${playlistNodes}</playlists>`})
 
         return new Response(xml, {
             status: 200,
