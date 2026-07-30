@@ -243,7 +243,6 @@ const dbAPI = {
   getFirstMusicInfoByAlbumId,
   upsertMusicInfo,
   resolveMusicInfoById,
-  getStorageSongmidForMusicInfo,
 }
 
 export default dbAPI
