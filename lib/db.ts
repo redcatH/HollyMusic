@@ -96,6 +96,32 @@ export async function getFirstMusicInfoByAlbumId(albumId: string): Promise<Music
 }
 
 /**
+ * 按 albumId 查询整专辑所有歌曲（从 data 列还原原始 MusicInfo），按 id asc 排序。
+ * 第一首即代表曲（与 getFirstMusicInfoByAlbumId 一致）。
+ */
+export async function getMusicInfoListByAlbumId(albumId: string): Promise<MusicInfo[]> {
+  try {
+    const rows = await prisma.musicInfo.findMany({
+      where: { albumId },
+      orderBy: { id: 'asc' },
+    })
+    const list: MusicInfo[] = []
+    for (const row of rows) {
+      if (!row.data) continue
+      try {
+        list.push(JSON.parse(row.data) as MusicInfo)
+      } catch {
+        // 跳过解析失败的行
+      }
+    }
+    return list
+  } catch (e) {
+    console.warn('getMusicInfoListByAlbumId error', e)
+    return []
+  }
+}
+
+/**
  * 计算用于 DB 查询/对外 id 的 songmid（存储键）。
  *
  * 关键设计：分离"原始数据"与"查询键"。
@@ -241,6 +267,7 @@ export async function upsertMusicInfo(mi: MusicInfo): Promise<{ action: 'insert'
 const dbAPI = {
   getMusicInfo,
   getFirstMusicInfoByAlbumId,
+  getMusicInfoListByAlbumId,
   upsertMusicInfo,
   resolveMusicInfoById,
 }

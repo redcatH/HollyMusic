@@ -91,6 +91,7 @@ export async function handleGetSongAsync(request: NextRequest, authRes: AuthResu
     contentType="audio/mpeg"
     isVideo="false"
     path="${escapeXml(musicInfo.singer || 'Unknown')}/${escapeXml(musicInfo.albumName || 'Unknown')}/${escapeXml(musicInfo.name || 'Unknown')}.mp3"
+    albumId="${escapeXml(id)}"
   />
 </subsonic-response>`
 

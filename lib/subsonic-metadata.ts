@@ -6,6 +6,7 @@ import { type AuthResult } from './auth'
 import * as dbAPI from './db'
 import { logger } from './logger'
 import { musicSourceManager } from './music-source-manager'
+import type { MusicInfo } from './types/music'
 
 // 原生封面获取模块（参考 lx-music 各源 pic 实现），替代黑盒脚本与第三方聚合 API
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -23,25 +24,17 @@ export async function handleCoverArtAsync(request: NextRequest, authRes: AuthRes
       return serveDefaultCoverArt()
     }
 
-    // 判断 id 类型：song / album (prefix `al-`) / artist (prefix `ar-`)
+    // 封面 id 统一为 source-{songmid}；Musiver 会给封面 id 拼 al- 前缀，去掉后按歌曲查。
+    // ar- 为歌手封面（暂无独立封面源），直接返回默认图。
     let musicInfo = null
 
     try {
-      if (id.startsWith('al-')) {
-        const albumId = id.slice(3)
-        if (!albumId) return serveDefaultCoverArt()
-        // 从数据库中查找该专辑的第一首歌
-        musicInfo = await dbAPI.getFirstMusicInfoByAlbumId(albumId)
-        if (!musicInfo) return serveDefaultCoverArt()
-      } else if (id.startsWith('ar-')) {
-        // 歌手类型暂不实现，直接返回默认封面
-        // 未来可实现：根据 artist id 查找代表曲目或专辑封面
+      if (id.startsWith('ar-')) {
         return serveDefaultCoverArt()
-      } else {
-        // 默认按歌曲 id 处理（song id 为 `source-songmid` 复合格式，或旧版纯 songmid）
-        musicInfo = await dbAPI.resolveMusicInfoById(id)
-        if (!musicInfo) return serveDefaultCoverArt()
       }
+      const coverId = id.startsWith('al-') ? id.slice(3) : id
+      musicInfo = await dbAPI.resolveMusicInfoById(coverId)
+      if (!musicInfo) return serveDefaultCoverArt()
     } catch (err) {
       logger.warn('[handleCoverArtAsync] DB lookup failed:', err)
       return serveDefaultCoverArt()
@@ -156,6 +149,30 @@ async function fetchImageFromUrl(imageUrl: string): Promise<Response | null> {
   }
 }
 
+/**
+ * 统一的歌词获取（音源优先，第三方 API 回退）。供 getLyrics / getLyricsBySongId 复用。
+ * 返回 { lyric, tlyric } 或 null。
+ */
+async function fetchLyric(musicInfo: MusicInfo): Promise<{ lyric: string; tlyric: string | null } | null> {
+  const title = musicInfo.name || ''
+  const artist = musicInfo.singer || ''
+  const album = musicInfo.albumName || ''
+
+  // 1) 优先音源
+  try {
+    const result = await musicSourceManager.getLyric(musicInfo, 5000)
+    if (result && result.lyric && result.lyric.trim()) return result
+  } catch (err) {
+    logger.debug('[fetchLyric] musicSourceManager.getLyric failed:', err)
+  }
+
+  // 2) 回退第三方 API
+  const text = await fetchLyricsFromAPI(title, album || title, artist)
+  if (text && text.trim()) return { lyric: text.trim(), tlyric: null }
+
+  return null
+}
+
 // 异步版本 - 供路由中调用
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function handleGetLyricsAsync(request: NextRequest, authRes: AuthResult): Promise<Response> {
@@ -195,25 +212,14 @@ export async function handleGetLyricsAsync(request: NextRequest, authRes: AuthRe
       })
     }
 
-    const { name, singer, albumName } = musicInfo
+    const { name, singer } = musicInfo
     const artist = singer || ''
     const title = name || ''
 
-    // 1) 优先尝试通过已加载的本地音源获取歌词
-    let lyricsText: string | null = null
-    try {
-      lyricsText = await musicSourceManager.getLyric(musicInfo, 5000)
-    } catch (err) {
-      logger.debug('[handleGetLyricsAsync] musicSourceManager.getLyric failed:', err)
-      lyricsText = null
-    }
+    // 统一走 fetchLyric（音源优先，第三方 API 回退）
+    const lyric = await fetchLyric(musicInfo)
 
-    // 2) 若本地音源无歌词，则调用第三方歌词 API: https://api.lrc.cx/lyrics
-    if (!lyricsText) {
-      lyricsText = await fetchLyricsFromAPI(title, albumName || title, artist)
-    }
-    
-    if (!lyricsText) {
+    if (!lyric) {
       // 无歌词
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.15.1">
@@ -234,7 +240,7 @@ export async function handleGetLyricsAsync(request: NextRequest, authRes: AuthRe
     }
 
     // 将 LRC 格式歌词转换为 Subsonic XML 格式
-    const lyricsXmlLines = parseLrcToXml(lyricsText)
+    const lyricsXmlLines = parseLrcToXml(lyric.lyric)
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.15.1">
   <lyrics>
@@ -284,6 +290,177 @@ export function handleGetLyrics(request: NextRequest, authRes: AuthResult): Resp
       'Cache-Control': 'public, max-age=3600'
     }
   })
+}
+
+/**
+ * 构造一个 structuredLyrics XML 节点（OpenSubsonic getLyricsBySongId 用）。
+ * 有时间戳 → synced="true"，行带 start；无时间戳 → synced="false"，纯文本行。
+ * 返回 null 表示无可输出内容。
+ */
+function buildStructuredLyrics(
+  lrcText: string,
+  parsed: ParsedLrc,
+  lang: string,
+  artist: string,
+  title: string,
+  album: string
+): string | null {
+  const offsetAttr = parsed.offset ? ` offset="${parsed.offset}"` : ''
+  let linesXml: string
+  let synced: string
+
+  if (parsed.lines.length > 0) {
+    synced = 'true'
+    linesXml = parsed.lines.map(l => `      <line start="${l.time}">${escapeXml(l.text)}</line>`).join('\n')
+  } else {
+    const textLines = lrcText.split(/\r\n|\r|\n/).map(l => l.trim()).filter(Boolean)
+    if (textLines.length === 0) return null
+    synced = 'false'
+    linesXml = textLines.map(l => `      <line>${escapeXml(l)}</line>`).join('\n')
+  }
+
+  return `    <structuredLyrics lang="${escapeXml(lang)}" displayArtist="${escapeXml(artist)}" displayTitle="${escapeXml(title)}" albumName="${escapeXml(album)}"${offsetAttr} synced="${synced}">\n${linesXml}\n    </structuredLyrics>`
+}
+
+/** 构造一个空 lyricsList 的 subsonic 响应（查不到歌曲或歌词时用，不崩客户端） */
+function emptyLyricsListResponse(cacheMaxAge = 3600): Response {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1">\n  <lyricsList/>\n</subsonic-response>`
+  return new Response(xml, {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/xml; charset=UTF-8',
+      'Content-Length': String(Buffer.byteLength(xml)),
+      'Cache-Control': `public, max-age=${cacheMaxAge}`
+    }
+  })
+}
+
+/**
+ * 处理 getLyricsBySongId 请求（OpenSubsonic 结构化歌词）。
+ * 返回 lyricsList，含原文（synced）和可选翻译（tlyric，第二语言）。
+ * 查不到歌曲或歌词时返回空 lyricsList。
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function handleGetLyricsBySongIdAsync(request: NextRequest, authRes: AuthResult): Promise<Response> {
+  try {
+    const url = new URL(request.url)
+    const id = url.searchParams.get('id')
+
+    if (!id) {
+      const xml = formatSubsonicXML({ status: 'failed', error: { code: 10, message: 'Missing required parameter: id' } })
+      return createSubsonicResponse(xml)
+    }
+
+    const musicInfo = await dbAPI.resolveMusicInfoById(id)
+    if (!musicInfo) return emptyLyricsListResponse()
+
+    const lyric = await fetchLyric(musicInfo)
+    if (!lyric || !lyric.lyric) return emptyLyricsListResponse()
+
+    const artist = musicInfo.singer || ''
+    const title = musicInfo.name || ''
+    const album = musicInfo.albumName || ''
+
+    const parsed = parseLrc(lyric.lyric)
+    const main = buildStructuredLyrics(lyric.lyric, parsed, 'zh', artist, title, album)
+
+    // 翻译歌词作为第二语言（tlyric 语种不确定，暂标 en）
+    let trans = ''
+    if (lyric.tlyric && lyric.tlyric.trim()) {
+      trans = buildStructuredLyrics(lyric.tlyric, parseLrc(lyric.tlyric), 'en', artist, title, album) || ''
+    }
+
+    const structured = [main, trans].filter(Boolean).join('\n')
+    if (!structured) return emptyLyricsListResponse()
+
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1">\n  <lyricsList>\n${structured}\n  </lyricsList>\n</subsonic-response>`
+    return new Response(xml, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/xml; charset=UTF-8',
+        'Content-Length': String(Buffer.byteLength(xml)),
+        'Cache-Control': 'public, max-age=86400'
+      }
+    })
+  } catch (err) {
+    logger.error('[getLyricsBySongId] Error:', err)
+    const xml = formatSubsonicXML({ status: 'failed', error: { code: 0, message: 'Internal server error' } })
+    return createSubsonicResponse(xml)
+  }
+}
+
+/** 将 interval（"mm:ss" / "h:mm:ss" / 数字）解析为秒 */
+function parseIntervalToSeconds(interval: string | number | undefined): number {
+  if (!interval) return 0
+  if (typeof interval === 'number') return interval
+  const parts = String(interval).split(':').map(Number)
+  if (parts.length === 2) return parts[0] * 60 + (parts[1] || 0)
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + (parts[2] || 0)
+  const n = Number(interval)
+  return isNaN(n) ? 0 : n
+}
+
+/**
+ * 处理 getAlbum 请求 — 返回专辑详情及其歌曲列表。
+ * id 为 source-{songmid}（专辑内任一首歌）：查这首歌拿 albumId，再查同专辑所有歌。
+ * 专辑 id 用代表曲（id asc 第一首）的 source-{songmid}；song 的 albumId/coverArt 统一为自身 source-{songmid}。
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function handleGetAlbumAsync(request: NextRequest, authRes: AuthResult): Promise<Response> {
+  try {
+    const url = new URL(request.url)
+    const id = url.searchParams.get('id')
+
+    if (!id) {
+      const xml = formatSubsonicXML({ status: 'failed', error: { code: 10, message: 'Missing required parameter: id' } })
+      return createSubsonicResponse(xml)
+    }
+
+    // 查一首歌拿 albumId（id 为 source-{songmid}）
+    const anySong = await dbAPI.resolveMusicInfoById(id)
+    if (!anySong || !anySong.albumId) {
+      const xml = formatSubsonicXML({ status: 'failed', error: { code: 70, message: 'Album not found' } })
+      return createSubsonicResponse(xml)
+    }
+
+    const albumId = String(anySong.albumId)
+    const songs = await dbAPI.getMusicInfoListByAlbumId(albumId)
+    if (songs.length === 0) {
+      const xml = formatSubsonicXML({ status: 'failed', error: { code: 70, message: 'Album not found' } })
+      return createSubsonicResponse(xml)
+    }
+
+    // 代表曲 = 第一首（id asc），专辑 id 用它的 source-{songmid}
+    const rep = songs[0]
+    const repSongmid = dbAPI.getStorageSongmidForMusicInfo(rep)
+    const albumEntryId = `${rep.source}-${repSongmid}`
+    const albumName = rep.albumName || ''
+    const albumArtist = rep.singer || ''
+    const created = new Date().toISOString().replace('T', ' ').substring(0, 19)
+
+    const songNodes = songs.map((s, idx) => {
+      const songId = `${s.source}-${dbAPI.getStorageSongmidForMusicInfo(s)}`
+      const duration = parseIntervalToSeconds(s.interval)
+      const bitRate = s._types && s._types['320k'] ? 320 : (s._types && s._types['128k'] ? 128 : 0)
+      return `    <song id="${escapeXml(songId)}" parent="${escapeXml(albumEntryId)}" title="${escapeXml(s.name || '')}" album="${escapeXml(albumName)}" artist="${escapeXml(s.singer || '')}" isDir="false" coverArt="${escapeXml(songId)}" duration="${duration}" bitRate="${bitRate}" track="${idx + 1}" suffix="mp3" contentType="audio/mpeg" isVideo="false" albumId="${escapeXml(songId)}" artistId="" type="music"/>`
+    }).join('\n')
+
+    const totalDuration = songs.reduce((acc, s) => acc + parseIntervalToSeconds(s.interval), 0)
+
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1">\n  <album id="${escapeXml(albumEntryId)}" name="${escapeXml(albumName)}" artist="${escapeXml(albumArtist)}" songCount="${songs.length}" duration="${totalDuration}" created="${created}" coverArt="${escapeXml(albumEntryId)}">\n${songNodes}\n  </album>\n</subsonic-response>`
+    return new Response(xml, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/xml; charset=UTF-8',
+        'Content-Length': String(Buffer.byteLength(xml)),
+        'Cache-Control': 'public, max-age=3600'
+      }
+    })
+  } catch (err) {
+    logger.error('[getAlbum] Error:', err)
+    const xml = formatSubsonicXML({ status: 'failed', error: { code: 0, message: 'Internal server error' } })
+    return createSubsonicResponse(xml)
+  }
 }
 
 /**
@@ -356,47 +533,71 @@ async function fetchLyricsFromAPI(title: string, album: string, artist: string):
 }
 
 /**
- * 将 LRC 格式歌词解析为 Subsonic XML 行格式
- * LRC 格式: [时间戳]歌词文本
- * 时间戳格式: [mm:ss.ms] 或 [mm:ss]
+ * LRC 解析结果
+ */
+interface LrcLine { time: number; text: string }
+interface ParsedLrc { offset: number; lines: LrcLine[] }
+
+// 匹配单个时间标签：[mm:ss] / [mm:ss.xx] / [mm:ss.xxx] / [h:mm:ss.xxx]
+const LRC_TIME_TAG = /\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]/g
+// 全局 offset 标签：[offset:毫秒]（正数表示歌词提前）
+const LRC_OFFSET_TAG = /\[offset:\s*(-?\d+)\]/i
+
+/**
+ * 将 LRC 文本解析为带时间戳的行数组（借鉴 lx-music line-player.js）。
+ * - 支持一行多时间标签（如 [01:02.03][01:05.00]同一句）
+ * - 解析全局 [offset:] 偏移（毫秒）
+ * - 忽略 [ti:]/[ar:]/[al:]/[by:] 等 ID 标签
+ * - 兼容 [mm:ss] / [mm:ss.ms] / [mm:ss.mmm]，小数部分补零到 3 位毫秒
+ * - 结果按 time 升序
+ */
+function parseLrc(lrcText: string): ParsedLrc {
+  const result: ParsedLrc = { offset: 0, lines: [] }
+  if (!lrcText) return result
+
+  const offsetMatch = LRC_OFFSET_TAG.exec(lrcText)
+  if (offsetMatch) result.offset = parseInt(offsetMatch[1], 10) || 0
+
+  const tagStrip = /\[\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?\]/g
+
+  for (const raw of lrcText.split(/\r\n|\r|\n/)) {
+    const line = raw.trim()
+    if (!line) continue
+
+    LRC_TIME_TAG.lastIndex = 0
+    const times: number[] = []
+    let m: RegExpExecArray | null
+    while ((m = LRC_TIME_TAG.exec(line)) !== null) {
+      const min = parseInt(m[1], 10) || 0
+      const sec = parseInt(m[2], 10) || 0
+      const frac = m[3] ? parseInt(m[3].padEnd(3, '0'), 10) || 0 : 0
+      times.push(min * 60000 + sec * 1000 + frac)
+    }
+    if (times.length === 0) continue
+
+    const text = line.replace(tagStrip, '').trim()
+    if (!text) continue
+
+    for (const time of times) result.lines.push({ time, text })
+  }
+
+  result.lines.sort((a, b) => a.time - b.time)
+  return result
+}
+
+/**
+ * 将 LRC 格式歌词解析为 Subsonic XML 行格式（传统 getLyrics 用，向后兼容）。
+ * 基于 parseLrc，输出 <line time="毫秒">。
  */
 function parseLrcToXml(lrcText: string): string {
-  const lines: string[] = []
-  
   try {
-    const lrcLines = lrcText.split('\n')
-    
-    for (const line of lrcLines) {
-      const trimmedLine = line.trim()
-      if (!trimmedLine) continue
-      
-      // 匹配 LRC 时间戳格式: [mm:ss.ms] 或 [mm:ss]
-      const timeMatch = trimmedLine.match(/\[(\d+):(\d+)(?:\.(\d+))?\](.*)/)
-      
-      if (!timeMatch) continue
-      
-      const minutes = parseInt(timeMatch[1], 10)
-      const seconds = parseInt(timeMatch[2], 10)
-      const milliseconds = timeMatch[3] ? parseInt(timeMatch[3].padEnd(3, '0'), 10) : 0
-      const lyricText = timeMatch[4] || ''
-      
-      // 转换为毫秒
-      const timeMs = minutes * 60000 + seconds * 1000 + milliseconds
-      
-      if (lyricText.trim()) {
-        lines.push(`    <line time="${timeMs}">${escapeXml(lyricText)}</line>`)
-      }
-    }
+    const parsed = parseLrc(lrcText)
+    const lines = parsed.lines.map(l => `    <line time="${l.time}">${escapeXml(l.text)}</line>`)
+    if (lines.length > 0) return lines.join('\n')
   } catch (err) {
     logger.warn('[parseLrcToXml] Error parsing LRC:', err)
   }
-  
-  // 如果没有解析出任何行，返回占位符
-  if (lines.length === 0) {
-    lines.push(`    <line time="0">无歌词</line>`)
-  }
-  
-  return lines.join('\n')
+  return `    <line time="0">无歌词</line>`
 }
 
 /**

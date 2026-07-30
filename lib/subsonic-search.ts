@@ -153,7 +153,9 @@ export async function handleSearch(request: NextRequest) {
       // 注意：存储键可能与 mi.songmid 不同（kg 用 FileHash 而非 Audioid）。
       const songId = `${s.source}-${getStorageSongmidForMusicInfo(s) || s.songId || idx}`
 
-      const parent = s.albumId || s.albummid || ''
+      // parent/coverArt/albumId 统一用 source-{songmid}（= songId），
+      // 让 Musiver 从任意一首歌的 albumId 调 getAlbum 都能定位到整张专辑
+      const parent = songId
       const title = escapeXml(String(s.name || s.title || ''))
       const album = escapeXml(String(s.albumName || s.album || ''))
       const artist = escapeXml(String(s.singer || s.artist || ''))

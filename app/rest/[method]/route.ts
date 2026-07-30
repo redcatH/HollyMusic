@@ -2,12 +2,12 @@ import { NextRequest } from 'next/server'
 import { handlePing } from '@/lib/subsonic-ping'
 import { handleSearch } from '@/lib/subsonic-search'
 import { handleStar, handleUnstar } from '@/lib/subsonic-favorites'
-import { handleCoverArtAsync, handleGetLyricsAsync } from '@/lib/subsonic-metadata'
+import { handleCoverArtAsync, handleGetLyricsAsync, handleGetLyricsBySongIdAsync, handleGetAlbumAsync } from '@/lib/subsonic-metadata'
 import { handleGetSongAsync } from '@/lib/subsonic-song'
 import { handleGetStarred } from '@/lib/subsonic-getstarred'
 import { handleGetPlaylists, handleGetPlaylist, handleCreatePlaylist, handleDeletePlaylist, handleUpdatePlaylist } from '@/lib/subsonic-playlist'
 import { formatSubsonicXML, createSubsonicResponse } from '@/lib/subsonic'
-import { handleGetOpenSubsonicExtensions, handleGetUser, handleGetAlbumList2 } from '@/lib/subsonic-system'
+import { handleGetOpenSubsonicExtensions, handleGetUser, handleGetAlbumList2, handleScrobble, handleGetSimilarSongs } from '@/lib/subsonic-system'
 import { handleStream } from '@/lib/subsonic-stream'
 import auth, { type AuthResult } from '@/lib/auth'
 import configSync from '@/lib/config-sync'
@@ -75,9 +75,15 @@ async function handleMethod(request: NextRequest, method: string) {
     case 'getLyrics':
       // 使用异步版本获取歌词（支持数据库查询和 API 调用）
       return handleGetLyricsAsync(request, authRes)
+    case 'getLyricsBySongId':
+      // OpenSubsonic 结构化歌词（Musiver 优先调用）
+      return handleGetLyricsBySongIdAsync(request, authRes)
     case 'getSong':
       // 使用异步版本获取歌曲信息（从数据库直接查询）
       return handleGetSongAsync(request, authRes)
+    case 'getAlbum':
+      // 专辑详情（含歌曲列表），id 为 source-{songmid}
+      return handleGetAlbumAsync(request, authRes)
     case 'getStarred':
       return handleGetStarred(request, authRes)
     case 'getPlaylists':
@@ -108,6 +114,13 @@ async function handleMethod(request: NextRequest, method: string) {
         children:'<scanStatus scanning="false" count="10000"/>' }
       )
       return createSubsonicResponse(getScanStatus)
+    case 'scrobble':
+      // 听歌统计暂不落库，返回 ok
+      return handleScrobble(request, authRes)
+    case 'getSimilarSongs':
+    case 'getSimilarSongs2':
+      // 相似歌曲暂不实现，返回空列表
+      return handleGetSimilarSongs(request, authRes)
     // case 'getAlbumList':
     //   const getAlbumList = '<subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1"><albumList2><album id="412776666696599617" coverArt="al-412776666696599617" songCount="0" duration="2025" year="2025" name="安和桥北" created="2025-11-27T16:16:23"/><album id="412759344724095257" coverArt="al-412759344724095257" songCount="0" duration="2025" year="2025" name="十一月的萧邦" created="2025-11-27T15:07:33"/></albumList2></subsonic-response>';
     //       return new Response(getAlbumList, {

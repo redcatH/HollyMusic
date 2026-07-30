@@ -43,13 +43,35 @@ function getFileHash(filePath: string): string | null {
   }
 }
 
+/**
+ * 从音源返回值中提取歌词。
+ * 兼容两种返回：
+ *  - 字符串（直接作 lyric）
+ *  - 对象 { lyric, tlyric, rlyric, lxlyric }（LX 音源标准结构）
+ */
+function extractLyric(result: unknown): { lyric: string; tlyric: string | null } | null {
+  if (!result) return null
+  if (typeof result === 'string') {
+    const s = result.trim()
+    return s ? { lyric: s, tlyric: null } : null
+  }
+  if (typeof result === 'object') {
+    const obj = result as Record<string, unknown>
+    const lyric = obj.lyric != null ? String(obj.lyric).trim() : ''
+    if (!lyric) return null
+    const tlyricRaw = obj.tlyric != null ? String(obj.tlyric).trim() : ''
+    return { lyric, tlyric: tlyricRaw || null }
+  }
+  return null
+}
+
 class MusicSourceManager {
   private instances: SimulatorInstance[] = []
   private initialized: boolean = false
   private configPath: string = ''
   private configHash: string | null = null
   // 简单内存缓存，降低重复请求频率
-  private lyricCache: Map<string, { value: string; expires: number }> = new Map()
+  private lyricCache: Map<string, { value: { lyric: string; tlyric: string | null }; expires: number }> = new Map()
   private picCache: Map<string, { value: Buffer | string; expires: number }> = new Map()
   private defaultCacheTtl = 60 * 60 * 1000 // 1 hour
 
@@ -259,9 +281,10 @@ class MusicSourceManager {
   }
 
   /**
-   * 从已加载的音源按优先级尝试获取歌词（返回 LRC 文本或 null）
+   * 从已加载的音源按优先级尝试获取歌词
+   * 返回 { lyric, tlyric } 或 null。兼容音源返回的字符串或 {lyric, tlyric, ...} 对象。
    */
-  async getLyric(musicInfo: MusicInfo, timeoutMs = 5000): Promise<string | null> {
+  async getLyric(musicInfo: MusicInfo, timeoutMs = 5000): Promise<{ lyric: string; tlyric: string | null } | null> {
     try {
       if (this.initialized && this.checkConfigChanged()) {
         this.resetInstances()
@@ -276,6 +299,7 @@ class MusicSourceManager {
       const available = this.instances.filter(i => i.initialized)
       if (available.length === 0) return null
 
+      // 音源脚本的歌词方法签名统一为 (source, musicInfo)（见 music-core/index.js getLyric）
       const candidateNames = ['getLyric', 'getLyricInfo', 'lyrics', 'lyric']
       type AnyFunction = (...args: unknown[]) => unknown
 
@@ -288,22 +312,16 @@ class MusicSourceManager {
           if (typeof fn !== 'function') continue
 
           try {
-            // 支持两种调用签名： (musicInfo) 或 (source, musicInfo)
-            const attempt1 = Promise.resolve(fn.call(instance.simulator, musicInfo))
-            const attempt2 = Promise.resolve(fn.call(instance.simulator, musicInfo.source, musicInfo))
-
-            const raced = await Promise.race([
-              attempt1,
-              attempt2,
+            const result = await Promise.race([
+              Promise.resolve(fn.call(instance.simulator, musicInfo.source, musicInfo)),
               new Promise((_res, rej) => setTimeout(() => rej(new Error('timeout')), timeoutMs))
             ]) as unknown
-            const result = raced as unknown
 
-            if (result && typeof result === 'string' && result.trim().length > 0) {
-              const value = result.trim()
-              this.lyricCache.set(key, { value, expires: Date.now() + this.defaultCacheTtl })
-              logger.info(`getLyric: 从 ${instance.config.name}.${fnName} 获取到歌词，len=${value.length}`)
-              return value
+            const extracted = extractLyric(result)
+            if (extracted) {
+              this.lyricCache.set(key, { value: extracted, expires: Date.now() + this.defaultCacheTtl })
+              logger.info(`getLyric: 从 ${instance.config.name}.${fnName} 获取到歌词，len=${extracted.lyric.length}`)
+              return extracted
             }
           } catch (err) {
             logger.debug(`getLyric: ${instance.config.name}.${fnName} 调用失败:`, err instanceof Error ? err.message : err)
