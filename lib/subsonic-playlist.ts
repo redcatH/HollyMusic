@@ -163,7 +163,7 @@ export async function handleGetPlaylist(request: NextRequest, authRes: AuthResul
 
                 const mi = entry.musicInfo
                 musicData = {
-                    id: mi.songmid,
+                    id: `${mi.source}-${mi.songmid}`,
                     title: mi.name || '',
                     artist: mi.singer || '',
                     album: mi.albumName || '',
@@ -522,11 +522,25 @@ export async function handleUpdatePlaylist(request: NextRequest, authRes: AuthRe
                 }
 
                 pos++
-                // 查找 MusicInfo（使用 findFirst 兼容非唯一索引）
-                const mi = await prisma.musicInfo.findFirst({ where: { songmid: sid } })
+                // 查找 MusicInfo 行（song id 为 `source-songmid` 复合格式，解析后精确匹配拿 DB 行 id 做关联）
+                let miRow: { id: number } | null = null
+                if (sid.includes('-')) {
+                  const idx = sid.indexOf('-')
+                  const src = sid.substring(0, idx)
+                  const mid = sid.substring(idx + 1)
+                  if (src && mid) {
+                    miRow = await prisma.musicInfo.findUnique({
+                      where: { source_songmid: { source: src, songmid: mid } },
+                      select: { id: true },
+                    })
+                  }
+                }
+                if (!miRow) {
+                  miRow = await prisma.musicInfo.findFirst({ where: { songmid: sid }, select: { id: true }, orderBy: { id: 'asc' } })
+                }
                 await prisma.playlistEntry.create({ data: {
                     playlistId,
-                    musicInfoId: mi?.id ?? null,
+                    musicInfoId: miRow?.id ?? null,
                     songmid: sid,
                     position: pos,
                     addedBy: username
