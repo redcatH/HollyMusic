@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import crypto from 'crypto'
-import { PrismaClient } from './generated/prisma'
+import { PrismaClient, Prisma } from './generated/prisma'
 import type { MusicInfo } from './types/music'
 
 const prisma = new PrismaClient()
@@ -117,6 +117,38 @@ export async function getMusicInfoListByAlbumId(albumId: string): Promise<MusicI
     return list
   } catch (e) {
     console.warn('getMusicInfoListByAlbumId error', e)
+    return []
+  }
+}
+
+/**
+ * 从 DB 随机抽取 size 首歌曲（还原为 MusicInfo）。
+ * 用于 getRandomSongs 接口：从历史搜索/播放入库的曲目中随机推荐。
+ * Prisma 不支持随机排序，用原生 SQL ORDER BY RANDOM()。
+ */
+export async function getRandomMusicInfoList(size: number, allowedSources?: string[]): Promise<MusicInfo[]> {
+  try {
+    const limit = Math.max(1, Math.min(size, 500))
+    // 只从 allowedSources 平台抽取（= enabled 音源的 pt 并集），保证抽出的歌可播放
+    const rows = allowedSources && allowedSources.length > 0
+      ? await prisma.$queryRaw<{ data: string | null }[]>`
+          SELECT data FROM MusicInfo WHERE source IN (${Prisma.join(allowedSources)}) ORDER BY RANDOM() LIMIT ${limit}
+        `
+      : await prisma.$queryRaw<{ data: string | null }[]>`
+          SELECT data FROM MusicInfo ORDER BY RANDOM() LIMIT ${limit}
+        `
+    const list: MusicInfo[] = []
+    for (const row of rows) {
+      if (!row.data) continue
+      try {
+        list.push(JSON.parse(row.data) as MusicInfo)
+      } catch {
+        // 跳过解析失败的行
+      }
+    }
+    return list
+  } catch (e) {
+    console.warn('getRandomMusicInfoList error', e)
     return []
   }
 }
@@ -268,6 +300,7 @@ const dbAPI = {
   getMusicInfo,
   getFirstMusicInfoByAlbumId,
   getMusicInfoListByAlbumId,
+  getRandomMusicInfoList,
   upsertMusicInfo,
   resolveMusicInfoById,
 }
