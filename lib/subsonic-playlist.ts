@@ -55,7 +55,7 @@ export async function handleGetPlaylists(request: NextRequest, authRes: AuthResu
             // 格式化时间为 Subsonic 格式: yyyy-MM-dd HH:mm:ss
             const createdStr = p.createdAt.toISOString().replace('T', ' ').substring(0, 19)
 
-            const attrs = `id="${p.id}" name="${escapeXml(p.name)}" comment="${escapeXml(p.comment)}" owner="${escapeXml(p.owner || p.username)}" public="${p.isPublic}" songCount="${p.songCount}" created="${createdStr}"`
+            const attrs = `id="${p.id}" name="${escapeXml(p.name)}" comment="${escapeXml(p.comment)}" owner="${escapeXml(p.owner || p.username)}" public="${p.isPublic}" songCount="${p.songCount}" duration="${p.duration || 0}" created="${createdStr}" coverArt="${escapeXml(p.coverArt || `pl-${p.id}`)}"`
 
             if (isOwner && p.allowedUsers.length > 0) {
                 // 属于当前用户且有授权用户的歌单，显示 allowedUser 子节点
