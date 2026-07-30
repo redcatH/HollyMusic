@@ -120,7 +120,10 @@ export async function handleGetStarred(request: NextRequest, authRes: AuthResult
             }
             
             songs.push({
-              id: escapeXml(`${musicInfo.source}-${dbAPI.getStorageSongmidForMusicInfo(musicInfo) || fav.itemId}`),
+              // id 直接用 fav.itemId（收藏时存的就是 source-存储songmid，与 DB songmid 列对齐），
+              // 不从 musicInfo 重算，避免依赖 data 列 hash 字段及双前缀 bug。
+              // 查 musicInfo 仅为了取 title/artist/album 等显示字段。
+              id: escapeXml(fav.itemId),
               parent: escapeXml(musicInfo.albumId || ''),
               title: escapeXml(musicInfo.name || ''),
               album: escapeXml(musicInfo.albumName || ''),
