@@ -83,6 +83,28 @@ docker-compose up --build -d
 - 音源脚本加载失败：检查 `config/music-sources.json` 的路径，或在日志中查看 `lib/music-source-manager.ts` 打印的初始化错误。
 - 歌词 / 封面获取优先级：代码会先尝试本地已加载音源提供的接口（`getLyric`/`getPic`），若无结果再调用外部服务（例如 `api.lrc.cx`）作为回退。
 
+**缓存管理**
+
+搜索结果与播放 URL 会缓存到内存以降低重复请求。默认 TTL 为 210 分钟（可用环境变量 `SEARCH_CACHE_TTL_MS` 调整）。清理方式：
+
+- **自动过期**：每条缓存到期后自动失效，后台每 5 分钟扫描清理一次。
+- **重启服务**：内存缓存，重启容器即清空（`docker compose restart app`）。
+- **手动调接口**（无需重启，立即生效）：
+
+```bash
+# 清理搜索缓存
+curl -X POST https://<你的域名>/api/cache/clear \
+  -H "Content-Type: application/json" \
+  -d '{"type":"search"}'
+
+# 清理所有缓存（搜索 + URL）
+curl -X POST https://<你的域名>/api/cache/clear \
+  -H "Content-Type: application/json" \
+  -d '{"type":"all"}'
+```
+
+支持 `search` / `url` / `all` 三种类型。注意：若 nginx 强制 HTTP→HTTPS，请直接用 `https://` 或给 curl 加 `-L`。
+
 **贡献指南**
 - 请基于 `main` 分支创建 feature 分支。
 - 每次提交专注一项变更，写明 commit message（示例：`feat(source): add new source for XYZ`）。
@@ -172,6 +194,28 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 	```bash
 	pnpm build
 	```
+
+**Cache management**
+
+Search results and play URLs are cached in memory to reduce repeated requests. Default TTL is 210 minutes (configurable via `SEARCH_CACHE_TTL_MS`). Ways to clear:
+
+- **Auto expiry**: each entry expires after TTL; a background sweep runs every 5 minutes.
+- **Restart**: it is an in-memory cache, so restarting the container clears it (`docker compose restart app`).
+- **Manual API** (no restart, immediate):
+
+	```bash
+	# Clear search cache
+	curl -X POST https://<your-domain>/api/cache/clear \
+	  -H "Content-Type: application/json" \
+	  -d '{"type":"search"}'
+
+	# Clear all caches (search + url)
+	curl -X POST https://<your-domain>/api/cache/clear \
+	  -H "Content-Type: application/json" \
+	  -d '{"type":"all"}'
+	```
+
+	Supported types: `search` / `url` / `all`. If nginx enforces HTTP→HTTPS, use `https://` directly or add `-L` to curl.
 
 
 ## Learn More
