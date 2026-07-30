@@ -60,8 +60,8 @@ export async function handleGetSongAsync(request: NextRequest, authRes: AuthResu
       return createSubsonicResponse(xml)
     }
 
-    // 从数据库查询 MusicInfo（id 为 songmid）
-    const musicInfo = await dbAPI.getMusicInfoBySongmid(id)
+    // 从数据库查询 MusicInfo（统一走 resolveMusicInfoById，兼容 source-songmid 复合 id 与纯 songmid）
+    const musicInfo = await dbAPI.resolveMusicInfoById(id)
     
     if (!musicInfo) {
       const xml = formatSubsonicXML({

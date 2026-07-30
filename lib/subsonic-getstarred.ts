@@ -95,7 +95,7 @@ export async function handleGetStarred(request: NextRequest, authRes: AuthResult
         // 对于歌曲，尝试从 MusicInfo 表查询完整信息
         try {
           console.log('[getStarred] Fetching MusicInfo for song:', fav.itemId)
-          const musicInfo = await dbAPI.getMusicInfoBySongmid(fav.itemId)
+          const musicInfo = await dbAPI.resolveMusicInfoById(fav.itemId)
           if (musicInfo) {
             console.log('[getStarred] Got MusicInfo for', fav.itemId, 'interval:', musicInfo.interval, 'type:', typeof musicInfo.interval)
             // 安全地解析 interval（格式：mm:ss 或 h:mm:ss）
@@ -120,7 +120,7 @@ export async function handleGetStarred(request: NextRequest, authRes: AuthResult
             }
             
             songs.push({
-              id: escapeXml(musicInfo.songmid || fav.itemId),
+              id: escapeXml(`${musicInfo.source}-${dbAPI.getStorageSongmidForMusicInfo(musicInfo) || fav.itemId}`),
               parent: escapeXml(musicInfo.albumId || ''),
               title: escapeXml(musicInfo.name || ''),
               album: escapeXml(musicInfo.albumName || ''),

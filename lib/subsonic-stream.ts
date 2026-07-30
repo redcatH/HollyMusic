@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import * as fs from 'fs'
 import * as path from 'path'
 import https from 'https'
-import { getMusicInfo, getMusicInfoBySongmid } from '@/lib/db'
+import { resolveMusicInfoById } from '@/lib/db'
 import { formatSubsonicXML, createSubsonicResponse } from '@/lib/subsonic'
 import { musicSourceManager } from '@/lib/music-source-manager'
 import { urlCache } from '@/lib/cache-manager'
@@ -382,7 +382,7 @@ export async function handleStream(request: NextRequest): Promise<Response> {
 
 
     // ========== STEP 1: 使用 ID 从数据库查找 MusicInfo ==========
-    // 优先按 "source-songmid" 解析，如未命中则按 songmid 全库查找（返回第一个匹配项）
+    // 统一走 resolveMusicInfoById：优先按 `source-songmid` 精确匹配，回退按 songmid 全库查找
     let musicInfo: MusicInfo | null = null
     if (!id) {
       logger.warn('[handleStream] Missing id parameter')
@@ -390,20 +390,7 @@ export async function handleStream(request: NextRequest): Promise<Response> {
       return createSubsonicResponse(xml)
     }
 
-    // 尝试按 source-songmid 解析（source 为第一个 '-' 之前的部分）
-    if (id.includes('-')) {
-      const idx = id.indexOf('-')
-      const src = id.substring(0, idx)
-      const mid = id.substring(idx + 1)
-      if (src && mid) {
-        musicInfo = await getMusicInfo(src, mid)
-      }
-    }
-
-    // 回退：按 songmid 全库查找
-    if (!musicInfo) {
-      musicInfo = await getMusicInfoBySongmid(id)
-    }
+    musicInfo = await resolveMusicInfoById(id)
 
     if (!musicInfo) {
       logger.warn(`[handleStream] Invalid ID: no musicInfo found for id=${id}`)
