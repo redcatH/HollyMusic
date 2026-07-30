@@ -1,0 +1,52 @@
+name: Build and Push Docker Image
+
+# 仅推送 v 开头的 tag（如 v1.0.0）时触发构建
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    # GITHUB_TOKEN 默认无 packages:write 权限，需显式声明
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # ghcr.io 镜像名必须全小写；仓库所有者 redcatH 需转小写
+      - name: Set image name (lowercase)
+        run: echo "IMAGE_NAME=ghcr.io/$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')/hollymusic" >> $GITHUB_ENV
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}   # 自动提供，无需手动建 secret
+
+      # 从 GITHUB_REF（refs/tags/v1.0.0）提取 tag 名
+      - name: Extract tag name
+        id: tag
+        run: echo "name=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.name }}
+            ${{ env.IMAGE_NAME }}:latest
+          # GitHub Actions 缓存加速，二次构建只重建变化层
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
