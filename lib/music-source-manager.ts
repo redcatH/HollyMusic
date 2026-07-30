@@ -24,6 +24,7 @@ interface SimulatorInstance {
     priority: number
     enabled: boolean
     timeout?: number
+    pt?: string[] // 用户声明的支持平台，优先于脚本 sourceInfo 用于过滤
   }
   initialized: boolean
   initTime?: number
@@ -146,6 +147,7 @@ class MusicSourceManager {
           priority: sourceConfig.priority,
           enabled: sourceConfig.enabled,
           timeout: sourceConfig.timeout,
+          pt: sourceConfig.pt,
         },
         initialized: false,
       }
@@ -224,6 +226,10 @@ class MusicSourceManager {
 
     // 尝试所有音源和音质组合
     for (const instance of availableInstances) {
+      // pt 优先：用户配置的 pt 未包含该平台则跳过（即使脚本声明支持）
+      if (!this.isAllowedByPt(instance, musicInfo.source)) {
+        continue
+      }
       // 检查该音源是否支持当前歌曲的音源平台
       if (!instance.sourceInfo?.sources[musicInfo.source]) {
         logger.debug(`${instance.config.name} 不支持音源: ${musicInfo.source}`)
@@ -304,6 +310,7 @@ class MusicSourceManager {
       type AnyFunction = (...args: unknown[]) => unknown
 
       for (const instance of available) {
+        if (!this.isAllowedByPt(instance, musicInfo.source)) continue
         if (!instance.sourceInfo?.sources[musicInfo.source]) continue
 
         for (const fnName of candidateNames) {
@@ -358,6 +365,7 @@ class MusicSourceManager {
       type AnyFunction = (...args: unknown[]) => unknown
 
       for (const instance of available) {
+        if (!this.isAllowedByPt(instance, musicInfo.source)) continue
         if (!instance.sourceInfo?.sources[musicInfo.source]) continue
 
         for (const fnName of candidateNames) {
@@ -457,6 +465,21 @@ class MusicSourceManager {
    */
   isInitialized(): boolean {
     return this.initialized
+  }
+
+  /**
+   * pt 配置优先过滤
+   * 若实例配置了 pt（非空），则只有 source 在 pt 内才允许；
+   * 未配置 pt 时回退到 sourceInfo 判定（保持原有行为）。
+   * 用于在脚本声明支持、但某平台实际失效时，通过 pt 手动排除。
+   */
+  private isAllowedByPt(instance: SimulatorInstance, source: string): boolean {
+    const pt = instance.config.pt
+    if (pt && pt.length > 0 && !pt.includes(source)) {
+      logger.debug(`${instance.config.name} 的 pt 配置未包含音源: ${source}，跳过`)
+      return false
+    }
+    return true
   }
 }
 
