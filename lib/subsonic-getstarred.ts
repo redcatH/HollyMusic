@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { formatSubsonicXML, createSubsonicResponse } from '@/lib/subsonic'
 import { type AuthResult } from '@/lib/auth'
 import favorites from '@/lib/favorites'
-import dbAPI from '@/lib/db'
+import dbAPI, { getStorageSongmidForMusicInfo } from '@/lib/db'
 import { normalizeSizeToBytes } from '@/lib/utils'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -119,17 +119,16 @@ export async function handleGetStarred(request: NextRequest, authRes: AuthResult
               }
             }
             
+            // id/parent/coverArt/albumId 统一用 source-{songmid}（从 musicInfo 重算存储键）
+            const songId = `${musicInfo.source}-${getStorageSongmidForMusicInfo(musicInfo)}`
             songs.push({
-              // id 直接用 fav.itemId（收藏时存的就是 source-存储songmid，与 DB songmid 列对齐），
-              // 不从 musicInfo 重算，避免依赖 data 列 hash 字段及双前缀 bug。
-              // 查 musicInfo 仅为了取 title/artist/album 等显示字段。
-              id: escapeXml(fav.itemId),
-              parent: escapeXml(musicInfo.albumId || ''),
+              id: escapeXml(songId),
+              parent: escapeXml(songId),
               title: escapeXml(musicInfo.name || ''),
               album: escapeXml(musicInfo.albumName || ''),
               artist: escapeXml(musicInfo.singer || ''),
               isDir: 'false',
-              coverArt: escapeXml(musicInfo.albumId || ''),
+              coverArt: escapeXml(songId),
               created: formatDate(fav.createdAt),
               starred: formatDate(fav.createdAt),
               duration: String(duration),
@@ -142,7 +141,7 @@ export async function handleGetStarred(request: NextRequest, authRes: AuthResult
               contentType: 'audio/mpeg',
               isVideo: 'false',
               path: escapeXml(musicInfo.singer ? `${musicInfo.singer}/${musicInfo.albumName || ''}/${musicInfo.name}` : musicInfo.name),
-              albumId: escapeXml(musicInfo.albumId || ''),
+              albumId: escapeXml(songId),
               artistId: '',
               type: 'music',
               source: musicInfo.source,

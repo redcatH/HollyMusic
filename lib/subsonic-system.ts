@@ -157,23 +157,27 @@ export async function handleGetAlbumList2(request: NextRequest, authRes: AuthRes
 
     const albumIds = groups.map(g => g.albumId).filter((v): v is string => !!v)
 
-    // Representative rows for metadata
-    const reps = await prisma.musicInfo.findMany({ where: { albumId: { in: albumIds } }, orderBy: { createdAt: 'desc' } })
-    const repMap: Record<string, { img?: string | null; createdAt?: Date | null; singer?: string | null }> = {}
+    // Representative rows for metadata（id asc 第一首作代表曲，与 getFirstMusicInfoByAlbumId 一致）
+    const reps = await prisma.musicInfo.findMany({ where: { albumId: { in: albumIds } }, orderBy: { id: 'asc' } })
+    const repMap: Record<string, { source?: string | null; songmid?: string | null; createdAt?: Date | null; singer?: string | null }> = {}
     for (const r of reps) {
-      if (!repMap[r.albumId || '']) repMap[r.albumId || ''] = { img: r.img, createdAt: r.createdAt, singer: r.singer }
+      if (!repMap[r.albumId || '']) repMap[r.albumId || ''] = { source: r.source, songmid: r.songmid, createdAt: r.createdAt, singer: r.singer }
     }
 
-    // Build album objects
-    let albums = groups.map(g => ({
-      id: g.albumId || '',
-      name: g.albumName || '',
-      songCount: g._count._all || 0,
-      duration: g._sum.durationSeconds ?? 0,
-      created: repMap[g.albumId || '']?.createdAt,
-      coverArt: repMap[g.albumId || '']?.img,
-      artist: repMap[g.albumId || '']?.singer || ''
-    }))
+    // Build album objects（id/coverArt 统一用代表曲的 source-{songmid}）
+    let albums = groups.map(g => {
+      const rep = repMap[g.albumId || '']
+      const albumEntryId = rep && rep.source && rep.songmid ? `${rep.source}-${rep.songmid}` : ''
+      return {
+        id: albumEntryId,
+        name: g.albumName || '',
+        songCount: g._count._all || 0,
+        duration: g._sum.durationSeconds ?? 0,
+        created: rep?.createdAt,
+        coverArt: albumEntryId,
+        artist: rep?.singer || ''
+      }
+    })
 
     // Apply filters for byYear and byGenre if data available (best-effort; MusicInfo has no explicit year/genre fields)
     if (type === 'byYear') {
@@ -253,7 +257,7 @@ export async function handleGetAlbumList2(request: NextRequest, authRes: AuthRes
     const slice = albums.slice(offset, offset + size)
     const albumNodes = slice.map(a => {
       const createdStr = a.created ? new Date(a.created).toISOString().replace('T', ' ').substring(0, 19) : new Date().toISOString().replace('T', ' ').substring(0, 19)
-      const coverArtAttr = a.coverArt ? escapeXml(a.coverArt) : `al-${escapeXml(a.id)}`
+      const coverArtAttr = a.coverArt ? escapeXml(a.coverArt) : escapeXml(a.id)
       return `  <album id="${escapeXml(a.id)}" coverArt="${coverArtAttr}" songCount="${a.songCount}" duration="${a.duration}" name="${escapeXml(a.name)}" created="${createdStr}"/>`
     }).join('\n')
 
@@ -265,4 +269,22 @@ export async function handleGetAlbumList2(request: NextRequest, authRes: AuthRes
     const xml = formatSubsonicXML({ status: 'failed', error: { code: 0, message: 'Internal server error' } })
     return createSubsonicResponse(xml)
   }
+}
+
+/**
+ * 处理 scrobble 请求 — 听歌统计暂不落库，返回 ok 避免 Musiver 报错。
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function handleScrobble(request: NextRequest, authRes: AuthResult): Promise<Response> {
+  const xml = formatSubsonicXML({ status: 'ok' })
+  return createSubsonicResponse(xml)
+}
+
+/**
+ * 处理 getSimilarSongs 请求 — 相似歌曲暂不实现，返回空列表。
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function handleGetSimilarSongs(request: NextRequest, authRes: AuthResult): Promise<Response> {
+  const xml = formatSubsonicXML({ status: 'ok', children: '<similarSongs/>' })
+  return createSubsonicResponse(xml)
 }
