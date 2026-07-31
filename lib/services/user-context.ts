@@ -37,6 +37,27 @@ export class AuthError extends Error {
 }
 
 /**
+ * 权限不足错误：已登录但非管理员访问管理路由时抛出，由 route 捕获返回 403。
+ */
+export class ForbiddenError extends Error {
+  statusCode = 403
+  constructor(message = '权限不足') {
+    super(message)
+    this.name = 'ForbiddenError'
+  }
+}
+
+/** 管理员用户名约定（与 config/users.json 的 admin 兼容） */
+const ADMIN_USERNAME = 'admin'
+
+/**
+ * 判断用户名是否为管理员（当前约定：username === 'admin'）。
+ */
+export function isAdmin(username: string | null | undefined): boolean {
+  return !!username && username === ADMIN_USERNAME
+}
+
+/**
  * 解析请求的鉴权状态（基于签名 cookie）。
  * 已登录时保证返回持久化的 user；未登录返回 { authenticated:false, user:null }。
  */
@@ -67,6 +88,18 @@ export async function requireUser(request: NextRequest): Promise<RequestUser> {
 }
 
 /**
+ * 要求已登录且为管理员（username === 'admin'），否则抛 AuthError(401) 或 ForbiddenError(403)。
+ * 管理路由入口调用。
+ */
+export async function requireAdmin(request: NextRequest): Promise<RequestUser> {
+  const user = await requireUser(request)
+  if (!isAdmin(user.username)) {
+    throw new ForbiddenError()
+  }
+  return user
+}
+
+/**
  * 兼容入口：解析当前请求的用户，未登录时回落到默认 admin。
  * 仅用于公开路由（搜索/播放等不需要隔离的场景）。
  *
@@ -80,5 +113,5 @@ export async function getRequestUser(request: NextRequest): Promise<RequestUser>
   return { id: user.id, username: user.username }
 }
 
-const userContextApi = { getAuthState, requireUser, getRequestUser, AuthError }
+const userContextApi = { getAuthState, requireUser, requireAdmin, isAdmin, getRequestUser, AuthError, ForbiddenError }
 export default userContextApi

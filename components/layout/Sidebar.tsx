@@ -1,8 +1,9 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
-import { Home, Search, Heart, ListMusic, History, Music2, LogIn, LogOut, User } from 'lucide-react'
+import { Home, Search, Heart, ListMusic, History, Music2, LogIn, LogOut, User, ChevronUp, Users } from 'lucide-react'
 import { useAuthStore } from '@/hooks/useAuth'
 
 const nav = [
@@ -19,6 +20,7 @@ export function Sidebar() {
   const authenticated = useAuthStore(s => s.authenticated)
   const username = useAuthStore(s => s.username)
   const logout = useAuthStore(s => s.logout)
+  const [menuOpen, setMenuOpen] = useState(false)
 
   const handleNav = (href: string, isProtected: boolean) => {
     if (isProtected && authenticated === false) {
@@ -29,8 +31,14 @@ export function Sidebar() {
   }
 
   const handleLogout = async () => {
+    setMenuOpen(false)
     await logout()
     router.push('/')
+  }
+
+  const goAdmin = () => {
+    setMenuOpen(false)
+    router.push('/admin/users')
   }
 
   return (
@@ -60,21 +68,41 @@ export function Sidebar() {
         })}
       </nav>
 
-      <div className="mt-auto border-t border-border p-2">
+      <div className="relative mt-auto border-t border-border p-2">
         {authenticated ? (
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
-              <User className="h-4 w-4" />
-              <span className="truncate">{username}</span>
-            </div>
+          <>
             <button
-              onClick={handleLogout}
-              className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent/50 hover:text-foreground"
+              onClick={() => setMenuOpen(v => !v)}
+              className="flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent/50 hover:text-foreground"
+              aria-expanded={menuOpen}
             >
-              <LogOut className="h-5 w-5" />
-              登出
+              <span className="flex min-w-0 items-center gap-2">
+                <User className="h-4 w-4 shrink-0" />
+                <span className="truncate">{username}</span>
+              </span>
+              <ChevronUp className={`h-4 w-4 shrink-0 transition-transform ${menuOpen ? '' : 'rotate-180'}`} />
             </button>
-          </div>
+            {menuOpen && (
+              <div className="absolute bottom-full left-0 right-0 mb-1 rounded-md border border-border bg-popover p-1 shadow-lg">
+                {username === 'admin' && (
+                  <button
+                    onClick={goAdmin}
+                    className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  >
+                    <Users className="h-5 w-5" />
+                    用户管理
+                  </button>
+                )}
+                <button
+                  onClick={handleLogout}
+                  className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                >
+                  <LogOut className="h-5 w-5" />
+                  登出
+                </button>
+              </div>
+            )}
+          </>
         ) : (
           <Link
             href="/login"

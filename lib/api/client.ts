@@ -49,6 +49,15 @@ export async function apiPatch<T>(url: string, body?: unknown): Promise<T> {
   return parseJson<T>(res)
 }
 
+export async function apiPut<T>(url: string, body?: unknown): Promise<T> {
+  const res = await fetch(`/api/${url}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  })
+  return parseJson<T>(res)
+}
+
 export async function apiDelete<T>(
   url: string,
   params?: Record<string, string | number | undefined>
