@@ -84,17 +84,51 @@ export async function GET(
       )
     }
 
-    // 读取完整响应体（流式传输 response.body 在 dev/turbopack 下易触发 EPIPE，改为缓冲）
-    const buf = await response.arrayBuffer()
+    // 透传上游 Content-Length（让客户端能计算真实下载进度）
+    const contentLength = response.headers.get('content-length')
 
     const headers: Record<string, string> = {
       'Access-Control-Allow-Origin': '*',
       'Content-Type': response.headers.get('content-type') || 'application/octet-stream',
-      'Content-Length': String(buf.byteLength),
       'Cache-Control': 'public, max-age=3600',
     }
+    if (contentLength) {
+      headers['Content-Length'] = contentLength
+    }
 
-    return new Response(buf, {
+    // 流式转发上游响应体：边下载边推给客户端，让客户端能跟踪真实下载进度。
+    // 用 ReadableStream 手动泵送（而非直接 new Response(response.body)），
+    // 可在出错时优雅关闭，规避 dev/turbopack 下直接透传易触发的 EPIPE。
+    const upstream = response.body
+    if (!upstream) {
+      // 上游 body 为空（异常），退化为缓冲
+      const buf = await response.arrayBuffer()
+      return new Response(buf, { status: response.status, headers })
+    }
+
+    const reader = upstream.getReader()
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            controller.enqueue(value)
+          }
+          controller.close()
+        } catch (err) {
+          // 客户端断开或上游异常：释放 reader，优雅关闭
+          logger.debug('代理流式转发中断:', err instanceof Error ? err.message : err)
+          try { controller.error(err) } catch { /* noop */ }
+        }
+      },
+      cancel() {
+        // 客户端取消（如切歌）：释放上游 reader
+        reader.cancel().catch(() => {})
+      },
+    })
+
+    return new Response(stream, {
       status: response.status,
       headers,
     })
