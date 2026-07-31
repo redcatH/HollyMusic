@@ -14,7 +14,16 @@ const nav = [
   { href: '/history', label: '历史', icon: History, protected: true },
 ]
 
-export function Sidebar() {
+interface ContentProps {
+  /** 导航/登出动作后回调（小屏抽屉用于关闭） */
+  onNavigate?: () => void
+}
+
+/**
+ * Sidebar 共享内容：logo + 主导航 + 底部用户区（含用户管理下拉）。
+ * 由 Sidebar（大屏常驻）与 MobileSidebar（小屏抽屉）复用，避免逻辑重复。
+ */
+function SidebarContent({ onNavigate }: ContentProps) {
   const pathname = usePathname()
   const router = useRouter()
   const authenticated = useAuthStore(s => s.authenticated)
@@ -23,6 +32,7 @@ export function Sidebar() {
   const [menuOpen, setMenuOpen] = useState(false)
 
   const handleNav = (href: string, isProtected: boolean) => {
+    onNavigate?.()
     if (isProtected && authenticated === false) {
       router.push('/login')
       return
@@ -32,17 +42,19 @@ export function Sidebar() {
 
   const handleLogout = async () => {
     setMenuOpen(false)
+    onNavigate?.()
     await logout()
     router.push('/')
   }
 
   const goAdmin = () => {
     setMenuOpen(false)
+    onNavigate?.()
     router.push('/admin/users')
   }
 
   return (
-    <aside className="hidden w-60 shrink-0 flex-col bg-sidebar p-2 text-sidebar-foreground md:flex">
+    <>
       <div className="flex items-center gap-2 px-3 py-4">
         <Music2 className="h-6 w-6 text-primary" />
         <span className="text-lg font-bold">Holly Music</span>
@@ -106,6 +118,7 @@ export function Sidebar() {
         ) : (
           <Link
             href="/login"
+            onClick={onNavigate}
             className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent/50 hover:text-foreground"
           >
             <LogIn className="h-5 w-5" />
@@ -113,6 +126,43 @@ export function Sidebar() {
           </Link>
         )}
       </div>
+    </>
+  )
+}
+
+/** 大屏常驻侧边栏（≥768px） */
+export function Sidebar() {
+  return (
+    <aside className="hidden w-60 shrink-0 flex-col bg-sidebar p-2 text-sidebar-foreground md:flex">
+      <SidebarContent />
     </aside>
+  )
+}
+
+/**
+ * 小屏导航抽屉（<768px）
+ * 从左侧滑入，带半透明遮罩；点遮罩或导航动作（onNavigate）即关闭。
+ */
+export function MobileSidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
+  return (
+    <div className="md:hidden">
+      {/* 遮罩 */}
+      <div
+        className={`fixed inset-0 z-40 bg-black/50 transition-opacity duration-300 ${
+          open ? 'opacity-100' : 'pointer-events-none opacity-0'
+        }`}
+        onClick={onClose}
+        aria-hidden={!open}
+      />
+      {/* 面板 */}
+      <aside
+        className={`fixed left-0 top-0 z-50 flex h-full w-64 flex-col bg-sidebar p-2 text-sidebar-foreground shadow-2xl transition-transform duration-300 ${
+          open ? 'translate-x-0' : '-translate-x-full'
+        }`}
+        aria-hidden={!open}
+      >
+        <SidebarContent onNavigate={onClose} />
+      </aside>
+    </div>
   )
 }
