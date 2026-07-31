@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+  </defs>
+  <!-- 全填充背景（maskable 要求背景铺满 viewport） -->
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <!-- 图形在安全区 80% 内（中心 410x410） -->
+  <g fill="#fff" transform="translate(51 51) scale(0.8)">
+    <path d="M336 128 L336 304 Q336 352 296 352 Q256 352 256 312 Q256 272 296 272 Q312 272 328 280 L328 176 L240 200 L240 336 Q240 384 200 384 Q160 384 160 344 Q160 304 200 304 Q216 304 232 312 L232 168 Z"/>
+  </g>
+</svg>
