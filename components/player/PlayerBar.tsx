@@ -19,6 +19,8 @@ export function PlayerBar() {
     onDuration: d => usePlayerStore.getState().setDuration(d),
     onPlayState: p => usePlayerStore.getState().setIsPlaying(p),
     onEnd: () => usePlayerStore.getState().handleTrackEnd(),
+    onLoading: pct => usePlayerStore.getState().setBufferProgress(pct),
+    onError: msg => usePlayerStore.getState().handleTrackError(msg),
   })
 
   // streamUrl 变化 → 加载音频

@@ -25,6 +25,8 @@ interface PlayerStore {
   streamUrl: string | null
   isFetchingUrl: boolean
   urlFetchError: string | null
+  /** 连续播放失败计数（自动跳歌防死循环） */
+  errorRetryCount: number
 
   // 播放状态
   isPlaying: boolean
@@ -33,6 +35,8 @@ interface PlayerStore {
   volume: number
   isMuted: boolean
   playbackMode: PlaybackMode
+  /** 音频 blob 下载进度：0-100 表示下载中，null 表示未在下载 */
+  bufferProgress: number | null
 
   // seek 指令（通过 nonce 触发音频 seek）
   seekTarget: number | null
@@ -49,6 +53,8 @@ interface PlayerStore {
   setIsPlaying: (v: boolean) => void
   setCurrentTime: (t: number) => void
   setDuration: (d: number) => void
+  setBufferProgress: (v: number | null) => void
+  handleTrackError: (msg: string) => void
   seek: (t: number) => void
   setVolume: (v: number) => void
   toggleMute: () => void
@@ -78,6 +84,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   streamUrl: null,
   isFetchingUrl: false,
   urlFetchError: null,
+  errorRetryCount: 0,
 
   isPlaying: false,
   currentTime: 0,
@@ -85,6 +92,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   volume: 0.8,
   isMuted: false,
   playbackMode: 'sequence',
+  bufferProgress: null,
 
   seekTarget: null,
   seekNonce: 0,
@@ -116,12 +124,8 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       const { url } = await getMusicUrl(track.musicInfo, '320k')
       set({ streamUrl: buildStreamUrl(url), isFetchingUrl: false, isPlaying: true })
     } catch (e) {
-      set({
-        isFetchingUrl: false,
-        urlFetchError: e instanceof Error ? e.message : '获取播放链接失败',
-        streamUrl: null,
-        isPlaying: false,
-      })
+      const msg = e instanceof Error ? e.message : '获取播放链接失败'
+      get().handleTrackError(msg)
     }
   },
 
@@ -129,9 +133,29 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     console.log('[diag] togglePlay, isPlaying=', get().isPlaying)
     set(s => (s.currentTrack ? { isPlaying: !s.isPlaying } : {}))
   },
-  setIsPlaying: (v) => set({ isPlaying: v }),
+  // 播放成功时（onPlayState true）重置连续失败计数
+  setIsPlaying: (v) => set(v ? { isPlaying: true, errorRetryCount: 0 } : { isPlaying: false }),
   setCurrentTime: (t) => set({ currentTime: t }),
   setDuration: (d) => set({ duration: d }),
+  setBufferProgress: (v) => set({ bufferProgress: v }),
+  handleTrackError: (msg) => {
+    const { queue, errorRetryCount } = get()
+    // 连续失败上限：min(3, 队列长度)；队列只有 1 首时失败 1 次即停止，避免对同一首无限重试
+    const limit = Math.max(1, Math.min(3, queue.length))
+    if (errorRetryCount + 1 >= limit) {
+      set({
+        urlFetchError: `连续 ${limit} 首播放失败，已停止：${msg}`,
+        isPlaying: false,
+        isFetchingUrl: false,
+        streamUrl: null,
+        errorRetryCount: 0,
+        bufferProgress: null,
+      })
+      return
+    }
+    set({ errorRetryCount: errorRetryCount + 1, isFetchingUrl: false })
+    get().next()
+  },
   seek: (t) => set(s => ({ currentTime: t, seekTarget: t, seekNonce: s.seekNonce + 1 })),
   setVolume: (v) => set({ volume: Math.max(0, Math.min(1, v)), isMuted: false }),
   toggleMute: () => set(s => ({ isMuted: !s.isMuted })),
@@ -211,7 +235,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       return { queue: newQueue, currentIndex: newIndex, currentTrack: newTrack }
     }),
   clearQueue: () =>
-    set({ queue: [], currentIndex: -1, currentTrack: null, streamUrl: null, isPlaying: false }),
+    set({ queue: [], currentIndex: -1, currentTrack: null, streamUrl: null, isPlaying: false, bufferProgress: null }),
 
   toggleQueue: () => set(s => ({ isQueueOpen: !s.isQueueOpen })),
   setQueueOpen: (v) => set({ isQueueOpen: v }),
