@@ -54,7 +54,7 @@ export function PlayerBar() {
   }, [seekNonce, seek])
 
   return (
-    <footer className="flex items-center justify-between gap-4 border-t border-border bg-card px-4 py-3">
+    <footer className="safe-area-bottom flex items-center justify-between gap-4 border-t border-border bg-card px-4 py-3">
       <NowPlaying />
       <PlayerControls />
       <VolumeControl />

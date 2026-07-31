@@ -111,3 +111,27 @@ html,
 body {
   -webkit-text-size-adjust: 100%;
 }
+
+/* 安全区工具类：fixed 全屏面板用，避免刘海/状态栏/手势条遮挡按钮 */
+@layer utilities {
+  /* 面板整体：四周留出系统 UI 安全区（iOS notch / Android status bar / 底部手势条） */
+  .safe-area-inset {
+    padding-top: env(safe-area-inset-top);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+  }
+  /* 仅顶部：常用于全屏面板顶部按钮区，避开地址栏/状态栏 */
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  /* 仅底部：常用于底部固定栏（PlayerBar），避开手势条 */
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  /* 触摸友好的最小尺寸：移动端按钮至少 44×44 */
+  .touch-target {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
