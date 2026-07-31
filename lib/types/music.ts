@@ -40,6 +40,13 @@ export interface MusicInfo {
   trcUrl?: string // mg
 }
 
+// 带对外唯一 id 的歌曲（前端通用类型）
+// uid = `${source}-${存储songmid}`，用于封面/歌词/收藏/历史等所有按歌曲索引的场景
+// 注意：MusicInfo 自带的 songId 字段是 tx/wy 的原始音源 id，不可作为对外 id，故新增 uid
+export interface Song extends MusicInfo {
+  uid: string
+}
+
 // 搜索结果
 export interface SearchResult {
   list: MusicInfo[]

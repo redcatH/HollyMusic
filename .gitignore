@@ -58,3 +58,9 @@ next-env.d.ts
 */prisma/data/**.db
 
 /config/music-sources.json
+
+# custom sources (local only, not for commit)
+/custom-sources/
+
+# opencode workspace
+/.omo/

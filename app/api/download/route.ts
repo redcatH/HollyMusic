@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireUser, AuthError } from '@/lib/services/user-context'
 
 /**
  * 音乐下载代理路由
@@ -73,6 +74,7 @@ function sanitizeFilename(filename: string): string {
  */
 export async function GET(request: NextRequest) {
   try {
+    await requireUser(request)
     const { searchParams } = new URL(request.url)
     const encodedUrl = searchParams.get('url')
     const filename = searchParams.get('filename')
@@ -153,6 +155,9 @@ export async function GET(request: NextRequest) {
       headers,
     })
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: 401 })
+    }
     console.error('download route error:', error)
     return NextResponse.json(
       { error: '下载失败' },
@@ -167,6 +172,7 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    await requireUser(request)
     const body = await request.json()
     const { url, filename } = body
 
@@ -243,6 +249,9 @@ export async function POST(request: NextRequest) {
       headers,
     })
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: 401 })
+    }
     console.error('download route error:', error)
     return NextResponse.json(
       { error: '下载失败' },
