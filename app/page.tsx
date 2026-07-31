@@ -5,6 +5,8 @@ import { usePlayerStore } from '@/lib/store/player-store'
 import { CoverImage } from '@/components/shared/CoverImage'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { SourceBadge } from '@/components/shared/SourceBadge'
+import { QualityBadge } from '@/components/shared/QualityBadge'
 import { RefreshCw, Play, Shuffle } from 'lucide-react'
 import { toTrack } from '@/lib/types/player'
 
@@ -62,7 +64,11 @@ export default function HomePage() {
                 </div>
               </div>
               <div className="truncate text-sm font-medium">{t.name}</div>
-              <div className="truncate text-xs text-muted-foreground">{t.artist}</div>
+              <div className="flex items-center gap-1.5">
+                <span className="truncate text-xs text-muted-foreground">{t.artist}</span>
+                <SourceBadge source={t.source} />
+                <QualityBadge musicInfo={t.musicInfo} />
+              </div>
             </button>
           ))}
         </div>
