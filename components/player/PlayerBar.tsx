@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import { usePlayerStore } from '@/lib/store/player-store'
 import { useAudioPlayer } from '@/hooks/useAudioPlayer'
+import { useMediaSession } from '@/hooks/useMediaSession'
 import { NowPlaying } from './NowPlaying'
 import { PlayerControls } from './PlayerControls'
 import { VolumeControl } from './VolumeControl'
@@ -22,6 +23,9 @@ export function PlayerBar() {
     onLoading: pct => usePlayerStore.getState().setBufferProgress(pct),
     onError: msg => usePlayerStore.getState().handleTrackError(msg),
   })
+
+  // 同步当前曲目到 MediaSession（锁屏/通知/耳机控制）
+  useMediaSession()
 
   // streamUrl 变化 → 加载音频
   useEffect(() => {

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { Menu } from 'lucide-react'
 import { Sidebar, MobileSidebar } from './Sidebar'
+import { ServiceWorkerRegister } from './ServiceWorkerRegister'
 import { PlayerBar } from '@/components/player/PlayerBar'
 import { QueuePanel } from '@/components/player/QueuePanel'
 import { LyricsPanel } from '@/components/player/LyricsPanel'
@@ -71,6 +72,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
+      <ServiceWorkerRegister />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
         <main className="flex-1 overflow-y-auto">{children}</main>
