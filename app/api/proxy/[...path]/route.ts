@@ -84,21 +84,17 @@ export async function GET(
       )
     }
 
-    // 构建响应头
+    // 读取完整响应体（流式传输 response.body 在 dev/turbopack 下易触发 EPIPE，改为缓冲）
+    const buf = await response.arrayBuffer()
+
     const headers: Record<string, string> = {
       'Access-Control-Allow-Origin': '*',
+      'Content-Type': response.headers.get('content-type') || 'application/octet-stream',
+      'Content-Length': String(buf.byteLength),
+      'Cache-Control': 'public, max-age=3600',
     }
 
-    // 保留原始响应头
-    response.headers.forEach((value, key) => {
-      // 跳过某些响应头
-      if (!['connection', 'transfer-encoding'].includes(key.toLowerCase())) {
-        headers[key] = value
-      }
-    })
-
-    // 流式传输响应
-    return new Response(response.body, {
+    return new Response(buf, {
       status: response.status,
       headers,
     })

@@ -1,0 +1,75 @@
+'use client'
+
+import { usePlayerStore } from '@/lib/store/player-store'
+import { CoverImage } from '@/components/shared/CoverImage'
+import { X, Trash2 } from 'lucide-react'
+
+export function QueuePanel() {
+  const isOpen = usePlayerStore(s => s.isQueueOpen)
+  const setQueueOpen = usePlayerStore(s => s.setQueueOpen)
+  const queue = usePlayerStore(s => s.queue)
+  const currentIndex = usePlayerStore(s => s.currentIndex)
+  const playTrack = usePlayerStore(s => s.playTrack)
+  const removeFromQueue = usePlayerStore(s => s.removeFromQueue)
+  const clearQueue = usePlayerStore(s => s.clearQueue)
+
+  if (!isOpen) return null
+
+  return (
+    <div
+      className="fixed inset-0 z-40 flex justify-end bg-black/50"
+      onClick={() => setQueueOpen(false)}
+    >
+      <div
+        className="flex h-full w-full max-w-md flex-col bg-card"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-border p-4">
+          <h2 className="font-semibold">播放队列（{queue.length}）</h2>
+          <div className="flex gap-2">
+            <button onClick={clearQueue} className="text-muted-foreground hover:text-foreground" aria-label="清空">
+              <Trash2 className="h-4 w-4" />
+            </button>
+            <button onClick={() => setQueueOpen(false)} className="text-muted-foreground hover:text-foreground" aria-label="关闭">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-2">
+          {queue.length === 0 ? (
+            <div className="p-8 text-center text-sm text-muted-foreground">队列为空</div>
+          ) : (
+            queue.map((t, i) => (
+              <div
+                key={`${t.uid}-${i}`}
+                className={`group flex items-center gap-3 rounded-md p-2 ${
+                  i === currentIndex ? 'bg-accent' : 'hover:bg-accent/50'
+                }`}
+              >
+                <button
+                  onClick={() => playTrack(t, queue)}
+                  className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                >
+                  <CoverImage uid={t.uid} className="h-10 w-10" />
+                  <div className="min-w-0">
+                    <div className={`truncate text-sm ${i === currentIndex ? 'text-primary' : ''}`}>
+                      {t.name}
+                    </div>
+                    <div className="truncate text-xs text-muted-foreground">{t.artist}</div>
+                  </div>
+                </button>
+                <button
+                  onClick={() => removeFromQueue(i)}
+                  className="text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100"
+                  aria-label="移除"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}

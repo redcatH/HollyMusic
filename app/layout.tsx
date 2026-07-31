@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
-import VConsoleScript from '@/components/debug/VConsoleScript'
 import { Geist, Geist_Mono } from "next/font/google";
+import { AppShell } from "@/components/layout/AppShell";
 import { ToastContainer } from "@/components/toast/ToastContainer";
-import { BottomPlayer } from "@/components/layout/BottomPlayer";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -16,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Holly Music - Web 播放器",
-  description: "支持多源搜索的在线音乐播放器",
+  title: "Holly Music",
+  description: "多源在线音乐播放器",
 };
 
 export default function RootLayout({
@@ -30,11 +29,8 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased m-0 p-0`}
       >
-        {children}
-        <BottomPlayer />
+        <AppShell>{children}</AppShell>
         <ToastContainer />
-        {/* vConsole: 通过 ?vconsole=1 或 NEXT_PUBLIC_ENABLE_VCONSOLE=true 启用（仅用于调试） */}
-        <VConsoleScript />
       </body>
     </html>
   );
