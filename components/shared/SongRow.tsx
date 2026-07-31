@@ -7,7 +7,7 @@ import { useDownload } from '@/hooks/useDownload'
 import { CoverImage } from './CoverImage'
 import { SourceBadge } from './SourceBadge'
 import { QualityBadge } from './QualityBadge'
-import { Play, Pause, Heart, MoreHorizontal, Download } from 'lucide-react'
+import { Play, Pause, Heart, MoreHorizontal, Download, Loader2 } from 'lucide-react'
 import { formatTime } from '@/lib/utils/format'
 import type { Track } from '@/lib/types/player'
 
@@ -25,7 +25,7 @@ export function SongRow({ track, queue, index, onAddToPlaylist }: SongRowProps) 
   const isFav = useFavoritesStore(s => s.ids.has(track.uid))
   const toggleFav = useFavoritesStore(s => s.toggle)
   const authenticated = useAuthStore(s => s.authenticated)
-  const { download, downloading } = useDownload()
+  const { download, downloading, progress } = useDownload()
 
   const isCurrent = currentTrack?.uid === track.uid
   const isCurrentPlaying = isCurrent && isPlaying
@@ -97,11 +97,19 @@ export function SongRow({ track, queue, index, onAddToPlaylist }: SongRowProps) 
         <button
           onClick={() => download(track.musicInfo)}
           disabled={downloading}
-          className="hidden shrink-0 p-1 text-muted-foreground opacity-0 transition hover:text-foreground group-hover:opacity-100 disabled:opacity-50 md:block"
+          className={`hidden shrink-0 p-1 transition md:block ${
+            downloading
+              ? 'text-primary opacity-100'
+              : 'text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100'
+          } disabled:opacity-100`}
           aria-label="下载"
-          title="下载"
+          title={downloading ? (progress != null ? `下载中 ${progress}%` : '下载中…') : '下载'}
         >
-          <Download className="h-4 w-4" />
+          {downloading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Download className="h-4 w-4" />
+          )}
         </button>
       )}
 

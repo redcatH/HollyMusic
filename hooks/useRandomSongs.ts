@@ -1,30 +1,29 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import { getRandomSongs } from '@/lib/api/random'
-import type { Song } from '@/lib/types/music'
+import { useEffect } from 'react'
+import { useDiscoverStore } from '@/lib/store/discover-store'
 
+/**
+ * 发现音乐（随机推荐）hook
+ *
+ * 数据存放在 discover-store（组件外部），组件卸载不丢数据。
+ * 组件挂载时调用 fetch(force=false)：有未过期缓存则不请求，
+ * 过期或首次才拉取。「换一批」按钮用 reload（force=true）。
+ */
 export function useRandomSongs(size = 30) {
-  const [songs, setSongs] = useState<Song[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  const reload = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const { list } = await getRandomSongs(size)
-      setSongs(list)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '加载失败')
-    } finally {
-      setLoading(false)
-    }
-  }, [size])
+  const songs = useDiscoverStore(s => s.songs)
+  const loading = useDiscoverStore(s => s.loading)
+  const error = useDiscoverStore(s => s.error)
+  const fetchSongs = useDiscoverStore(s => s.fetch)
+  const reloadStore = useDiscoverStore(s => s.reload)
 
   useEffect(() => {
-    reload()
-  }, [reload])
+    // force=false：命中未过期缓存时不会发请求
+    fetchSongs(size, false)
+  }, [size, fetchSongs])
+
+  // reload 透传 force=true
+  const reload = () => reloadStore(size)
 
   return { songs, loading, error, reload }
 }
