@@ -44,7 +44,7 @@ export function MobileHeader({ onMenuClick }: Props) {
   const title = getTitle(pathname)
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background/80 px-2 backdrop-blur-md md:hidden">
+    <header className="safe-area-top flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background/95 px-2 backdrop-blur-md md:hidden">
       <button
         onClick={onMenuClick}
         className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-foreground transition hover:bg-accent"
