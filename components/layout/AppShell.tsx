@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { Menu } from 'lucide-react'
 import { Sidebar, MobileSidebar } from './Sidebar'
+import { MobileHeader } from './MobileHeader'
 import { ServiceWorkerRegister } from './ServiceWorkerRegister'
 import { PlayerBar } from '@/components/player/PlayerBar'
 import { QueuePanel } from '@/components/player/QueuePanel'
@@ -73,19 +73,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
       <ServiceWorkerRegister />
+      <MobileHeader onMenuClick={() => setDrawerOpen(true)} />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
         <main className="flex-1 overflow-y-auto">{children}</main>
       </div>
       <PlayerBar />
-      {/* 小屏汉堡按钮（<768px 可见，固定左上角） */}
-      <button
-        onClick={() => setDrawerOpen(true)}
-        className="fixed left-3 top-3 z-30 flex h-9 w-9 items-center justify-center rounded-full bg-card/90 text-foreground shadow-lg backdrop-blur-sm transition hover:bg-card md:hidden"
-        aria-label="打开菜单"
-      >
-        <Menu className="h-5 w-5" />
-      </button>
       <MobileSidebar open={drawerOpen} onClose={() => setDrawerOpen(false)} />
       <QueuePanel />
       <LyricsPanel />

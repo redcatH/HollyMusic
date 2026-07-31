@@ -21,16 +21,24 @@ export function QueuePanel() {
       onClick={() => setQueueOpen(false)}
     >
       <div
-        className="flex h-full w-full max-w-md flex-col bg-card"
+        className="safe-area-top flex h-full w-full max-w-md flex-col bg-card"
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-border p-4">
-          <h2 className="font-semibold">播放队列（{queue.length}）</h2>
-          <div className="flex gap-2">
-            <button onClick={clearQueue} className="text-muted-foreground hover:text-foreground" aria-label="清空">
+        <div className="flex items-center justify-between gap-2 border-b border-border p-4">
+          <h2 className="shrink-0 font-semibold">播放队列（{queue.length}）</h2>
+          <div className="flex shrink-0 gap-2">
+            <button
+              onClick={clearQueue}
+              className="touch-target flex items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+              aria-label="清空"
+            >
               <Trash2 className="h-4 w-4" />
             </button>
-            <button onClick={() => setQueueOpen(false)} className="text-muted-foreground hover:text-foreground" aria-label="关闭">
+            <button
+              onClick={() => setQueueOpen(false)}
+              className="touch-target flex items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+              aria-label="关闭"
+            >
               <X className="h-5 w-5" />
             </button>
           </div>
