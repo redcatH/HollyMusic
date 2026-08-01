@@ -12,6 +12,8 @@ import { useState, useCallback, useEffect } from 'react'
 import {
   getCacheStats,
   clearCache,
+  scanOrphans,
+  cleanOrphans,
   type CacheStats,
 } from '@/lib/api/admin-cache'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
@@ -24,6 +26,9 @@ import {
   AlertCircle,
   RefreshCw,
   CheckCircle2,
+  Search,
+  X,
+  FileQuestion,
 } from 'lucide-react'
 
 export function CachePanel() {
@@ -32,6 +37,13 @@ export function CachePanel() {
   const [error, setError] = useState<string | null>(null)
   const [clearing, setClearing] = useState<string | null>(null)
   const [msg, setMsg] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
+  const [scanning, setScanning] = useState(false)
+  const [cleaningOrphans, setCleaningOrphans] = useState(false)
+  const [orphanResult, setOrphanResult] = useState<{
+    count: number
+    bytes: number
+    files: { relativePath: string; size: number }[]
+  } | null>(null)
 
   const reload = useCallback(async () => {
     setLoading(true)
@@ -77,6 +89,46 @@ export function CachePanel() {
       setMsg({ kind: 'error', text: e instanceof Error ? e.message : '清理失败' })
     } finally {
       setClearing(null)
+    }
+  }
+
+  const handleScanOrphans = async () => {
+    setScanning(true)
+    setMsg(null)
+    try {
+      const result = await scanOrphans()
+      if (result.orphans && result.orphans.count > 0) {
+        setOrphanResult(result.orphans)
+      } else {
+        setMsg({ kind: 'success', text: '未发现孤儿文件，磁盘缓存与数据库一致' })
+      }
+    } catch (e) {
+      setMsg({ kind: 'error', text: e instanceof Error ? e.message : '扫描失败' })
+    } finally {
+      setScanning(false)
+    }
+  }
+
+  const handleCleanOrphans = async () => {
+    setCleaningOrphans(true)
+    setMsg(null)
+    try {
+      const result = await cleanOrphans()
+      const cleaned = result.cleaned
+      setOrphanResult(null)
+      if (cleaned && cleaned.deleted > 0) {
+        setMsg({
+          kind: 'success',
+          text: `已清理 ${cleaned.deleted} 个孤儿文件，释放 ${formatBytes(cleaned.bytes)}`,
+        })
+      } else {
+        setMsg({ kind: 'success', text: '孤儿文件已清除（可能已被其他进程删除）' })
+      }
+      await reload()
+    } catch (e) {
+      setMsg({ kind: 'error', text: e instanceof Error ? e.message : '清理失败' })
+    } finally {
+      setCleaningOrphans(false)
     }
   }
 
@@ -187,8 +239,23 @@ export function CachePanel() {
             </div>
             <div className="text-2xl font-bold">{stats?.memory.url.size ?? 0}<span className="ml-1 text-xs font-normal text-muted-foreground">条</span></div>
             <div className="mt-1 text-xs text-muted-foreground">命中率 {stats?.memory.url.hitRate ?? '0%'}</div>
+            </div>
+
+            {/* 扫描孤儿文件 */}
+            <div className="mt-3 border-t border-border pt-3">
+              <button
+                onClick={handleScanOrphans}
+                disabled={scanning || cleaningOrphans || clearing !== null}
+                className="flex items-center gap-1 rounded border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+              >
+                {scanning ? <Loader2 className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}
+                扫描孤儿文件
+              </button>
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                检查磁盘上存在但数据库中无记录的文件（如数据库重置后残留）
+              </p>
+            </div>
           </div>
-        </div>
       </section>
 
       {/* ── 磁盘缓存 ── */}
@@ -276,6 +343,68 @@ export function CachePanel() {
           清理内存缓存和磁盘缓存，磁盘文件删除后不可恢复
         </p>
       </div>
+
+      {/* 孤儿扫描结果弹窗 */}
+      {orphanResult && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+          onClick={() => setOrphanResult(null)}
+        >
+          <div
+            className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-lg bg-card p-6 shadow-xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="flex items-center gap-2 text-lg font-semibold">
+                <FileQuestion className="h-5 w-5 text-amber-500" />
+                孤儿文件
+              </h3>
+              <button
+                onClick={() => setOrphanResult(null)}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <p className="mb-3 text-sm text-muted-foreground">
+              发现 <span className="font-bold text-foreground">{orphanResult.count}</span> 个孤儿文件，
+              占用 <span className="font-bold text-foreground">{formatBytes(orphanResult.bytes)}</span>
+            </p>
+
+            <div className="mb-4 max-h-48 overflow-y-auto rounded border border-border p-2">
+              {orphanResult.files.map((f, i) => (
+                <div key={i} className="flex items-center justify-between py-1 text-xs">
+                  <span className="truncate text-muted-foreground" title={f.relativePath}>{f.relativePath}</span>
+                  <span className="ml-2 shrink-0 text-muted-foreground">{formatBytes(f.size)}</span>
+                </div>
+              ))}
+            </div>
+
+            <p className="mb-4 text-xs text-amber-600">
+              ⚠️ 这些文件在数据库中无记录，删除后不可恢复。
+              {orphanResult.count > 0 && '如数据库刚重置，这些是旧缓存残留。'}
+            </p>
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setOrphanResult(null)}
+                className="rounded-full px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleCleanOrphans}
+                disabled={cleaningOrphans}
+                className="flex items-center gap-1 rounded-full bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground disabled:opacity-50"
+              >
+                {cleaningOrphans ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                确认删除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

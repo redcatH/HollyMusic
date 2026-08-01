@@ -11,11 +11,12 @@
 import { logger } from '@/lib/logger'
 import { getAudioCacheConfig } from './config'
 import { ensureCacheRoot } from './paths'
-import { cleanupOrphans, clearAllAudioCache, collectGarbage, getCurrentBytes, maybeCollect } from './lru'
+import { cleanupOrphans, clearAllAudioCache, collectGarbage, getCurrentBytes, maybeCollect, scanOrphanFiles, deleteOrphanFiles } from './lru'
 
 export { serve } from './serve'
 export type { ServeOptions } from './serve'
-export { clearAllAudioCache, collectGarbage, getCurrentBytes, maybeCollect }
+export { clearAllAudioCache, collectGarbage, getCurrentBytes, maybeCollect, scanOrphanFiles, deleteOrphanFiles }
+export type { OrphanFile } from './lru'
 export { getAudioCacheConfig } from './config'
 export { getStats } from './repository'
 

@@ -13,6 +13,7 @@
  */
 
 import fsp from 'fs/promises'
+import path from 'path'
 import { logger } from '@/lib/logger'
 import { getAudioCacheConfig } from './config'
 import { absoluteFromRelative } from './paths'
@@ -133,6 +134,101 @@ export async function clearAllAudioCache(): Promise<{ count: number; bytes: numb
   }
   logger.info(`[LRU] 全量清理: 删除 ${count} 条, 释放 ${formatBytes(bytes)}`)
   return { count, bytes }
+}
+
+/**
+ * 扫描磁盘缓存目录，找出 DB 里没有对应记录的孤儿文件。
+ * 场景：DB 重置 / 迁移后，磁盘上残留旧缓存文件。
+ *
+ * 返回孤儿文件列表（相对路径 + 绝对路径 + 字节数）。
+ * 仅扫描，不删除——由 admin 在 UI 上确认后调用 deleteOrphanFiles。
+ */
+export interface OrphanFile {
+  /** 相对于缓存根目录的路径（如 ab/abcdef.mp3） */
+  relativePath: string
+  /** 绝对路径 */
+  absolutePath: string
+  /** 文件大小（字节） */
+  size: number
+}
+
+export async function scanOrphanFiles(): Promise<{ count: number; bytes: number; orphans: OrphanFile[] }> {
+  const cfg = getAudioCacheConfig()
+  const root = cfg.cacheDir
+
+  // 1. 收集 DB 里所有 filePath
+  const records = await listAll()
+  const dbPaths = new Set(records.map(r => r.filePath))
+
+  // 2. 递归扫描磁盘目录
+  const orphans: OrphanFile[] = []
+  await scanDir(root, '', dbPaths, orphans)
+
+  const bytes = orphans.reduce((sum, o) => sum + o.size, 0)
+  logger.info(`[LRU] 孤儿扫描: 发现 ${orphans.length} 个孤儿文件, 占用 ${formatBytes(bytes)}`)
+  return { count: orphans.length, bytes, orphans }
+}
+
+/** 递归扫描目录，收集不在 dbPaths 中的文件 */
+async function scanDir(
+  rootAbs: string,
+  relDir: string,
+  dbPaths: Set<string>,
+  orphans: OrphanFile[]
+): Promise<void> {
+  const absDir = relDir ? path.join(rootAbs, relDir) : rootAbs
+  let entries: import('fs').Dirent[]
+  try {
+    entries = await fsp.readdir(absDir, { withFileTypes: true })
+  } catch {
+    return // 目录不存在，忽略
+  }
+
+  for (const entry of entries) {
+    const relPath = relDir ? path.join(relDir, entry.name).replace(/\\/g, '/') : entry.name
+
+    if (entry.isDirectory()) {
+      await scanDir(rootAbs, relPath, dbPaths, orphans)
+    } else if (entry.isFile()) {
+      // 文件名可能是 abc.mp3（正式）或 abc.mp3.tmp（下载中）
+      // 正式文件的 relPath 应在 dbPaths 中
+      // .tmp 文件：去掉 .tmp 后缀看是否在 dbPaths（对应 partial/downloading 的 .tmp）
+      if (relPath.endsWith('.tmp')) {
+        const withoutTmp = relPath.slice(0, -4)
+        if (!dbPaths.has(withoutTmp)) {
+          // .tmp 对应的正式路径也不在 DB → 孤儿
+          const abs = path.join(rootAbs, relDir, entry.name)
+          const stat = await fsp.stat(abs).catch(() => null)
+          if (stat) orphans.push({ relativePath: relPath, absolutePath: abs, size: stat.size })
+        }
+      } else {
+        if (!dbPaths.has(relPath)) {
+          const abs = path.join(rootAbs, relDir, entry.name)
+          const stat = await fsp.stat(abs).catch(() => null)
+          if (stat) orphans.push({ relativePath: relPath, absolutePath: abs, size: stat.size })
+        }
+      }
+    }
+  }
+}
+
+/** 删除指定的孤儿文件（不删 DB 记录，因为 DB 里本来就没有） */
+export async function deleteOrphanFiles(
+  orphans: OrphanFile[]
+): Promise<{ deleted: number; bytes: number }> {
+  let deleted = 0
+  let bytes = 0
+  for (const orphan of orphans) {
+    try {
+      await fsp.unlink(orphan.absolutePath)
+      deleted++
+      bytes += orphan.size
+    } catch {
+      // 文件可能已被其他进程删除，忽略
+    }
+  }
+  logger.info(`[LRU] 孤儿删除: 清理 ${deleted}/${orphans.length} 个文件, 释放 ${formatBytes(bytes)}`)
+  return { deleted, bytes }
 }
 
 /**

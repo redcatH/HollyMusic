@@ -34,6 +34,12 @@ export interface CacheClearResult {
   search: MemoryCacheStats
   url: MemoryCacheStats
   audio?: { count: number; bytes: number } | null
+  orphans?: {
+    count: number
+    bytes: number
+    files: { relativePath: string; size: number }[]
+  }
+  cleaned?: { deleted: number; bytes: number }
 }
 
 export function getCacheStats(): Promise<CacheStats> {
@@ -42,4 +48,14 @@ export function getCacheStats(): Promise<CacheStats> {
 
 export function clearCache(type: 'search' | 'url' | 'audio' | 'all'): Promise<CacheClearResult> {
   return apiPost<CacheClearResult>('admin/cache', { type })
+}
+
+/** 扫描磁盘孤儿文件（不删除），返回列表供 admin 确认 */
+export function scanOrphans(): Promise<CacheClearResult> {
+  return apiPost<CacheClearResult>('admin/cache', { type: 'scan-orphans' })
+}
+
+/** 删除扫描出的孤儿文件 */
+export function cleanOrphans(): Promise<CacheClearResult> {
+  return apiPost<CacheClearResult>('admin/cache', { type: 'clean-orphans' })
 }
