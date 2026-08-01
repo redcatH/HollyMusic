@@ -23,6 +23,7 @@ import {
   deleteRecord,
   type AudioCacheRecord,
 } from './repository'
+import { jobManager } from './job-manager'
 
 /** 当前缓存占用字节（complete 按 size，partial 按 downloadedBytes；downloading 不计） */
 export async function getCurrentBytes(): Promise<number> {
@@ -291,8 +292,21 @@ export async function scanAndCleanStale(): Promise<{
 
     // 1. downloading 超时 → 卡死，删记录 + 删 .tmp
     if (rec.status === 'downloading' && age > cfg.staleDownloadMs) {
-      await deleteCacheFiles(rec)
+      // 竞态防护：有活跃 job 则跳过（下一轮再清）
+      if (jobManager.has(rec.cacheKey)) {
+        logger.debug(`[stale-scan] 跳过（有活跃 job）: ${rec.cacheKey}`)
+        continue
+      }
+      // 先删 DB 记录（新用户此后走 miss 全新下载）
       await deleteRecord(rec.cacheKey)
+      // 二次检查：删记录期间可能新 job 刚创建
+      if (jobManager.has(rec.cacheKey)) {
+        logger.info(`[stale-scan] 删记录后发现新 job，跳过删文件: ${rec.cacheKey}`)
+        staleDownloads++
+        continue
+      }
+      // 安全删 .tmp
+      await deleteCacheFiles(rec)
       staleDownloads++
       bytesFreed += rec.downloadedBytes
       logger.info(`[stale-scan] 清理卡死下载: ${rec.cacheKey} (age=${Math.round(age / 1000)}s)`)

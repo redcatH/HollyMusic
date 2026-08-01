@@ -8,8 +8,10 @@
  * - AUDIO_CACHE_WATERMARK_HIGH 触发清理的占用比例（0-1）
  * - AUDIO_CACHE_WATERMARK_LOW  清理目标比例（0-1）
  * - AUDIO_CACHE_SEEK_TIMEOUT_MS seek 超过已下载部分时的等待上限（ms）
- * - AUDIO_CACHE_STALE_DOWNLOAD_MS downloading 超过此时间视为卡死（ms，默认 5 分钟）
- * - AUDIO_CACHE_SCAN_INTERVAL_MS 定时扫描间隔（ms，默认 1 小时）
+ * - AUDIO_CACHE_STALE_DOWNLOAD_MS downloading 超过此时间视为卡死（ms，默认 30 分钟）
+ * - AUDIO_CACHE_SCAN_HOUR 定时扫描小时（0-23，默认 3 = 凌晨 3 点）
+ * - AUDIO_CACHE_JOB_MAX_LIFETIME_MS Job 最大生命周期（ms，默认 5 分钟）
+ * - AUDIO_CACHE_READINESS_TIMEOUT_MS 等待上游响应头超时（ms，默认 20 秒）
  * - ENABLE_FILE_CACHE          总开关，false 时退化为流式透传（不缓存、不支持 seek）
  */
 
@@ -54,8 +56,12 @@ export interface AudioCacheConfig {
   seekTimeoutMs: number
   /** DB 中 downloading 记录超过此时间视为卡死（ms） */
   staleDownloadMs: number
-  /** 定时扫描清理间隔（ms） */
-  scanIntervalMs: number
+  /** 定时扫描的小时（0-23，默认 3 = 凌晨 3 点） */
+  scanHour: number
+  /** Job 最大生命周期（ms），超时自动 abort 释放信号量 */
+  jobMaxLifetimeMs: number
+  /** 等待上游响应头超时（ms），超时返回 503 */
+  readinessTimeoutMs: number
 }
 
 let cached: AudioCacheConfig | null = null
@@ -83,7 +89,9 @@ export function getAudioCacheConfig(): AudioCacheConfig {
     watermarkLow: low,
     seekTimeoutMs: readInt('AUDIO_CACHE_SEEK_TIMEOUT_MS', 30000, 1000),
     staleDownloadMs: readInt('AUDIO_CACHE_STALE_DOWNLOAD_MS', 1800000, 60000),
-    scanIntervalMs: readInt('AUDIO_CACHE_SCAN_INTERVAL_MS', 3600000, 300000),
+    scanHour: clamp(readInt('AUDIO_CACHE_SCAN_HOUR', 3, 0), 0, 23),
+    jobMaxLifetimeMs: readInt('AUDIO_CACHE_JOB_MAX_LIFETIME_MS', 300000, 60000),
+    readinessTimeoutMs: readInt('AUDIO_CACHE_READINESS_TIMEOUT_MS', 20000, 3000),
   }
   return cached
 }

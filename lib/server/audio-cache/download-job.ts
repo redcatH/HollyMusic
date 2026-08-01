@@ -20,6 +20,7 @@ import fsp from 'fs/promises'
 import { logger } from '@/lib/logger'
 import { markComplete, markPartial, updateProgress, updateFilePath } from './repository'
 import { ensureShardDir, resolvePathsWithContentType, type ResolvedPaths } from './paths'
+import { getAudioCacheConfig } from './config'
 
 export type JobStatus = 'pending' | 'downloading' | 'complete' | 'failed'
 
@@ -47,6 +48,7 @@ export class DownloadJob extends EventEmitter {
   private paths: ResolvedPaths | null = null
   private abortController: AbortController | null = null
   private writeStream: fs.WriteStream | null = null
+  private maxLifetimeTimer: ReturnType<typeof setTimeout> | null = null
 
   /** 阶段 1 完成后 resolve；上层据此决定走 cache 还是 passthrough */
   readonly readiness: Promise<Readiness>
@@ -123,10 +125,29 @@ export class DownloadJob extends EventEmitter {
     this.abortController?.abort()
   }
 
+  /** 清理 maxLifetime 定时器（complete/failed 时调用） */
+  private clearMaxLifetimeTimer(): void {
+    if (this.maxLifetimeTimer) {
+      clearTimeout(this.maxLifetimeTimer)
+      this.maxLifetimeTimer = null
+    }
+  }
+
   /** 启动整个流程：fetch → 检测 CL → cache 下载 或 passthrough */
   async start(): Promise<void> {
     this.abortController = new AbortController()
     this.status = 'downloading'
+
+    // 最大生命周期定时器：超时自动 abort，防止上游 hang 导致永久卡死 + 信号量泄漏
+    const cfg = getAudioCacheConfig()
+    this.maxLifetimeTimer = setTimeout(() => {
+      if (this.status === 'downloading') {
+        logger.warn(`[DownloadJob] maxLifetime 超时 ${this.cacheKey}，abort`)
+        this.abortController?.abort()
+      }
+    }, cfg.jobMaxLifetimeMs)
+    if (this.maxLifetimeTimer.unref) this.maxLifetimeTimer.unref()
+
     try {
       const resp = await fetch(this.upstreamUrl, {
         signal: this.abortController.signal,
@@ -228,6 +249,7 @@ export class DownloadJob extends EventEmitter {
 
     await markComplete(this.cacheKey, this.size!, this.contentType)
     this.status = 'complete'
+    this.clearMaxLifetimeTimer()
     this.emit('complete', { size: this.size, filePath: this.paths!.filePath })
     logger.debug(`[DownloadJob] complete ${this.cacheKey}`)
   }
@@ -252,6 +274,7 @@ export class DownloadJob extends EventEmitter {
 
     // 下载阶段失败：保留 .tmp 已下载部分，标记 partial
     this.status = 'failed'
+    this.clearMaxLifetimeTimer()
     if (this.writeStream && !this.writeStream.destroyed) {
       await new Promise<void>(resolve => this.writeStream!.end(() => resolve()))
     }

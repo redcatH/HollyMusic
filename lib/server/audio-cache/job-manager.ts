@@ -96,6 +96,11 @@ class JobManager {
     return this.jobs.get(cacheKey) ?? null
   }
 
+  /** 同步检查是否有活跃 Job（扫描器删 downloading 记录前调用，避免竞态） */
+  has(cacheKey: string): boolean {
+    return this.jobs.has(cacheKey)
+  }
+
   private async runJob(job: DownloadJob): Promise<void> {
     const { cacheKey } = job
     try {
