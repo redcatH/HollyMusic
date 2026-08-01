@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AppShell } from "@/components/layout/AppShell";
 import { ToastContainer } from "@/components/toast/ToastContainer";
+import { ServiceWorkerRegister } from "@/components/pwa/ServiceWorkerRegister";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -55,6 +56,7 @@ export default function RootLayout({
       >
         <AppShell>{children}</AppShell>
         <ToastContainer />
+        <ServiceWorkerRegister />
       </body>
     </html>
   );
