@@ -16,7 +16,7 @@ import {
   ForbiddenError,
 } from '@/lib/services/user-context'
 import { searchCache, urlCache } from '@/lib/cache-manager'
-import { getStats, getAudioCacheConfig } from '@/lib/server/audio-cache'
+import { getStats, getAudioCacheConfig, scanOrphanFiles, deleteOrphanFiles } from '@/lib/server/audio-cache'
 import { clearAllAudioCache } from '@/lib/server/audio-cache'
 import { logger } from '@/lib/logger'
 
@@ -67,9 +67,9 @@ export async function POST(request: NextRequest) {
     await requireAdmin(request)
 
     const body = await request.json().catch(() => ({}))
-    const { type = 'all' } = body as { type?: 'search' | 'url' | 'audio' | 'all' }
+    const { type = 'all' } = body as { type?: 'search' | 'url' | 'audio' | 'all' | 'scan-orphans' | 'clean-orphans' }
 
-    const validTypes = ['all', 'search', 'url', 'audio']
+    const validTypes = ['all', 'search', 'url', 'audio', 'scan-orphans', 'clean-orphans']
     if (!validTypes.includes(type)) {
       return createErrorResponse('INVALID_PARAMS', `无效的 type: ${type}，支持: ${validTypes.join(', ')}`, 400)
     }
@@ -79,6 +79,8 @@ export async function POST(request: NextRequest) {
       search?: { size: number; hits: number; misses: number; hitRate: string }
       url?: { size: number; hits: number; misses: number; hitRate: string }
       audio?: { count: number; bytes: number } | null
+      orphans?: { count: number; bytes: number; files: { relativePath: string; size: number }[] }
+      cleaned?: { deleted: number; bytes: number }
     } = { type }
 
     switch (type) {
@@ -100,6 +102,24 @@ export async function POST(request: NextRequest) {
         result.audio = await clearAllAudioCache().catch(() => null)
         logger.info('[cache] admin 清理音频磁盘缓存')
         break
+      case 'scan-orphans': {
+        const scanResult = await scanOrphanFiles()
+        result.orphans = {
+          count: scanResult.count,
+          bytes: scanResult.bytes,
+          files: scanResult.orphans.map(o => ({ relativePath: o.relativePath, size: o.size })),
+        }
+        logger.info(`[cache] admin 扫描孤儿文件: ${scanResult.count} 个`)
+        break
+      }
+      case 'clean-orphans': {
+        // 先扫描再删除（前端先 scan 展示，确认后调 clean）
+        const scanResult = await scanOrphanFiles()
+        const delResult = await deleteOrphanFiles(scanResult.orphans)
+        result.cleaned = delResult
+        logger.info(`[cache] admin 清理孤儿文件: ${delResult.deleted}/${scanResult.count} 个`)
+        break
+      }
     }
 
     // 返回清理后的统计
