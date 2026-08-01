@@ -12,9 +12,9 @@ Holly Music 聚合多个音源（QQ / 网易 / 酷我 / 酷狗 / 咪咕等），
 
 ### 🎧 播放体验
 - **多源聚合**：一个搜索框，同时检索多个音源，质量回退（`flac24bit → flac → 320k → 128k`）
-- **Blob 播放方案**：音频先拉到内存成 Blob 再喂给 `<audio>`，seek / 暂停 / 恢复全程内存跳转，彻底规避代理不支持 Range 导致的"从头播放"问题
+- **服务端磁盘缓存 + 边下边播**：音频在服务端落盘并支持 HTTP Range，浏览器原生 seek / 暂停 / 恢复；多用户共享缓存，LRU 自动清理；上游不支持 Range 也能正常跳转
 - **失败自动跳歌**：某首拉取 500 / 解码失败时自动跳下一首，连续失败保护防止死循环
-- **下载进度显示**：流式读取下载进度，实时百分比反馈
+- **音源热重载**：`config/music-sources.json` 变更自动检测 MD5，无需重启
 
 ### 📱 移动端 & PWA
 - **响应式布局**：大屏侧边栏常驻，小屏自动切换顶部导航栏 + 抽屉式菜单
@@ -44,7 +44,7 @@ Holly Music 聚合多个音源（QQ / 网易 / 酷我 / 酷狗 / 咪咕等），
 | 框架 | Next.js 16 (App Router) + React 19 + TypeScript 5 |
 | 样式 | Tailwind CSS v4 |
 | 状态 | Zustand |
-| 音频 | Howler.js (html5 模式) |
+| 音频 | Howler.js (html5 模式) + 服务端 Range 代理 |
 | 数据库 | Prisma + SQLite |
 | PWA | Service Worker + Web App Manifest + Media Session API |
 | 部署 | Docker / Docker Compose |
@@ -67,7 +67,7 @@ Holly Music 聚合多个音源（QQ / 网易 / 酷我 / 酷狗 / 咪咕等），
 │   ├── shared/             # 通用组件（CoverImage/SongRow/LoadingSkeleton...）
 │   └── playlists/          # 歌单管理弹窗
 ├── hooks/                  # React Hooks
-│   ├── useAudioPlayer.ts   # Howler 引擎封装（Blob 方案）
+│   ├── useAudioPlayer.ts   # Howler 引擎封装（服务端 Range 代理）
 │   ├── useMediaSession.ts  # 锁屏媒体控制
 │   ├── useDownload.ts      # 下载（带进度）
 │   ├── useSearch.ts        # 搜索
@@ -150,6 +150,14 @@ docker-compose up --build -d
 
 ## 🎼 自定义音源
 
+**方式一：Web UI 管理（推荐，admin 专属）**
+
+admin 登录后，侧边栏头像下拉 →「音源管理」：
+- 上传 `.js` 脚本（自动预校验 + 注册到 `music-sources.json`）
+- 启停 / 编辑优先级 / 配置支持平台 / 删除（含关联脚本文件）
+
+**方式二：手动编辑文件**
+
 1. 将音源 JS 脚本放入 `custom-sources/`
 2. 在 `config/music-sources.json` 注册（参照现有示例）
 3. 脚本需实现约定接口（遵循 `lx-env-simulator` 规范）：
@@ -173,7 +181,8 @@ docker-compose up --build -d
 | `/api/search` | GET | 搜索 | 公开 |
 | `/api/music-url` | POST | 获取播放地址 | 公开 |
 | `/api/lyrics` | GET | 获取歌词 | 公开 |
-| `/api/proxy/[...path]` | GET | 音频流代理（流式转发） | 公开 |
+| `/api/audio` | GET/HEAD | 音频流 serve（磁盘缓存 + Range + 边下边播） | 公开 |
+| `/api/proxy/[...path]` | GET | 通用流式代理（Subsonic / 下载用） | 公开 |
 | `/api/cover/[id]` | GET | 封面代理 | 公开 |
 | `/api/download` | GET | 下载代理（含进度） | 需登录 |
 | `/api/history` | GET/POST | 播放历史 | 需登录 |
@@ -181,6 +190,9 @@ docker-compose up --build -d
 | `/api/playlists` | GET/POST | 歌单 CRUD | 需登录 |
 | `/api/admin/users` | GET/POST | 用户管理 | **仅 admin** |
 | `/api/admin/users/[id]` | GET/PUT/DELETE | 单用户操作 | **仅 admin** |
+| `/api/admin/sources` | GET/POST | 音源配置管理 | **仅 admin** |
+| `/api/admin/sources/[id]` | PUT/DELETE | 单音源操作（含关联脚本） | **仅 admin** |
+| `/api/admin/sources/upload` | POST | 上传音源脚本（预校验+自动注册） | **仅 admin** |
 | `/api/cache/clear` | POST | 清理缓存 | 公开 |
 
 统一响应格式：`{ success: boolean, data?: T, error?: { code, message } }`
@@ -255,7 +267,7 @@ A：检查 `config/music-sources.json` 路径，查看 `lib/music-source-manager
 A：确认顶部组件有 `safe-area-top` 类，且 `layout.tsx` 配置了 `viewportFit: "cover"`。iOS 可能缓存旧 meta 配置，需删除主屏图标重新添加。
 
 **Q：播放/暂停/切歌从头播放？**
-A：本项目用 Blob 方案规避（代理不支持 Range）。若仍有问题，检查浏览器 Network 面板是否对 `/api/proxy/` 发起了新请求。
+A：v0.8.0 起已改为服务端磁盘缓存 + Range 代理方案，seek / 暂停 / 恢复均由服务端响应，不再有此问题。若仍有异常，检查 `.env` 的 `ENABLE_FILE_CACHE` 是否为 `true`，以及服务端日志是否有 `[AudioCache]` 相关错误。
 
 ---
 
