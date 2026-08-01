@@ -53,6 +53,12 @@ next-env.d.ts
 /cache_data/
 /app_logs/
 /prisma/data/
+# 数据库文件（含异常路径 prisma/prisma/data/ 本地落盘产物）及 SQLite 临时文件
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+/prisma/prisma/
 
 !prisma/migrations/.gitkeep
 */prisma/data/**.db
