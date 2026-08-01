@@ -14,13 +14,17 @@ services:
     environment:
       - NODE_ENV=production
       - DATABASE_URL=file:./prisma/data/music.db
+      # 音频磁盘缓存：指向已挂载的 cache_data volume，多用户共享 + Range 支持
+      - ENABLE_FILE_CACHE=true
+      - AUDIO_CACHE_DIR=/app/.cache/audio-cache
+      - AUDIO_CACHE_QUOTA_GB=10
     volumes:
       # 本地目录映射（方便编辑）
       - ./custom-sources:/app/custom-sources
       - ./config:/app/config
       # 数据库文件持久化（重要！）
       - ./prisma_data:/app/prisma/prisma/data
-      # 缓存目录
+      # 缓存目录（音频磁盘缓存 + 其他缓存，映射到 AUDIO_CACHE_DIR）
       - ./cache_data:/app/.cache
       # 日志目录（可选）
       - ./app_logs:/app/logs

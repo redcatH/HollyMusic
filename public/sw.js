@@ -9,7 +9,7 @@
  * - 白名单内同源 GET 才处理；跨域、非 GET 直接透传
  */
 
-const VERSION = 'v1'
+const VERSION = 'v2'
 const STATIC_CACHE = `holly-static-${VERSION}`
 const PAGE_CACHE = `holly-pages-${VERSION}`
 
