@@ -2,8 +2,9 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { useLinkStatus } from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
-import { Home, Search, Heart, ListMusic, History, Music2, LogIn, LogOut, User, ChevronUp, Settings } from 'lucide-react'
+import { Home, Search, Heart, ListMusic, History, Music2, LogIn, LogOut, User, ChevronUp, Settings, Loader2 } from 'lucide-react'
 import { useAuthStore } from '@/hooks/useAuth'
 
 const nav = [
@@ -20,6 +21,64 @@ interface ContentProps {
 }
 
 /**
+ * 导航项：用 next/link 的 <Link> 替代 router.push，启用 prefetch + useLinkStatus。
+ *
+ * useLinkStatus 必须是 <Link> 的后代组件才能工作，返回 pending 状态：
+ * 点击链接 → RSC fetch 发起（pending=true）→ RSC 返回 commit（pending=false）。
+ * 这让用户立即看到"导航已触发"的反馈，而非等 RSC 返回才响应。
+ */
+function NavLink({
+  href,
+  label,
+  icon: Icon,
+  active,
+  isProtected,
+  authenticated,
+  onNavigate,
+}: {
+  href: string
+  label: string
+  icon: typeof Home
+  active: boolean
+  isProtected: boolean
+  authenticated: boolean | null
+  onNavigate?: () => void
+}) {
+  const { pending } = useLinkStatus()
+  const router = useRouter()
+
+  // 受保护路由 + 未登录 → 跳登录页（拦截 Link 的默认导航）
+  const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    onNavigate?.()
+    if (isProtected && authenticated === false) {
+      e.preventDefault()
+      router.push('/login')
+      return
+    }
+    // 其余情况让 <Link> 正常工作（含 prefetch + 客户端导航）
+  }
+
+  return (
+    <Link
+      href={href}
+      onClick={handleClick}
+      className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+        active
+          ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+          : 'text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground'
+      }`}
+    >
+      {pending ? (
+        <Loader2 className="h-5 w-5 animate-spin text-primary" />
+      ) : (
+        <Icon className="h-5 w-5" />
+      )}
+      {label}
+    </Link>
+  )
+}
+
+/**
  * Sidebar 共享内容：logo + 主导航 + 底部用户区（含用户管理下拉）。
  * 由 Sidebar（大屏常驻）与 MobileSidebar（小屏抽屉）复用，避免逻辑重复。
  */
@@ -30,15 +89,6 @@ function SidebarContent({ onNavigate }: ContentProps) {
   const username = useAuthStore(s => s.username)
   const logout = useAuthStore(s => s.logout)
   const [menuOpen, setMenuOpen] = useState(false)
-
-  const handleNav = (href: string, isProtected: boolean) => {
-    onNavigate?.()
-    if (isProtected && authenticated === false) {
-      router.push('/login')
-      return
-    }
-    router.push(href)
-  }
 
   const handleLogout = async () => {
     setMenuOpen(false)
@@ -62,20 +112,17 @@ function SidebarContent({ onNavigate }: ContentProps) {
       <nav className="flex flex-col gap-1">
         {nav.map(item => {
           const active = pathname === item.href
-          const Icon = item.icon
           return (
-            <button
+            <NavLink
               key={item.href}
-              onClick={() => handleNav(item.href, item.protected)}
-              className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                active
-                  ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                  : 'text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground'
-              }`}
-            >
-              <Icon className="h-5 w-5" />
-              {item.label}
-            </button>
+              href={item.href}
+              label={item.label}
+              icon={item.icon}
+              active={active}
+              isProtected={item.protected}
+              authenticated={authenticated}
+              onNavigate={onNavigate}
+            />
           )
         })}
       </nav>
