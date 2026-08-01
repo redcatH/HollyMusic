@@ -266,7 +266,21 @@ export async function serve(opts: ServeOptions): Promise<Response> {
     void maybeCollect()
   }
 
-  const readiness = await job.readiness
+  // 等待 job readiness，超时返回 503（上游 hang 不响应 header）
+  const readiness = await Promise.race([
+    job.readiness,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('readiness timeout')), cfg.readinessTimeoutMs)
+    ),
+  ]).catch(() => null)
+
+  if (!readiness) {
+    logger.warn(`[serve] readiness 超时 ${opts.cacheKey}（${cfg.readinessTimeoutMs / 1000}秒）`)
+    return new Response(
+      JSON.stringify({ success: false, error: { code: 'READINESS_TIMEOUT', message: '上游响应超时' } }),
+      { status: 503, headers: { 'Content-Type': 'application/json' } }
+    )
+  }
 
   // passthrough（无 Content-Length）→ 透传
   if (readiness.mode === 'passthrough') {

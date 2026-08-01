@@ -35,18 +35,35 @@ async function doInit(): Promise<void> {
   logger.info(
     `[AudioCache] 初始化完成 | 目录=${cfg.cacheDir} | 配额=${(cfg.quotaBytes / 1024 / 1024 / 1024).toFixed(1)}GB | ` +
     `并发上限=${cfg.maxConcurrent} | 水位线=${(cfg.watermarkHigh * 100).toFixed(0)}%/${(cfg.watermarkLow * 100).toFixed(0)}% | ` +
-    `卡死阈值=${(cfg.staleDownloadMs / 60000).toFixed(0)}分钟 | 扫描间隔=${(cfg.scanIntervalMs / 60000).toFixed(0)}分钟` +
+    `卡死阈值=${(cfg.staleDownloadMs / 60000).toFixed(0)}分钟 | 扫描时间=凌晨${cfg.scanHour}点 | ` +
+    `job超时=${(cfg.jobMaxLifetimeMs / 60000).toFixed(0)}分钟 | readiness超时=${(cfg.readinessTimeoutMs / 1000).toFixed(0)}秒` +
     (orphanCount > 0 ? ` | 清理孤儿=${orphanCount}` : '')
   )
 
-  // 定时扫描：清理卡死下载 + 幽灵记录 + 孤儿文件
-  const timer = setInterval(() => {
+  // 每天凌晨 scanHour 点扫描：清理卡死下载 + 幽灵记录 + 孤儿文件
+  scheduleNextScan(cfg.scanHour)
+}
+
+/** 计算到下一个 scanHour 点的毫秒数，setTimeout 执行后递归 */
+function scheduleNextScan(scanHour: number): void {
+  const now = new Date()
+  const next = new Date(now)
+  next.setHours(scanHour, 0, 0, 0)
+  // 如果今天已过 scanHour，设为明天
+  if (next.getTime() <= now.getTime()) {
+    next.setDate(next.getDate() + 1)
+  }
+  const delay = next.getTime() - now.getTime()
+
+  const timer = setTimeout(() => {
     scanAndCleanStale().catch(e => {
-      logger.error('[AudioCache] 定时扫描失败:', e)
+      logger.error('[AudioCache] 凌晨扫描失败:', e)
+    }).finally(() => {
+      scheduleNextScan(scanHour)
     })
-  }, cfg.scanIntervalMs)
-  // 不阻止进程退出
+  }, delay)
   if (timer.unref) timer.unref()
+  logger.debug(`[AudioCache] 下次扫描: ${next.toLocaleString('zh-CN')} (${Math.round(delay / 60000)}分钟后)`)
 }
 
 /** 惰性初始化（幂等，多次调用返回同一个 Promise） */
