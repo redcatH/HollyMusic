@@ -92,11 +92,13 @@ function SidebarContent({ onNavigate }: ContentProps) {
   const authenticated = useAuthStore(s => s.authenticated)
   const username = useAuthStore(s => s.username)
   const logout = useAuthStore(s => s.logout)
+  const setPendingPath = useNavStore(s => s.setPendingPath)
   const [menuOpen, setMenuOpen] = useState(false)
 
   const handleLogout = async () => {
     setMenuOpen(false)
     onNavigate?.()
+    setPendingPath('/')
     await logout()
     router.push('/')
   }
@@ -104,6 +106,7 @@ function SidebarContent({ onNavigate }: ContentProps) {
   const goAdmin = () => {
     setMenuOpen(false)
     onNavigate?.()
+    setPendingPath('/admin')
     router.push('/admin')
   }
 

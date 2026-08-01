@@ -23,6 +23,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const authenticated = useAuthStore(s => s.authenticated)
   const loadFavorites = useFavoritesStore(s => s.load)
   const pendingPath = useNavStore(s => s.pendingPath)
+  const setPendingPath = useNavStore(s => s.setPendingPath)
   const [drawerOpen, setDrawerOpen] = useState(false)
 
   // 启动时获取会话状态
@@ -48,10 +49,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [authenticated, pathname, router])
 
-  // 路由切换 → 关闭抽屉
+  // 路由切换 → 关闭抽屉 + 清除导航 pending（兜底：router.push/前进后退不经过 NavLink 时防残留）
   useEffect(() => {
     setDrawerOpen(false)
-  }, [pathname])
+    setPendingPath(null)
+  }, [pathname, setPendingPath])
 
   // 抽屉打开时：ESC 关闭 + 锁定 body 滚动
   useEffect(() => {
