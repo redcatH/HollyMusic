@@ -260,3 +260,92 @@ function formatBytes(n: number): string {
   if (n >= 1024) return `${(n / 1024).toFixed(2)}KB`
   return `${n}B`
 }
+
+/**
+ * 统一扫描清理卡死/异常状态的缓存记录。
+ *
+ * 清理规则：
+ * 1. status=downloading 且 updatedAt 距今超过 staleDownloadMs → 删记录 + 删 .tmp
+ * 2. status=complete 但正式文件不存在 → 删记录（幽灵记录）
+ * 3. status=partial 但 .tmp 不存在 → 删记录（幽灵记录）
+ *
+ * 返回清理统计。定时器 + admin 手动均调用此函数。
+ */
+export async function scanAndCleanStale(): Promise<{
+  staleDownloads: number
+  ghostRecords: number
+  orphanFiles: number
+  totalDeleted: number
+  bytesFreed: number
+}> {
+  const cfg = getAudioCacheConfig()
+  const now = Date.now()
+  const records = await listAll()
+
+  let staleDownloads = 0
+  let ghostRecords = 0
+  let bytesFreed = 0
+
+  for (const rec of records) {
+    const age = now - rec.updatedAt.getTime()
+
+    // 1. downloading 超时 → 卡死，删记录 + 删 .tmp
+    if (rec.status === 'downloading' && age > cfg.staleDownloadMs) {
+      await deleteCacheFiles(rec)
+      await deleteRecord(rec.cacheKey)
+      staleDownloads++
+      bytesFreed += rec.downloadedBytes
+      logger.info(`[stale-scan] 清理卡死下载: ${rec.cacheKey} (age=${Math.round(age / 1000)}s)`)
+      continue
+    }
+
+    // 2. complete 但文件不存在 → 幽灵记录
+    if (rec.status === 'complete') {
+      const abs = absoluteFromRelative(rec.filePath)
+      if (!(await fileExists(abs))) {
+        await deleteRecord(rec.cacheKey)
+        ghostRecords++
+        logger.info(`[stale-scan] 清理幽灵记录(complete): ${rec.cacheKey}`)
+        continue
+      }
+    }
+
+    // 3. partial 但 .tmp 不存在 → 幽灵记录
+    if (rec.status === 'partial') {
+      const tmpAbs = `${absoluteFromRelative(rec.filePath)}.tmp`
+      if (!(await fileExists(tmpAbs))) {
+        await deleteRecord(rec.cacheKey)
+        ghostRecords++
+        logger.info(`[stale-scan] 清理幽灵记录(partial): ${rec.cacheKey}`)
+        continue
+      }
+    }
+  }
+
+  // 4. 扫描磁盘孤儿文件（DB 无记录的文件）
+  const orphanResult = await scanOrphanFiles()
+  let orphanFiles = 0
+  if (orphanResult.count > 0) {
+    const delResult = await deleteOrphanFiles(orphanResult.orphans)
+    orphanFiles = delResult.deleted
+    bytesFreed += delResult.bytes
+  }
+
+  const totalDeleted = staleDownloads + ghostRecords + orphanFiles
+  if (totalDeleted > 0) {
+    logger.info(
+      `[stale-scan] 完成: 卡死下载=${staleDownloads} 幽灵记录=${ghostRecords} 孤儿文件=${orphanFiles} 释放=${formatBytes(bytesFreed)}`
+    )
+  }
+
+  return { staleDownloads, ghostRecords, orphanFiles, totalDeleted, bytesFreed }
+}
+
+async function fileExists(p: string): Promise<boolean> {
+  try {
+    await fsp.access(p)
+    return true
+  } catch {
+    return false
+  }
+}

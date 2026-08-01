@@ -40,6 +40,13 @@ export interface CacheClearResult {
     files: { relativePath: string; size: number }[]
   }
   cleaned?: { deleted: number; bytes: number }
+  stale?: {
+    staleDownloads: number
+    ghostRecords: number
+    orphanFiles: number
+    totalDeleted: number
+    bytesFreed: number
+  }
 }
 
 export function getCacheStats(): Promise<CacheStats> {
@@ -58,4 +65,9 @@ export function scanOrphans(): Promise<CacheClearResult> {
 /** 删除扫描出的孤儿文件 */
 export function cleanOrphans(): Promise<CacheClearResult> {
   return apiPost<CacheClearResult>('admin/cache', { type: 'clean-orphans' })
+}
+
+/** 统一扫描清理：卡死下载 + 幽灵记录 + 孤儿文件 */
+export function scanStale(): Promise<CacheClearResult> {
+  return apiPost<CacheClearResult>('admin/cache', { type: 'scan-stale' })
 }
