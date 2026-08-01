@@ -1,8 +1,17 @@
 /**
  * 播放历史 service
  *
- * 使用 Prisma PlayHistory 表（schema 已存在，无需 migration）。
+ * 使用 Prisma PlayHistory 表。
  * 上报时先 upsertMusicInfo 确保歌曲入库，再写历史记录，保证 musicInfoId 可关联。
+ *
+ * 去重策略（商业项目主流做法）：
+ *   同一用户同一首歌只保留一条记录（@@unique([username, songmid])）。
+ *   再次播放时 upsert 更新 playedAt 为当前时间，自然"移动到顶部"，
+ *   避免历史列表出现重复项，也修复了 SongRow 多行同时高亮的问题。
+ *
+ * 上限策略：
+ *   每用户最多 MAX_HISTORY_PER_USER 条（默认 500），超过则删除最旧的记录，
+ *   保证数据库行数可控、查询性能稳定。
  */
 
 import { PrismaClient } from '../generated/prisma'
@@ -13,6 +22,9 @@ import type { MusicInfo } from '../types/music'
 
 const prisma = new PrismaClient()
 
+/** 每用户历史记录上限，超出则 FIFO 淘汰最旧记录。可通过环境变量覆盖。 */
+const MAX_HISTORY_PER_USER = Number(process.env.MAX_HISTORY_PER_USER) || 500
+
 export interface HistoryEntry {
   id: number
   songId: string | null
@@ -21,7 +33,11 @@ export interface HistoryEntry {
 }
 
 /**
- * 上报一次播放。确保歌曲入库后写入 PlayHistory。
+ * 上报一次播放。
+ *
+ * 1. 确保歌曲入库（带 checksum 去重）
+ * 2. upsert 历史记录：已存在则更新 playedAt（移动到顶部），不存在则新建
+ * 3. 超过上限时删除该用户最旧的记录
  */
 export async function reportPlay(username: string, musicInfo: MusicInfo): Promise<void> {
   // 1) 确保歌曲入库（带 checksum 去重）
@@ -36,15 +52,46 @@ export async function reportPlay(username: string, musicInfo: MusicInfo): Promis
     select: { id: true },
   })
 
-  // 3) 写历史
-  await prisma.playHistory.create({
-    data: {
+  // 3) upsert 历史：已存在则更新 playedAt（移动到顶部），不存在则新建
+  await prisma.playHistory.upsert({
+    where: { username_songmid: { username, songmid: songId } },
+    create: {
       username,
       musicInfoId: row?.id ?? null,
       songmid: songId,
     },
+    update: {
+      playedAt: new Date(),
+      musicInfoId: row?.id ?? null,
+    },
   })
   logger.debug(`[history] reported play: ${songId} for ${username}`)
+
+  // 4) 上限裁剪：超过 MAX_HISTORY_PER_USER 则删除最旧的记录
+  await trimHistory(username)
+}
+
+/**
+ * 删除该用户超出上限的最旧历史记录。
+ * 取最旧的 (count - MAX) 条，按 playedAt 升序删除。
+ */
+async function trimHistory(username: string): Promise<void> {
+  const count = await prisma.playHistory.count({ where: { username } })
+  if (count <= MAX_HISTORY_PER_USER) return
+
+  const overflow = count - MAX_HISTORY_PER_USER
+  const oldest = await prisma.playHistory.findMany({
+    where: { username },
+    orderBy: { playedAt: 'asc' },
+    take: overflow,
+    select: { id: true },
+  })
+  if (oldest.length === 0) return
+
+  await prisma.playHistory.deleteMany({
+    where: { id: { in: oldest.map(r => r.id) } },
+  })
+  logger.info(`[history] trimmed ${oldest.length} oldest entries for ${username}`)
 }
 
 /**

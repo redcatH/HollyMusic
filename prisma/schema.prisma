@@ -149,6 +149,8 @@ model PlayHistory {
   clientIp    String?
   userAgent   String?
 
+  // 同一用户同一首歌只保留一条（再次播放更新 playedAt 移到顶部，商业项目主流做法）
+  @@unique([username, songmid])
   @@index([playedAt])
   @@index([username])
   @@index([playlistId])
