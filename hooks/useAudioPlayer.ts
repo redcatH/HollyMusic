@@ -146,6 +146,8 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
   )
 
   const play = useCallback(() => {
+    // 幂等保护：Howler 在已播放状态下再调 play() 会叠加新实例（双声 bug 根源）
+    if (soundRef.current?.playing()) return
     console.log('[diag] audio play, hasSound=', !!soundRef.current)
     soundRef.current?.play()
   }, [])
