@@ -12,8 +12,12 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
-    // Ignore simulator and legacy folders that use CommonJS and tests
+    // Ignore reference source, simulator, generated code, and CommonJS modules
     "lx-env-simulator/**",
+    "lx-music-desktop-master/**",
+    "lib/generated/**",
+    "lib/music-core/**",
+    "scripts/**",
   ]),
 ]);
 
