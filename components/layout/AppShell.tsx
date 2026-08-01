@@ -24,6 +24,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const loadFavorites = useFavoritesStore(s => s.load)
   const pendingPath = useNavStore(s => s.pendingPath)
   const setPendingPath = useNavStore(s => s.setPendingPath)
+  const setActivePath = useNavStore(s => s.setActivePath)
   const [drawerOpen, setDrawerOpen] = useState(false)
 
   // 启动时获取会话状态
@@ -53,7 +54,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setDrawerOpen(false)
     setPendingPath(null)
-  }, [pathname, setPendingPath])
+    // RSC 返回后 pathname 更新，清除乐观高亮，交给 pathname 接管
+    setActivePath(null)
+  }, [pathname, setPendingPath, setActivePath])
 
   // 抽屉打开时：ESC 关闭 + 锁定 body 滚动
   useEffect(() => {

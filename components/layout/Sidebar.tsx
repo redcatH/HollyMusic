@@ -48,6 +48,7 @@ function NavLink({
   const { pending } = useLinkStatus()
   const router = useRouter()
   const setPendingPath = useNavStore(s => s.setPendingPath)
+  const setActivePath = useNavStore(s => s.setActivePath)
 
   // 受保护路由 + 未登录 → 跳登录页（拦截 Link 的默认导航）
   const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
@@ -57,9 +58,9 @@ function NavLink({
       router.push('/login')
       return
     }
-    // 立即设置 pendingPath → AppShell main 区域显示 loading 骨架（SPA 式切换）
+    // 立即设置 pendingPath + activePath → 右侧显示骨架 + 左侧高亮即变（SPA 式）
     setPendingPath(href)
-    // 其余情况让 <Link> 正常工作（含 prefetch + 客户端导航）
+    setActivePath(href)
   }
 
   return (
@@ -93,12 +94,15 @@ function SidebarContent({ onNavigate }: ContentProps) {
   const username = useAuthStore(s => s.username)
   const logout = useAuthStore(s => s.logout)
   const setPendingPath = useNavStore(s => s.setPendingPath)
+  const setActivePath = useNavStore(s => s.setActivePath)
+  const activePath = useNavStore(s => s.activePath)
   const [menuOpen, setMenuOpen] = useState(false)
 
   const handleLogout = async () => {
     setMenuOpen(false)
     onNavigate?.()
     setPendingPath('/')
+    setActivePath('/')
     await logout()
     router.push('/')
   }
@@ -107,6 +111,7 @@ function SidebarContent({ onNavigate }: ContentProps) {
     setMenuOpen(false)
     onNavigate?.()
     setPendingPath('/admin')
+    setActivePath('/admin')
     router.push('/admin')
   }
 
@@ -118,7 +123,8 @@ function SidebarContent({ onNavigate }: ContentProps) {
       </div>
       <nav className="flex flex-col gap-1">
         {nav.map(item => {
-          const active = pathname === item.href
+          // 乐观高亮：点击时 activePath 立即生效；无 activePath 时回退到 pathname
+          const active = (activePath ?? pathname) === item.href
           return (
             <NavLink
               key={item.href}
