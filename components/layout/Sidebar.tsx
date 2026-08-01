@@ -6,6 +6,7 @@ import { useLinkStatus } from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import { Home, Search, Heart, ListMusic, History, Music2, LogIn, LogOut, User, ChevronUp, Settings, Loader2 } from 'lucide-react'
 import { useAuthStore } from '@/hooks/useAuth'
+import { useNavStore } from '@/lib/store/nav-store'
 
 const nav = [
   { href: '/', label: '首页', icon: Home, protected: false },
@@ -46,6 +47,7 @@ function NavLink({
 }) {
   const { pending } = useLinkStatus()
   const router = useRouter()
+  const setPendingPath = useNavStore(s => s.setPendingPath)
 
   // 受保护路由 + 未登录 → 跳登录页（拦截 Link 的默认导航）
   const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
@@ -55,6 +57,8 @@ function NavLink({
       router.push('/login')
       return
     }
+    // 立即设置 pendingPath → AppShell main 区域显示 loading 骨架（SPA 式切换）
+    setPendingPath(href)
     // 其余情况让 <Link> 正常工作（含 prefetch + 客户端导航）
   }
 
