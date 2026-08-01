@@ -30,10 +30,10 @@ type SimulatorConstructor = new () => {
 let LXEnvironmentSimulatorCtor: SimulatorConstructor | null = null
 async function getSimulatorCtor(): Promise<SimulatorConstructor> {
   if (LXEnvironmentSimulatorCtor) return LXEnvironmentSimulatorCtor
-  // lx-env-simulator 是 CommonJS 模块，用运行时 require 加载
-  // 放在函数内而非顶层，避免被 Next.js 构建静态分析进客户端 bundle
+  // 复用 lib/music-core/index.js（与 music-source-manager.ts 一致的加载方式）
+  // 相对路径 require，避免 Turbopack 对别名 '@/lx-env-simulator' 的静态解析失败
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const mod = require('@/lx-env-simulator')
+  const mod = require('../music-core/index')
   LXEnvironmentSimulatorCtor = (mod.default || mod) as SimulatorConstructor
   return LXEnvironmentSimulatorCtor
 }
