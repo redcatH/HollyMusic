@@ -15,6 +15,7 @@
  */
 
 import fs from 'fs'
+import fsp from 'fs/promises'
 import { logger } from '@/lib/logger'
 import { getAudioCacheConfig } from './config'
 import { resolvePaths, absoluteFromRelative } from './paths'
@@ -22,6 +23,7 @@ import {
   getAudioCache,
   touchAccess,
   upsertDownloading,
+  deleteRecord,
   type AudioCacheRecord,
 } from './repository'
 import { jobManager } from './job-manager'
@@ -148,6 +150,16 @@ function buildSeekTimeout(): Response {
   )
 }
 
+/** 检查文件是否存在（不抛错） */
+async function fileExists(p: string): Promise<boolean> {
+  try {
+    await fsp.access(p)
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** 流式透传上游（ENABLE_FILE_CACHE=false 或错误降级时） */
 async function passthroughUpstream(upstreamUrl: string, rangeHeader: string | null): Promise<Response> {
   const resp = await fetch(upstreamUrl, {
@@ -217,14 +229,25 @@ export async function serve(opts: ServeOptions): Promise<Response> {
 
   // complete
   if (record?.status === 'complete' && record.size) {
-    void touchAccess(opts.cacheKey)
-    return serveComplete(record, opts.rangeHeader, opts.isHead)
+    const filePath = absoluteFromRelative(record.filePath)
+    if (await fileExists(filePath)) {
+      void touchAccess(opts.cacheKey)
+      return serveComplete(record, opts.rangeHeader, opts.isHead)
+    }
+    // 文件丢失（被手动删除 / 磁盘故障）→ 删 DB 记录，回退到 miss 重新下载
+    logger.warn(`[serve] complete 文件丢失，删除记录并重新下载: ${opts.cacheKey}`)
+    await deleteRecord(opts.cacheKey)
   }
 
   // partial
   if (record?.status === 'partial' && record.downloadedBytes > 0) {
-    void touchAccess(opts.cacheKey)
-    return servePartial(record, opts.rangeHeader, opts.isHead)
+    const tmpPath = `${absoluteFromRelative(record.filePath)}.tmp`
+    if (await fileExists(tmpPath)) {
+      void touchAccess(opts.cacheKey)
+      return servePartial(record, opts.rangeHeader, opts.isHead)
+    }
+    logger.warn(`[serve] partial .tmp 文件丢失，删除记录并重新下载: ${opts.cacheKey}`)
+    await deleteRecord(opts.cacheKey)
   }
 
   // downloading（已有 job）或 miss（需创建 job）
