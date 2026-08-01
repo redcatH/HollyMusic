@@ -81,7 +81,7 @@ function SidebarContent({ onNavigate }: ContentProps) {
       </nav>
 
       <div className="relative mt-auto border-t border-border p-2">
-        {authenticated ? (
+        {authenticated === true ? (
           <>
             <button
               onClick={() => setMenuOpen(v => !v)}
@@ -115,7 +115,7 @@ function SidebarContent({ onNavigate }: ContentProps) {
               </div>
             )}
           </>
-        ) : (
+        ) : authenticated === false ? (
           <Link
             href="/login"
             onClick={onNavigate}
@@ -124,7 +124,7 @@ function SidebarContent({ onNavigate }: ContentProps) {
             <LogIn className="h-5 w-5" />
             登录
           </Link>
-        )}
+        ) : null}
       </div>
     </>
   )
