@@ -16,7 +16,7 @@ import {
   ForbiddenError,
 } from '@/lib/services/user-context'
 import { searchCache, urlCache } from '@/lib/cache-manager'
-import { getStats, getAudioCacheConfig, scanOrphanFiles, deleteOrphanFiles } from '@/lib/server/audio-cache'
+import { getStats, getAudioCacheConfig, scanOrphanFiles, deleteOrphanFiles, scanAndCleanStale } from '@/lib/server/audio-cache'
 import { clearAllAudioCache } from '@/lib/server/audio-cache'
 import { logger } from '@/lib/logger'
 
@@ -67,9 +67,9 @@ export async function POST(request: NextRequest) {
     await requireAdmin(request)
 
     const body = await request.json().catch(() => ({}))
-    const { type = 'all' } = body as { type?: 'search' | 'url' | 'audio' | 'all' | 'scan-orphans' | 'clean-orphans' }
+    const { type = 'all' } = body as { type?: 'search' | 'url' | 'audio' | 'all' | 'scan-orphans' | 'clean-orphans' | 'scan-stale' }
 
-    const validTypes = ['all', 'search', 'url', 'audio', 'scan-orphans', 'clean-orphans']
+    const validTypes = ['all', 'search', 'url', 'audio', 'scan-orphans', 'clean-orphans', 'scan-stale']
     if (!validTypes.includes(type)) {
       return createErrorResponse('INVALID_PARAMS', `无效的 type: ${type}，支持: ${validTypes.join(', ')}`, 400)
     }
@@ -81,6 +81,7 @@ export async function POST(request: NextRequest) {
       audio?: { count: number; bytes: number } | null
       orphans?: { count: number; bytes: number; files: { relativePath: string; size: number }[] }
       cleaned?: { deleted: number; bytes: number }
+      stale?: { staleDownloads: number; ghostRecords: number; orphanFiles: number; totalDeleted: number; bytesFreed: number }
     } = { type }
 
     switch (type) {
@@ -118,6 +119,13 @@ export async function POST(request: NextRequest) {
         const delResult = await deleteOrphanFiles(scanResult.orphans)
         result.cleaned = delResult
         logger.info(`[cache] admin 清理孤儿文件: ${delResult.deleted}/${scanResult.count} 个`)
+        break
+      }
+      case 'scan-stale': {
+        // 统一扫描清理：卡死下载 + 幽灵记录 + 孤儿文件
+        const staleResult = await scanAndCleanStale()
+        result.stale = staleResult
+        logger.info(`[cache] admin 扫描清理: 卡死=${staleResult.staleDownloads} 幽灵=${staleResult.ghostRecords} 孤儿=${staleResult.orphanFiles}`)
         break
       }
     }
