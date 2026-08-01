@@ -3,7 +3,7 @@ import crypto from 'crypto'
 import { PrismaClient, Prisma } from './generated/prisma'
 import type { MusicInfo } from './types/music'
 
-const prisma = new PrismaClient()
+export const prisma = new PrismaClient()
 
 function stableStringify(obj: any): string {
   if (obj === null || typeof obj !== 'object') return JSON.stringify(obj)

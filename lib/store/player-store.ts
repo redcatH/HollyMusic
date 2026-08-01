@@ -6,7 +6,7 @@
 
 import { create } from 'zustand'
 import type { Track, PlaybackMode } from '@/lib/types/player'
-import { getMusicUrl, buildStreamUrl } from '@/lib/api/music'
+import { buildAudioUrl } from '@/lib/api/music'
 import { reportPlay } from '@/lib/api/history'
 import { useAuthStore } from '@/hooks/useAuth'
 
@@ -119,14 +119,14 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
 
   loadStreamUrl: async (track) => {
     console.log('[diag] loadStreamUrl', track?.name)
-    set({ isFetchingUrl: true, urlFetchError: null })
-    try {
-      const { url } = await getMusicUrl(track.musicInfo, '320k')
-      set({ streamUrl: buildStreamUrl(url), isFetchingUrl: false, isPlaying: true })
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : '获取播放链接失败'
-      get().handleTrackError(msg)
-    }
+    // 直接构建 /api/audio URL：服务端磁盘缓存 + Range，
+    // 无需先 POST 获取上游 URL（解析+降级在 /api/audio 内完成）
+    set({
+      streamUrl: buildAudioUrl(track.uid, '320k'),
+      isFetchingUrl: false,
+      isPlaying: true,
+      bufferProgress: null,
+    })
   },
 
   togglePlay: () => {

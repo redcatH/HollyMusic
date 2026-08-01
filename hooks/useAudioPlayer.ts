@@ -1,9 +1,12 @@
 'use client'
 
 /**
- * Howler 音频引擎封装（html5 模式，流式播放）。
+ * Howler 音频引擎封装（html5 模式，服务端 Range 代理）。
  * 状态由外部 store 管理，本 hook 通过回调上报：时间/时长/播放状态/结束。
  * 动态 import howler 以兼容 SSR。
+ *
+ * 音频 URL 指向 /api/audio，由服务端磁盘缓存处理 Range；
+ * 浏览器原生 GET + Range，seek/暂停/恢复全程服务端响应。
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -14,7 +17,7 @@ interface UseAudioPlayerOptions {
   onDuration?: (d: number) => void
   onPlayState?: (playing: boolean) => void
   onEnd?: () => void
-  /** 音频下载进度回调：0-100 表示下载中，null 表示结束/未在下载 */
+  /** 预留接口：当前服务端缓存方案下不再上报下载百分比（恒为 null） */
   onLoading?: (percent: number | null) => void
   /** 音频拉取/播放失败回调（如 HTTP 500、解码失败），由上层决定是否跳下一首 */
   onError?: (msg: string) => void
@@ -27,7 +30,6 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
   const howlerRef = useRef<{ Howl: any; Howler: any } | null>(null)
   const soundRef = useRef<any>(null)
   const rafRef = useRef<number | undefined>(undefined)
-  const blobUrlRef = useRef<string | null>(null)
   const loadGenRef = useRef(0)
   const [isReady, setIsReady] = useState(false)
 
@@ -51,10 +53,6 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
       if (soundRef.current) {
         soundRef.current.unload()
         soundRef.current = null
-      }
-      if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current)
-        blobUrlRef.current = null
       }
     }
   }, [])
@@ -88,87 +86,28 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
       console.log('[diag] audio load', url, 'autoplay=', autoplay)
       if (!howlerRef.current) return
 
-      // generation 计数：快速切歌时放弃过期的 fetch 结果，防竞态
+      // generation 计数：快速切歌时放弃过期的 Howl 实例，防竞态
       const gen = ++loadGenRef.current
 
-      // 清理旧 sound 与旧 blobUrl
+      // 清理旧 sound
       if (soundRef.current) {
         soundRef.current.unload()
         soundRef.current = null
       }
-      if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current)
-        blobUrlRef.current = null
-      }
       stopProgress()
       setIsReady(false)
-      optsRef.current.onLoading?.(0)
+      optsRef.current.onLoading?.(null)
 
-      // 先把整段音频拉到内存成 Blob，再用 blob: URL 喂给 Howl。
-      // 这样 <audio> 的 seek/暂停/恢复都在本地内存跳转，不再向代理
-      // 发 Range 请求，彻底规避代理不支持 Range 导致的「从头播放」问题。
-      let src = url
-      try {
-        const resp = await fetch(url)
-        if (!resp.ok) throw new Error(`fetch audio failed: ${resp.status}`)
-
-        const total = Number(resp.headers.get('content-length')) || 0
-        const reader = resp.body?.getReader()
-        if (reader && total > 0) {
-          // 流式读取并上报下载进度
-          const chunks: BlobPart[] = []
-          let received = 0
-          for (;;) {
-            const { done, value } = await reader.read()
-            if (done) break
-            if (gen !== loadGenRef.current) {
-              await reader.cancel().catch(() => {})
-              return
-            }
-            if (value) {
-              // reader 读出的 Uint8Array 运行时基于 ArrayBuffer，是合法 BlobPart；
-              // TS 5.7+ 将 Uint8Array 泛型化为 ArrayBufferLike，与 BlobPart 类型不兼容，此处窄化断言
-              chunks.push(value as BlobPart)
-              received += value.length
-              optsRef.current.onLoading?.(Math.min(100, Math.round((received / total) * 100)))
-            }
-          }
-          if (gen !== loadGenRef.current) return
-          const blob = new Blob(chunks, {
-            type: resp.headers.get('content-type') || 'audio/mpeg',
-          })
-          const blobUrl = URL.createObjectURL(blob)
-          blobUrlRef.current = blobUrl
-          src = blobUrl
-        } else {
-          // 无 content-length 或无 reader，退化为整段 blob
-          const blob = await resp.blob()
-          if (gen !== loadGenRef.current) return
-          const blobUrl = URL.createObjectURL(blob)
-          blobUrlRef.current = blobUrl
-          src = blobUrl
-        }
-      } catch (e) {
-        console.warn('[useAudioPlayer] audio fetch failed', e)
-        optsRef.current.onLoading?.(null)
-        // 过期请求不再上报（被新切歌取代）
-        if (gen !== loadGenRef.current) return
-        const msg = e instanceof Error ? e.message : '音频拉取失败'
-        // 不再回退直连：同一个代理 URL 还会失败（如 500），交给上层跳下一首
-        optsRef.current.onError?.(msg)
-        return
-      }
-
-      // 最终竞态检查
       if (gen !== loadGenRef.current) return
 
       const { Howl } = howlerRef.current
       soundRef.current = new Howl({
-        src: [src],
+        src: [url],
         html5: true,
         format: ['mp3', 'flac', 'm4a', 'ogg', 'wav', 'aac'],
         autoplay,
         onload: () => {
+          if (gen !== loadGenRef.current) return
           setIsReady(true)
           optsRef.current.onLoading?.(null)
           const dur = soundRef.current.duration()
@@ -194,6 +133,7 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
           optsRef.current.onEnd?.()
         },
         onerror: (e: unknown) => {
+          if (gen !== loadGenRef.current) return
           console.error('[useAudioPlayer] audio error', e)
           optsRef.current.onLoading?.(null)
           optsRef.current.onPlayState?.(false)
