@@ -5,11 +5,12 @@
  * - 安装时预缓存 app shell（manifest、图标）
  * - 静态资源（_next/static、图标、manifest）：cache-first，命中后异步更新
  * - 音频代理 /api/proxy、API 数据 /api/*：network-only（不缓存，避免脏数据/版权问题）
+ * - RSC payload（?_rsc=xxx）：network-only，绝不缓存（_rsc 每次不同，缓存会无限膨胀）
  * - 页面导航（HTML）：network-first，失败回退到缓存的 app shell（离线可打开壳）
  * - 白名单内同源 GET 才处理；跨域、非 GET 直接透传
  */
 
-const VERSION = 'v2'
+const VERSION = 'v3'
 const STATIC_CACHE = `holly-static-${VERSION}`
 const PAGE_CACHE = `holly-pages-${VERSION}`
 
@@ -66,6 +67,14 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
+  // RSC payload（?_rsc=xxx）：network-only，绝不缓存
+  // _rsc 的值每次导航不同，缓存会导致 STATIC_CACHE 无限膨胀且永远命中不了；
+  // 失败时返回错误响应，让 Next.js router 自行降级为硬导航（PR #46674）
+  if (url.searchParams.has('_rsc')) {
+    event.respondWith(fetch(request).catch(() => Response.error()))
+    return
+  }
+
   // HTML 页面导航：network-first，离线时回退 app shell
   if (request.mode === 'navigate') {
     event.respondWith(networkFirst(request))
@@ -79,8 +88,11 @@ self.addEventListener('fetch', (event) => {
 async function networkFirst(request) {
   try {
     const res = await fetch(request)
-    const cache = await caches.open(PAGE_CACHE)
-    cache.put(request, res.clone())
+    // 只缓存成功响应（2xx），避免缓存 4xx/5xx 错误页导致后续持续返回错误
+    if (res.ok) {
+      const cache = await caches.open(PAGE_CACHE)
+      cache.put(request, res.clone())
+    }
     return res
   } catch {
     const cached = await caches.match(request)
