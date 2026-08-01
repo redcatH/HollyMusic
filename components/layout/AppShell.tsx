@@ -9,7 +9,9 @@ import { PlayerBar } from '@/components/player/PlayerBar'
 import { QueuePanel } from '@/components/player/QueuePanel'
 import { LyricsPanel } from '@/components/player/LyricsPanel'
 import { useFavoritesStore } from '@/lib/store/favorites-store'
+import { useNavStore } from '@/lib/store/nav-store'
 import { useAuthStore } from '@/hooks/useAuth'
+import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 
 // 需要登录才能访问的路径前缀
 const PROTECTED_PREFIXES = ['/favorites', '/playlists', '/history']
@@ -20,6 +22,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const initAuth = useAuthStore(s => s.init)
   const authenticated = useAuthStore(s => s.authenticated)
   const loadFavorites = useFavoritesStore(s => s.load)
+  const pendingPath = useNavStore(s => s.pendingPath)
   const [drawerOpen, setDrawerOpen] = useState(false)
 
   // 启动时获取会话状态
@@ -76,7 +79,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <MobileHeader onMenuClick={() => setDrawerOpen(true)} />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
-        <main className="flex-1 overflow-y-auto">{children}</main>
+        <main className="flex-1 overflow-y-auto">
+          {/* SPA 式切换：pendingPath !== pathname 时立即显示骨架，不等 RSC 返回 */}
+          {pendingPath !== null && pendingPath !== pathname ? (
+            <div className="p-6">
+              <div className="mb-4 h-8 w-48 animate-pulse rounded bg-muted" />
+              <LoadingSkeleton count={10} />
+            </div>
+          ) : (
+            children
+          )}
+        </main>
       </div>
       <PlayerBar />
       <MobileSidebar open={drawerOpen} onClose={() => setDrawerOpen(false)} />
