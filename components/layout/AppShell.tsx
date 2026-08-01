@@ -11,7 +11,7 @@ import { LyricsPanel } from '@/components/player/LyricsPanel'
 import { useFavoritesStore } from '@/lib/store/favorites-store'
 import { useNavStore } from '@/lib/store/nav-store'
 import { useAuthStore } from '@/hooks/useAuth'
-import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
+import { RouteSkeleton } from '@/components/shared/RouteSkeleton'
 
 // 需要登录才能访问的路径前缀
 const PROTECTED_PREFIXES = ['/favorites', '/playlists', '/history']
@@ -84,10 +84,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <main className="flex-1 overflow-y-auto">
           {/* SPA 式切换：pendingPath !== pathname 时立即显示骨架，不等 RSC 返回 */}
           {pendingPath !== null && pendingPath !== pathname ? (
-            <div className="p-6">
-              <div className="mb-4 h-8 w-48 animate-pulse rounded bg-muted" />
-              <LoadingSkeleton count={10} />
-            </div>
+            <RouteSkeleton path={pendingPath} />
           ) : (
             children
           )}
