@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
-import { Home, Search, Heart, ListMusic, History, Music2, LogIn, LogOut, User, ChevronUp, Users, Music } from 'lucide-react'
+import { Home, Search, Heart, ListMusic, History, Music2, LogIn, LogOut, User, ChevronUp, Settings } from 'lucide-react'
 import { useAuthStore } from '@/hooks/useAuth'
 
 const nav = [
@@ -50,13 +50,7 @@ function SidebarContent({ onNavigate }: ContentProps) {
   const goAdmin = () => {
     setMenuOpen(false)
     onNavigate?.()
-    router.push('/admin/users')
-  }
-
-  const goAdminSources = () => {
-    setMenuOpen(false)
-    onNavigate?.()
-    router.push('/admin/sources')
+    router.push('/admin')
   }
 
   return (
@@ -103,22 +97,13 @@ function SidebarContent({ onNavigate }: ContentProps) {
             {menuOpen && (
               <div className="absolute bottom-full left-0 right-0 mb-1 rounded-md border border-border bg-popover p-1 shadow-lg">
                 {username === 'admin' && (
-                  <>
-                    <button
-                      onClick={goAdmin}
-                      className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                    >
-                      <Users className="h-5 w-5" />
-                      用户管理
-                    </button>
-                    <button
-                      onClick={goAdminSources}
-                      className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                    >
-                      <Music className="h-5 w-5" />
-                      音源管理
-                    </button>
-                  </>
+                  <button
+                    onClick={goAdmin}
+                    className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  >
+                    <Settings className="h-5 w-5" />
+                    系统管理
+                  </button>
                 )}
                 <button
                   onClick={handleLogout}
