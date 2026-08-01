@@ -153,3 +153,36 @@ model PlayHistory {
   @@index([username])
   @@index([playlistId])
 }
+
+/// 服务端音频磁盘缓存索引。
+/// 上游音源 CDN 普遍不支持 Range 请求，无法直接 seek；
+/// 此表记录已落盘（或正在落盘）的音频字节流，配合 fs.createReadStream
+/// 为 <audio> 提供标准 206 Partial Content 响应，实现多用户共享 + seek。
+model AudioCache {
+  /// 主键
+  id          Int      @id @default(autoincrement())
+  /// 缓存键：`${source}:${songmid}:${quality}`，与 urlCache 键一致
+  cacheKey    String   @unique
+  /// 相对缓存根目录的文件路径（两级分片：ab/abcdef.mp3）
+  filePath    String
+  /// 上游声明的完整字节数（无 content-length 时为 null）
+  size        Int?
+  /// 已落盘字节数（边下边播水位线依据）
+  downloadedBytes Int   @default(0)
+  /// 'downloading' | 'complete' | 'partial'（partial = 上游中断/进程重启，无法续传）
+  status      String   @default("downloading")
+  /// MIME，用于 serve 时 Content-Type
+  contentType String?
+  /// 音质（缓存键的一部分冗余，便于按音质清理）
+  quality     String
+  /// 对外歌曲 uid（`source-存储songmid`），用于关联与排查
+  uid         String
+  /// 最近一次被读取访问的时间（LRU 淘汰依据）
+  lastAccessAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status])
+  @@index([lastAccessAt])
+  @@index([uid])
+}

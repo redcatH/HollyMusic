@@ -17,6 +17,15 @@ export function buildStreamUrl(upstreamUrl: string): string {
   return `/api/proxy/${encodeURIComponent(upstreamUrl)}`
 }
 
+/**
+ * 构建音频缓存 serve URL。
+ * 走 /api/audio，由服务端磁盘缓存 + Range 支持，
+ * 浏览器原生 GET + Range，seek/暂停/恢复全程服务端处理。
+ */
+export function buildAudioUrl(uid: string, quality: QualityType = '320k'): string {
+  return `/api/audio?uid=${encodeURIComponent(uid)}&quality=${encodeURIComponent(quality)}`
+}
+
 /** 构建封面 URL */
 export function buildCoverUrl(uid: string): string {
   return `/api/cover/${encodeURIComponent(uid)}`
