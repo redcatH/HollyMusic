@@ -6,6 +6,8 @@
 
 Holly Music 聚合多个音源（QQ / 网易 / 酷我 / 酷狗 / 咪咕等），提供统一的搜索、播放、收藏、歌单、歌词、下载体验。支持 PWA 安装到桌面、离线 App Shell、锁屏媒体控制。纯自部署，数据掌握在自己手里。
 
+> 架构说明：前端为 **Vite + React Router** 构建的 SPA（`frontend/`），后端为 **Next.js (App Router)** 仅提供 API（`app/api/`、`app/rest/`）。前端通过 `@/*` 别名复用根目录的 `components/`、`hooks/`、`lib/` 中纯前端部分。
+
 ---
 
 ## ✨ 主要特性
@@ -30,10 +32,9 @@ Holly Music 聚合多个音源（QQ / 网易 / 酷我 / 酷狗 / 咪咕等），
 - **签名 Cookie 鉴权**：HMAC-SHA256 签名，防伪造
 
 ### 🔧 工程能力
-- **音源热重载**：`config/music-sources.json` 变更自动检测 MD5，无需重启
 - **内存缓存**：搜索结果与播放 URL 缓存（默认 TTL 210 分钟）
-- **Subsonic 协议兼容**：可作为 Subsonic 服务端被外部客户端访问
-- **Docker 一键部署**：含 Prisma 自动迁移
+- **Subsonic 协议兼容**：通过 `/rest/[method]` 作为 Subsonic 服务端被外部客户端访问
+- **Docker 一键部署**：多阶段构建（前端 SPA + Next.js API + nginx 运行时），含 Prisma 自动迁移
 
 ---
 
@@ -41,50 +42,81 @@ Holly Music 聚合多个音源（QQ / 网易 / 酷我 / 酷狗 / 咪咕等），
 
 | 层 | 技术 |
 |------|------|
-| 框架 | Next.js 16 (App Router) + React 19 + TypeScript 5 |
+| 前端 | Vite 6 + React 19 + React Router v7 + TypeScript 5 |
+| 后端 | Next.js 16 (App Router, 仅 API 路由) |
 | 样式 | Tailwind CSS v4 |
 | 状态 | Zustand |
 | 音频 | Howler.js (html5 模式) + 服务端 Range 代理 |
 | 数据库 | Prisma + SQLite |
 | PWA | Service Worker + Web App Manifest + Media Session API |
-| 部署 | Docker / Docker Compose |
+| 部署 | Docker / Docker Compose（nginx 托管 SPA + 反代 API） |
 
 ---
 
 ## 📂 目录结构
 
 ```
-├── app/                    # Next.js App Router 页面与 API 路由
-│   ├── api/                # 后端 API（auth/proxy/music-url/lyrics/admin...）
-│   ├── admin/users/        # 用户管理页面（仅 admin）
-│   ├── favorites/          # 收藏页
-│   ├── history/            # 播放历史
-│   ├── playlists/          # 歌单
-│   └── search/             # 搜索页
-├── components/             # UI 组件
-│   ├── layout/             # 布局（AppShell/Sidebar/MobileHeader）
-│   ├── player/             # 播放器（PlayerBar/PlayerControls/LyricsPanel/QueuePanel）
-│   ├── shared/             # 通用组件（CoverImage/SongRow/LoadingSkeleton...）
-│   └── playlists/          # 歌单管理弹窗
-├── hooks/                  # React Hooks
-│   ├── useAudioPlayer.ts   # Howler 引擎封装（服务端 Range 代理）
-│   ├── useMediaSession.ts  # 锁屏媒体控制
-│   ├── useDownload.ts      # 下载（带进度）
-│   ├── useSearch.ts        # 搜索
-│   ├── useLyrics.ts        # 歌词
-│   └── useRandomSongs.ts   # 发现音乐（带 TTL 缓存）
-├── lib/                    # 业务核心
-│   ├── services/           # 服务层（auth/user-service/playlist-service...）
-│   ├── store/              # Zustand stores（player/favorites/discover）
-│   ├── api/                # 前端 API 客户端
-│   ├── music-source-manager.ts  # 音源管理与热重载
-│   ├── cache-manager.ts    # 内存缓存
-│   └── logger.ts           # 日志
-├── custom-sources/         # 自定义音源脚本（见下文）
-├── config/music-sources.json  # 音源注册表
-├── prisma/                 # Prisma schema 与 migrations
-├── public/                 # 静态资源（图标/manifest/sw.js）
-└── lx-env-simulator/       # 兼容层（慎改）
+├── app/                        # Next.js 后端（仅 API，无页面）
+│   ├── api/                    # REST API（auth/audio/music-url/lyrics/admin...）
+│   │   ├── admin/              # admin 专属（users / sources / cache）
+│   │   ├── audio/              # 音频流 serve（磁盘缓存 + Range）
+│   │   ├── auth/               # 登录/登出/会话
+│   │   ├── cache/clear/        # 清理内存缓存
+│   │   ├── cover/[id]/         # 封面代理
+│   │   ├── download/           # 下载代理（需登录）
+│   │   ├── favorites/          # 收藏（含 /check）
+│   │   ├── health/             # 健康检查
+│   │   ├── history/            # 播放历史
+│   │   ├── lyrics/             # 歌词
+│   │   ├── music-url/          # 获取播放地址
+│   │   ├── playlists/[id]/     # 歌单 CRUD（含 /songs 子路由）
+│   │   ├── proxy/[...path]/    # 通用流式代理
+│   │   ├── random/             # 随机推荐
+│   │   └── search/             # 搜索
+│   └── rest/[method]/          # Subsonic 协议入口
+├── frontend/                   # 前端 SPA（Vite + React Router）
+│   ├── src/
+│   │   ├── routes/             # 页面（Home/Search/Favorites/History/Playlists/Admin...）
+│   │   ├── components/         # 前端专属组件
+│   │   ├── App.tsx             # 路由根
+│   │   └── main.tsx            # SPA 入口
+│   ├── public/                 # 前端静态资源（图标/manifest/sw.js）
+│   ├── vite.config.ts          # @ → 根目录，@@ → src；dev 代理 /api → 3000
+│   └── package.json
+├── components/                 # 共享 UI 组件（前端通过 @/ 引用）
+│   ├── layout/                 # 布局（AppShell/Sidebar/MobileHeader）
+│   ├── player/                 # 播放器（PlayerBar/PlayerControls/LyricsPanel/QueuePanel）
+│   ├── shared/                 # 通用组件（CoverImage/SongRow/LoadingSkeleton...）
+│   └── playlists/              # 歌单管理弹窗
+├── hooks/                      # React Hooks（前端通过 @/ 引用）
+│   ├── useAudioPlayer.ts       # Howler 引擎封装（服务端 Range 代理）
+│   ├── useMediaSession.ts      # 锁屏媒体控制
+│   ├── useDownload.ts          # 下载（带进度）
+│   ├── useSearch.ts            # 搜索
+│   ├── useLyrics.ts            # 歌词
+│   ├── useRandomSongs.ts       # 发现音乐（带 TTL 缓存）
+│   ├── usePlaylists.ts         # 歌单
+│   ├── usePlaylistDetail.ts    # 歌单详情
+│   ├── usePlayHistory.ts       # 播放历史
+│   └── useAuth.ts              # 鉴权
+├── lib/                        # 业务核心
+│   ├── services/               # 服务层（auth/user-service/playlist-service...）
+│   ├── store/                  # Zustand stores（player/favorites/discover/search）
+│   ├── api/                    # 前端 API 客户端
+│   ├── music-source-manager.ts # 音源管理与热重载
+│   ├── cache-manager.ts        # 内存缓存
+│   ├── subsonic*.ts            # Subsonic 协议实现
+│   └── logger.ts               # 日志
+├── custom-sources/             # 自定义音源脚本（见下文）
+├── config/
+│   ├── music-sources.json      # 音源注册表
+│   └── users.json              # 初始用户（默认 admin）
+├── prisma/                     # Prisma schema 与 migrations
+├── scripts/                    # 容器启动脚本（start.sh / start-spa.sh）
+├── public/                     # （前端静态资源已迁移至 frontend/public）
+├── nginx-spa.conf              # Docker 运行时 nginx 配置
+├── Dockerfile                  # 三阶段构建（frontend-builder / backend-builder / 运行时）
+└── lx-env-simulator/           # 兼容层（慎改）
 ```
 
 ---
@@ -97,8 +129,11 @@ Holly Music 聚合多个音源（QQ / 网易 / 酷我 / 酷狗 / 咪咕等），
 
 ### 1. 安装依赖
 
+根目录与前端各需安装：
+
 ```bash
 pnpm install
+cd frontend && pnpm install && cd ..
 ```
 
 ### 2. 配置环境变量
@@ -107,8 +142,20 @@ pnpm install
 
 ```env
 DATABASE_URL=file:./prisma/data/music.db
-# AUTH_SECRET=<至少 32 位的随机字符串，生产必填，默认有 fallback 仅限开发>
-# SEARCH_CACHE_TTL_MS=12600000   # 可选，缓存 TTL（默认 210 分钟）
+
+# 鉴权密钥（生产必填，缺失时仅开发环境可用不安全 fallback）
+# 生成：openssl rand -hex 32 或 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+AUTH_SECRET=请替换为至少32位的随机字符串
+
+# 音频磁盘缓存（服务端 Range 代理 + 边下边播）
+ENABLE_FILE_CACHE=true
+AUDIO_CACHE_QUOTA_GB=10
+AUDIO_CACHE_MAX_CONCURRENT=5
+# AUDIO_CACHE_DIR=/app/.cache/audio-cache   # Docker 建议
+# 完整变量见 .env.example
+
+# 可选：搜索/URL 内存缓存 TTL（默认 210 分钟）
+# SEARCH_CACHE_TTL_MS=12600000
 ```
 
 ### 3. 初始化数据库
@@ -126,13 +173,18 @@ npx prisma generate
 
 ### 4. 启动开发服务器
 
+同时启动 Next.js API（3000）与 Vite 前端（5173）：
+
 ```bash
-pnpm dev
+pnpm dev:all
 ```
 
-打开 http://localhost:3000
+- 前端：http://localhost:5173 （Vite dev server，自动代理 `/api` → 3000）
+- 后端 API：http://localhost:3000
 
-> **默认管理员**：首次登录需在 `config/users.json`（或通过 `getOrCreateUserByName` 自动创建）配置 admin 账号的密码。admin 用户名固定为 `admin`。
+> 也可单独启动：`pnpm dev`（仅后端）、`pnpm dev:web`（仅前端，需后端在 3000 端口）
+
+> **默认管理员**：`config/users.json` 默认提供 `admin / admin` 账号（生产请立即修改）。admin 用户名固定为 `admin`，首次登录后可通过 Web UI 修改密码。
 
 ---
 
@@ -142,9 +194,22 @@ pnpm dev
 docker-compose up --build -d
 ```
 
-- `docker-compose.yml` 将宿主 `./prisma_data` 挂载到容器 `/app/prisma/data`，保证数据库持久化
-- 容器启动脚本（`scripts/start.sh`）自动执行 Prisma 迁移
-- 生产环境务必设置 `AUTH_SECRET` 环境变量（≥32 位随机字符串）
+镜像采用**三阶段构建**（见 `Dockerfile`）：
+1. `frontend-builder` — Vite 构建前端 SPA 产物到 `frontend/dist`
+2. `backend-builder` — Next.js 构建 API
+3. 运行时镜像 — `node:20-bullseye-slim` + nginx，复制两阶段产物
+
+运行时架构（`scripts/start-spa.sh`）：
+- Next.js API 监听 **3001**（仅容器内）
+- nginx 监听 **3000**（对外），托管前端 SPA（`/usr/share/nginx/html`）并反代 `/api`、`/rest` 到 3001
+- 健康检查：`GET /api/health`
+
+持久化挂载（见 `docker-compose.yml`）：
+- `./prisma_data` → `/app/prisma/prisma/data`（数据库）
+- `./cache_data` → `/app/.cache`（音频磁盘缓存）
+- `./config`、`./custom-sources`（便于热更新音源）
+
+生产环境务必设置 `AUTH_SECRET` 环境变量（≥32 位随机字符串）。
 
 ---
 
@@ -184,16 +249,23 @@ admin 登录后，侧边栏头像下拉 →「音源管理」：
 | `/api/audio` | GET/HEAD | 音频流 serve（磁盘缓存 + Range + 边下边播） | 公开 |
 | `/api/proxy/[...path]` | GET | 通用流式代理（Subsonic / 下载用） | 公开 |
 | `/api/cover/[id]` | GET | 封面代理 | 公开 |
+| `/api/random` | GET | 随机推荐歌曲 | 公开 |
+| `/api/health` | GET | 健康检查 | 公开 |
 | `/api/download` | GET | 下载代理（含进度） | 需登录 |
 | `/api/history` | GET/POST | 播放历史 | 需登录 |
 | `/api/favorites` | GET/POST | 收藏 | 需登录 |
-| `/api/playlists` | GET/POST | 歌单 CRUD | 需登录 |
+| `/api/favorites/check` | GET | 检查是否已收藏 | 需登录 |
+| `/api/playlists` | GET/POST | 歌单列表/创建 | 需登录 |
+| `/api/playlists/[id]` | GET/PUT/DELETE | 单歌单操作 | 需登录 |
+| `/api/playlists/[id]/songs` | POST/DELETE | 歌单曲目增删 | 需登录 |
 | `/api/admin/users` | GET/POST | 用户管理 | **仅 admin** |
 | `/api/admin/users/[id]` | GET/PUT/DELETE | 单用户操作 | **仅 admin** |
 | `/api/admin/sources` | GET/POST | 音源配置管理 | **仅 admin** |
 | `/api/admin/sources/[id]` | PUT/DELETE | 单音源操作（含关联脚本） | **仅 admin** |
 | `/api/admin/sources/upload` | POST | 上传音源脚本（预校验+自动注册） | **仅 admin** |
-| `/api/cache/clear` | POST | 清理缓存 | 公开 |
+| `/api/admin/cache` | GET/POST | 音频磁盘缓存查询/清理 | **仅 admin** |
+| `/api/cache/clear` | POST | 清理内存缓存（search/url/all） | 公开 |
+| `/rest/[method]` | GET/POST | Subsonic 协议入口（外部客户端访问） | 公开 |
 
 统一响应格式：`{ success: boolean, data?: T, error?: { code, message } }`
 
@@ -201,23 +273,25 @@ admin 登录后，侧边栏头像下拉 →「音源管理」：
 
 ## 🧹 缓存管理
 
-搜索结果与播放 URL 缓存在内存中，降低重复请求。默认 TTL 210 分钟（可由 `SEARCH_CACHE_TTL_MS` 调整）。
+项目有两层缓存：
 
-清理方式：
+1. **内存缓存**（`lib/cache-manager.ts`）：搜索结果与播放 URL，默认 TTL 210 分钟（可由 `SEARCH_CACHE_TTL_MS` 调整）。通过 `/api/cache/clear` 清理：
 
-```bash
-# 清理搜索缓存
-curl -X POST https://<你的域名>/api/cache/clear \
-  -H "Content-Type: application/json" \
-  -d '{"type":"search"}'
+   ```bash
+   # 清理搜索缓存
+   curl -X POST https://<你的域名>/api/cache/clear \
+     -H "Content-Type: application/json" \
+     -d '{"type":"search"}'
 
-# 清理全部缓存（搜索 + URL）
-curl -X POST https://<你的域名>/api/cache/clear \
-  -H "Content-Type: application/json" \
-  -d '{"type":"all"}'
-```
+   # 清理全部缓存（搜索 + URL）
+   curl -X POST https://<你的域名>/api/cache/clear \
+     -H "Content-Type: application/json" \
+     -d '{"type":"all"}'
+   ```
 
-支持 `search` / `url` / `all` 三种类型。若 nginx 强制 HTTP→HTTPS，请直接用 `https://` 或给 curl 加 `-L`。
+   支持 `search` / `url` / `all` 三种类型。若 nginx 强制 HTTP→HTTPS，请直接用 `https://` 或给 curl 加 `-L`。
+
+2. **音频磁盘缓存**（服务端落盘，`ENABLE_FILE_CACHE=true` 时启用）：LRU 自动清理，admin 可通过 `/api/admin/cache` 查询/清理。
 
 ---
 
@@ -226,15 +300,15 @@ curl -X POST https://<你的域名>/api/cache/clear \
 部署 PWA 需注意（以 nginx 为例）：
 
 1. **HTTPS** — PWA 强制要求（Service Worker 仅在 HTTPS 或 localhost 下注册）
-2. **`/manifest.json` 与 `/sw.js` 禁止缓存** — 否则用户永久卡在旧版本：
+2. **`/manifest.json` 与 `/sw.js` 禁止缓存** — 否则用户永久卡在旧版本（`nginx-spa.conf` 已配置）：
    ```nginx
    location = /manifest.json { add_header Cache-Control "no-cache"; }
    location = /sw.js { add_header Cache-Control "no-cache"; }
    ```
-3. **静态资源强缓存** — `/_next/static/` 带 hash，可一年强缓存
-4. **`viewport-fit=cover`** — 已在 `app/layout.tsx` 配置，配合 `env(safe-area-inset-*)` 适配刘海屏
+3. **静态资源强缓存** — Vite 构建产物 `/assets/` 带 hash，可一年强缓存（`/_next/static/` 同理）
+4. **`viewport-fit=cover`** — 已在 `frontend/index.html` 配置，配合 `env(safe-area-inset-*)` 适配刘海屏
 
-更新 Service Worker 后，记得递增 `public/sw.js` 中的 `VERSION` 常量，旧缓存才会被清理。
+更新 Service Worker 后，记得递增 `frontend/public/sw.js` 中的 `VERSION` 常量，旧缓存才会被清理。
 
 ---
 
@@ -264,10 +338,13 @@ A：检查 `.env` 中 `DATABASE_URL` 路径存在且可写；确认无其他进�
 A：检查 `config/music-sources.json` 路径，查看 `lib/music-source-manager.ts` 打印的初始化日志。
 
 **Q：iOS PWA 顶部按钮被状态栏遮挡？**
-A：确认顶部组件有 `safe-area-top` 类，且 `layout.tsx` 配置了 `viewportFit: "cover"`。iOS 可能缓存旧 meta 配置，需删除主屏图标重新添加。
+A：确认顶部组件有 `safe-area-top` 类，且 `frontend/index.html` 配置了 `viewport-fit=cover`。iOS 可能缓存旧 meta 配置，需删除主屏图标重新添加。
 
 **Q：播放/暂停/切歌从头播放？**
-A：v0.8.0 起已改为服务端磁盘缓存 + Range 代理方案，seek / 暂停 / 恢复均由服务端响应，不再有此问题。若仍有异常，检查 `.env` 的 `ENABLE_FILE_CACHE` 是否为 `true`，以及服务端日志是否有 `[AudioCache]` 相关错误。
+A：已改为服务端磁盘缓存 + Range 代理方案，seek / 暂停 / 恢复均由服务端响应，不再有此问题。若仍有异常，检查 `.env` 的 `ENABLE_FILE_CACHE` 是否为 `true`，以及服务端日志是否有 `[AudioCache]` 相关错误。
+
+**Q：开发模式下前端 5173 访问 API 报 401/CORS？**
+A：Vite dev server 已配置代理 `/api` → `localhost:3000`，确保后端 `pnpm dev` 正在运行；若用 `pnpm dev:web` 单独启动前端，需先启动后端。
 
 ---
 
