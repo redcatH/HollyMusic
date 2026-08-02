@@ -374,7 +374,12 @@ describe('buildFilenameFromMusicInfo', () => {
       songmid: '1',
       interval: '',
       types: [],
-      _types: {} as Record<string, unknown>,
+      _types: {
+        '128k': {},
+        '320k': {},
+        'flac': {},
+        'flac24bit': {},
+      },
       typeUrl: {},
     }
   }
