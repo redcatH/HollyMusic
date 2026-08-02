@@ -18,9 +18,9 @@ const SOURCES: { value: SourceType | 'all'; label: string }[] = [
 ]
 
 export function SearchPage() {
-  const { results, loading, run } = useSearch()
-  const [keyword, setKeyword] = useState('')
-  const [source, setSource] = useState<SourceType | 'all'>('all')
+  // keyword/source/results/loading 全部来自 search-store（外部状态）：
+  // 离开搜索页再回来时输入框与结果都保留。
+  const { results, loading, keyword, source, setKeyword, setSource, run } = useSearch()
   const [addTrack, setAddTrack] = useState<Track | null>(null)
 
   const submit = (e: React.FormEvent) => {

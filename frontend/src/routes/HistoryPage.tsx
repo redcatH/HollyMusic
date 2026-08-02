@@ -1,4 +1,6 @@
+import { useEffect } from 'react'
 import { usePlayHistory } from '@/hooks/usePlayHistory'
+import { usePlayerStore } from '@/lib/store/player-store'
 import { SongList } from '@/components/shared/SongList'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
@@ -6,7 +8,14 @@ import { History, Trash2 } from 'lucide-react'
 import { toTrack, type Track } from '@/lib/types/player'
 
 export function HistoryPage() {
-  const { entries, loading, clear } = usePlayHistory()
+  const { entries, loading, reload, clear } = usePlayHistory()
+
+  // 订阅当前播放曲目的 uid：任意位置点歌播放（reportPlay 异步上报后），
+  // 切回历史页时立即反映新条目，无需手动刷新。
+  const currentTrackUid = usePlayerStore(s => s.currentTrack?.uid)
+  useEffect(() => {
+    reload()
+  }, [currentTrackUid, reload])
 
   const tracks: Track[] = entries
     .filter(e => e.musicInfo && e.songId)
