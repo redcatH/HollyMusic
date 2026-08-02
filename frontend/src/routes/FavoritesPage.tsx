@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { listFavorites, type FavoriteSong } from '@/lib/api/favorites'
+import { useFavoritesStore } from '@/lib/store/favorites-store'
 import { SongList } from '@/components/shared/SongList'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
@@ -12,11 +13,24 @@ export function FavoritesPage() {
   const [loading, setLoading] = useState(true)
   const [addTrack, setAddTrack] = useState<Track | null>(null)
 
+  // 订阅 favorites version：PlayerBar / SongRow 收藏/取消成功（DB 已提交）后自增，
+  // 触发本页重新拉取完整列表，使收藏列表实时变更。
+  const favVersion = useFavoritesStore(s => s.version)
+
   useEffect(() => {
+    let cancelled = false
+    setLoading(true)
     listFavorites()
-      .then(({ list }) => setFavorites(list))
-      .finally(() => setLoading(false))
-  }, [])
+      .then(({ list }) => {
+        if (!cancelled) setFavorites(list)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [favVersion])
 
   const tracks: Track[] = favorites
     .filter(f => f.musicInfo)
