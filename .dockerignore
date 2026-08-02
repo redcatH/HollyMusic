@@ -1,5 +1,6 @@
 # Dependencies
 node_modules
+frontend/node_modules
 npm-debug.log
 
 # Build output
@@ -7,6 +8,7 @@ npm-debug.log
 out
 build
 dist
+frontend/dist
 
 # Development
 .env.local

@@ -1,11 +1,15 @@
 /**
- * 音频流 serve API（服务端磁盘缓存 + 边下边播 + Range 支持）
+ * 音频流 serve API（2026-08 重构版）。
+ *
+ * 设计：URL 解析惰性化——只在「真正 miss」时调用一次上游，由 audioServe 内部进行中去重。
+ * 已缓存的请求完全不触发 URL 解析。
  *
  * GET  /api/audio?uid=<source-songmid>&quality=<quality>
- *      Range 请求由 lib/server/audio-cache 处理：
- *      - 命中完整缓存 → 直接按 Range 读文件（206）
- *      - 边下边播 → 等水位线后从 .tmp 读（206）
- *      - 无 Content-Length → 透传上游
+ *      - 已完整缓存 → 本地文件 Range（任意 seek，0 次上游调用）
+ *      - 进行中 → attach 到内存 entry（0 次上游调用）
+ *      - miss → fetch 上游一次（多用户并发也只 1 次）
+ *      - seek 超出已下载 → 等待 15s → 超时 503 + Retry-After
+ *
  * HEAD /api/audio?... → 同 GET 但不带 body，供 <audio> 探测
  *
  * uid 格式：`${source}-${存储songmid}`，与 resolveMusicInfoById 一致。
@@ -16,7 +20,7 @@ import { logger } from '@/lib/logger'
 import { resolveMusicInfoById } from '@/lib/db'
 import { musicSourceManager } from '@/lib/music-source-manager'
 import type { QualityType } from '@/lib/types/music'
-import { ensureInitialized, serve } from '@/lib/server/audio-cache'
+import { audioServe } from '@/lib/audio-serve'
 
 function buildErrorResponse(status: number, code: string, message: string): Response {
   return new Response(
@@ -27,7 +31,7 @@ function buildErrorResponse(status: number, code: string, message: string): Resp
 
 async function handleAudio(request: NextRequest, isHead: boolean): Promise<Response> {
   try {
-    await ensureInitialized()
+    await audioServe.ensureInitialized()
 
     const { searchParams } = new URL(request.url)
     const uid = searchParams.get('uid')
@@ -48,22 +52,22 @@ async function handleAudio(request: NextRequest, isHead: boolean): Promise<Respo
       return buildErrorResponse(404, 'NOT_FOUND', `找不到歌曲信息: ${uid}`)
     }
 
-    // 缓存键（与 urlCache 键一致）
-    const cacheKey = `audio:${musicInfo.source}:${musicInfo.songmid}:${quality}`
+    const cacheKey = `${musicInfo.source}:${musicInfo.songmid}:${quality}`
 
-    // 获取上游真实 URL（含音质降级逻辑）
-    if (!musicSourceManager.isInitialized()) {
-      await musicSourceManager.initialize()
+    // URL resolver 下沉到 audioServe 内部：只在真正 miss 时调用一次。
+    // 已缓存 / 进行中的请求完全不触发 URL 解析（解决重复打上游问题）。
+    const upstreamUrlResolver = async (): Promise<string> => {
+      if (!musicSourceManager.isInitialized()) {
+        await musicSourceManager.initialize()
+      }
+      return musicSourceManager.getMusicUrl(musicInfo, quality)
     }
-    const upstreamUrl = await musicSourceManager.getMusicUrl(musicInfo, quality)
 
     const rangeHeader = request.headers.get('range')
 
-    return await serve({
+    return await audioServe.serve({
       cacheKey,
-      upstreamUrl,
-      quality,
-      uid,
+      upstreamUrlResolver,
       rangeHeader,
       isHead,
     })

@@ -30,5 +30,11 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "lx-music-desktop-master"]
+  "exclude": [
+    "node_modules",
+    "lx-music-desktop-master",
+    "frontend",
+    "components",
+    "hooks"
+  ]
 }

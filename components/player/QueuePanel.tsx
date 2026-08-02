@@ -1,4 +1,3 @@
-'use client'
 
 import { usePlayerStore } from '@/lib/store/player-store'
 import { CoverImage } from '@/components/shared/CoverImage'

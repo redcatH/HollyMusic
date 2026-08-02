@@ -7,7 +7,7 @@
 import { NextRequest } from 'next/server'
 import { createSuccessResponse, createErrorResponse, ErrorCodes } from '@/lib/api-response'
 import { searchCache, urlCache } from '@/lib/cache-manager'
-import { clearAllAudioCache } from '@/lib/server/audio-cache'
+import { clearAllAudioCache } from '@/lib/audio-serve'
 import { logger } from '@/lib/logger'
 
 export async function POST(request: NextRequest) {

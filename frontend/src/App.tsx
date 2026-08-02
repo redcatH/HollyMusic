@@ -1,0 +1,120 @@
+/**
+ * SPA 根布局。
+ *
+ * 替代 Next.js app-router 的 app/layout.tsx + AppShell.tsx。
+ * react-router 的 navigate() 同步更新 URL，组件立即切换——无需 pendingPath/activePath。
+ */
+
+import { useEffect, useState } from 'react'
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { Sidebar, MobileSidebar } from './components/Layout'
+import { MobileHeader } from './components/MobileHeader'
+import { ServiceWorkerRegister } from './components/ServiceWorkerRegister'
+import { PlayerBar } from '@/components/player/PlayerBar'
+import { QueuePanel } from '@/components/player/QueuePanel'
+import { LyricsPanel } from '@/components/player/LyricsPanel'
+import { ToastContainer } from '@/components/toast/ToastContainer'
+import { useFavoritesStore } from '@/lib/store/favorites-store'
+import { useAuthStore } from '@/hooks/useAuth'
+import { HomePage } from './routes/HomePage'
+import { SearchPage } from './routes/SearchPage'
+import { FavoritesPage } from './routes/FavoritesPage'
+import { PlaylistsPage } from './routes/PlaylistsPage'
+import { PlaylistDetailPage } from './routes/PlaylistDetailPage'
+import { HistoryPage } from './routes/HistoryPage'
+import { LoginPage } from './routes/LoginPage'
+import { AdminPage, AdminUsersPage, AdminSourcesPage } from './routes/AdminPage'
+
+const PROTECTED_PREFIXES = ['/favorites', '/playlists', '/history', '/admin']
+
+export function App() {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const initAuth = useAuthStore(s => s.init)
+  const authenticated = useAuthStore(s => s.authenticated)
+  const loadFavorites = useFavoritesStore(s => s.load)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+
+  // 启动时获取会话状态
+  useEffect(() => {
+    initAuth()
+  }, [initAuth])
+
+  // 登录后才加载收藏
+  useEffect(() => {
+    if (authenticated === true) {
+      loadFavorites()
+    }
+  }, [authenticated, loadFavorites])
+
+  // 路由守卫：未登录访问受保护页面 → 跳登录
+  useEffect(() => {
+    if (authenticated === null) return
+    if (authenticated === false) {
+      const isProtected = PROTECTED_PREFIXES.some(p => location.pathname.startsWith(p))
+      if (isProtected) {
+        navigate('/login', { replace: true })
+      }
+    }
+  }, [authenticated, location.pathname, navigate])
+
+  // 路由切换 → 关闭抽屉
+  useEffect(() => {
+    setDrawerOpen(false)
+  }, [location.pathname])
+
+  // 抽屉打开时：ESC 关闭 + 锁定 body 滚动
+  useEffect(() => {
+    if (!drawerOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setDrawerOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prev
+    }
+  }, [drawerOpen])
+
+  // 登录页：独立全屏
+  if (location.pathname === '/login') {
+    return (
+      <div className="min-h-screen bg-background text-foreground">
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+        </Routes>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex h-screen flex-col bg-background text-foreground">
+      <ServiceWorkerRegister />
+      <MobileHeader onMenuClick={() => setDrawerOpen(true)} />
+      <div className="flex flex-1 overflow-hidden">
+        <Sidebar />
+        <main className="flex-1 overflow-y-auto">
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/search" element={<SearchPage />} />
+            <Route path="/favorites" element={<FavoritesPage />} />
+            <Route path="/playlists" element={<PlaylistsPage />} />
+            <Route path="/playlists/:id" element={<PlaylistDetailPage />} />
+            <Route path="/history" element={<HistoryPage />} />
+            <Route path="/admin" element={<AdminPage />} />
+            <Route path="/admin/users" element={<AdminUsersPage />} />
+            <Route path="/admin/sources" element={<AdminSourcesPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </main>
+      </div>
+      <PlayerBar />
+      <MobileSidebar open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      <QueuePanel />
+      <LyricsPanel />
+      <ToastContainer />
+    </div>
+  )
+}

@@ -1,4 +1,3 @@
-'use client'
 
 /**
  * Howler 音频引擎封装（html5 模式，服务端 Range 代理）。
