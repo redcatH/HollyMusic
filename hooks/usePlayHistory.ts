@@ -1,4 +1,3 @@
-'use client'
 
 import { useCallback, useEffect, useState } from 'react'
 import { listHistory, clearHistory, type HistoryEntry } from '@/lib/api/history'

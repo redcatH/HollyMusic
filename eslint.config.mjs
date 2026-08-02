@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // SPA frontend (has its own eslint/tsconfig via Vite)
+    "frontend/**",
     // Ignore reference source, simulator, generated code, and CommonJS modules
     "lx-env-simulator/**",
     "lx-music-desktop-master/**",
