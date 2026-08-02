@@ -6,7 +6,9 @@ WORKDIR /app
 RUN npm config set registry https://registry.npmmirror.com && npm install -g pnpm
 
 # 先复制根 package 文件（用于复用根目录的 components/hooks/lib）
-COPY package.json pnpm-lock.yaml ./
+# .npmrc 必须在 install 之前到位：项目依赖 node-linker=hoisted 才能让传递依赖
+# （如 needle/cheerio 带入的 iconv-lite）被 lib/music-core/request.js 顶层 require 解析
+COPY package.json pnpm-lock.yaml .npmrc ./
 COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml frontend/
 
 # 安装根依赖（前端通过 @/* 别名引用根目录的 components/hooks/lib）
@@ -32,7 +34,7 @@ WORKDIR /app
 
 RUN npm config set registry https://registry.npmmirror.com && npm install -g pnpm
 
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml .npmrc ./
 RUN pnpm install --frozen-lockfile
 
 COPY . .
