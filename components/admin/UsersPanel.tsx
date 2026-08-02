@@ -1,4 +1,3 @@
-'use client'
 
 /**
  * 用户管理面板（admin Tab 子组件）。

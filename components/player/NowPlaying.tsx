@@ -1,4 +1,3 @@
-'use client'
 
 import { usePlayerStore } from '@/lib/store/player-store'
 import { useFavoritesStore } from '@/lib/store/favorites-store'

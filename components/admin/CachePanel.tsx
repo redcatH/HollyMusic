@@ -1,4 +1,3 @@
-'use client'
 
 /**
  * 缓存管理面板（admin Tab 子组件）。

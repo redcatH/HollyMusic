@@ -28,8 +28,7 @@
     "src",
     "../components",
     "../hooks",
-    "../lib",
-    "../types"
+    "../lib"
   ],
   "exclude": ["node_modules"]
 }

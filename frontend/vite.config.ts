@@ -7,11 +7,9 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
+      // 前端通过 @ 复用根目录的 components/hooks/lib（纯前端部分）
       '@': path.resolve(__dirname, '..'),
       '@@': path.resolve(__dirname, 'src'),
-      // Next.js → react-router shims（让现有组件零修改可用）
-      'next/link': path.resolve(__dirname, 'src/shims/next-link.tsx'),
-      'next/navigation': path.resolve(__dirname, 'src/shims/next-navigation.ts'),
     },
   },
   server: {
