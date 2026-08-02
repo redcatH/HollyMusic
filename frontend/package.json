@@ -9,7 +9,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "howler": "^2.2.4",
     "lucide-react": "^0.562.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -30,7 +29,6 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.18",
-    "@types/howler": "^2.2.12",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/react-window": "^1.8.8",
