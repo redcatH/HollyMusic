@@ -1,5 +1,5 @@
 # ============ 阶段 1: 构建前端（Vite SPA） ============
-FROM node:20-bullseye-slim AS frontend-builder
+FROM node:20-bookworm-slim AS frontend-builder
 
 WORKDIR /app
 
@@ -28,7 +28,7 @@ RUN pnpm prisma generate
 RUN cd frontend && pnpm build
 
 # ============ 阶段 2: 构建后端（Next.js API） ============
-FROM node:20-bullseye-slim AS backend-builder
+FROM node:20-bookworm-slim AS backend-builder
 
 WORKDIR /app
 
@@ -42,7 +42,9 @@ RUN pnpm prisma generate
 RUN pnpm build
 
 # ============ 阶段 3: 运行时（nginx + Node.js） ============
-FROM node:20-bullseye-slim
+# bookworm（Debian 12, glibc 2.36）：rollup 4.x 的 native 二进制要求 glibc ≥ 2.32，
+# bullseye 只有 2.31 会导致 vite build 时 dlopen 失败
+FROM node:20-bookworm-slim
 
 # 安装 nginx
 RUN apt-get update && apt-get install -y nginx && rm -rf /var/lib/apt/lists/*
