@@ -24,7 +24,7 @@ export function SongRow({ track, queue, index, onAddToPlaylist }: SongRowProps) 
   const isFav = useFavoritesStore(s => s.ids.has(track.uid))
   const toggleFav = useFavoritesStore(s => s.toggle)
   const authenticated = useAuthStore(s => s.authenticated)
-  const { download, downloading, progress } = useDownload()
+  const { download, downloading, error } = useDownload()
 
   const isCurrent = currentTrack?.uid === track.uid
   const isCurrentPlaying = isCurrent && isPlaying
@@ -94,7 +94,7 @@ export function SongRow({ track, queue, index, onAddToPlaylist }: SongRowProps) 
 
       {authenticated && (
         <button
-          onClick={() => download(track.musicInfo)}
+          onClick={() => download({ uid: track.uid })}
           disabled={downloading}
           className={`hidden shrink-0 p-1 transition md:block ${
             downloading
@@ -102,7 +102,7 @@ export function SongRow({ track, queue, index, onAddToPlaylist }: SongRowProps) 
               : 'text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100'
           } disabled:opacity-100`}
           aria-label="下载"
-          title={downloading ? (progress != null ? `下载中 ${progress}%` : '下载中…') : '下载'}
+          title={downloading ? '下载中…' : (error ?? '下载')}
         >
           {downloading ? (
             <Loader2 className="h-4 w-4 animate-spin" />
