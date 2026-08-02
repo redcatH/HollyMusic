@@ -1,13 +1,22 @@
 #!/bin/sh
 set -e
 
-# 执行 Prisma 迁移
-echo "Running Prisma migrations..."
-pnpm prisma migrate deploy || echo "No pending migrations"
+# ============ standalone 模式启动脚本 ============
+# 与旧版的区别：
+# 1. 不再用 `pnpm start`（next start，需完整 node_modules）
+#    改用 `node ./server.js`（standalone 产物，含最小化 node_modules）
+# 2. 不再用 `pnpm prisma migrate deploy`（运行时镜像无 pnpm/prisma CLI）
+#    改用 standalone 内已追踪的 prisma CLI：node ./node_modules/prisma/build/index.js
+# 3. 必须显式设置 HOSTNAME=0.0.0.0，否则 server.js 只监听 localhost，nginx 反代连不上
 
-# 启动 Next.js 后端（只跑 API，监听 3001）
-echo "Starting Next.js API backend on port 3001..."
-PORT=3001 pnpm start &
+echo "Running Prisma migrations..."
+node ./node_modules/prisma/build/index.js migrate deploy --schema ./prisma/schema.prisma \
+  || echo "No pending migrations"
+
+echo "Starting Next.js standalone API backend on port 3001..."
+export PORT=3001
+export HOSTNAME=0.0.0.0
+node ./server.js &
 NEXT_PID=$!
 
 # 等待后端就绪

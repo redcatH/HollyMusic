@@ -1,21 +1,41 @@
-# ============ 阶段 1: 构建前端（Vite SPA） ============
-FROM node:20-bookworm-slim AS frontend-builder
+# syntax=docker/dockerfile:1.6
+# 启用 BuildKit 高级特性：cache mount（依赖缓存跨构建复用）
+# 构建时需 DOCKER_BUILDKIT=1（Docker 20.10+ / buildx 默认已启用）
+
+# ============================================================================
+# 阶段 1: 安装依赖（公共阶段 —— 前后端 builder 共享，依赖只装一次）
+# ============================================================================
+# 原设计 frontend-builder 与 backend-builder 各装一次根依赖（最慢步骤重复 2 次）
+# 现抽离为公共 deps 阶段，两个 builder 都 FROM deps，BuildKit 还会并行执行它们
+FROM node:20-bookworm-slim AS deps
 
 WORKDIR /app
 
-RUN npm config set registry https://registry.npmmirror.com && npm install -g pnpm
+# 用 corepack 替代 `npm install -g pnpm`：
+# - Node 20 自带 corepack，无需走 npm 网络下载
+# - 自动读取 package.json 的 packageManager 字段锁定 pnpm 版本（当前 pnpm@10.22.0）
+# 注意：corepack 不读 .npmrc 的 registry，需单独设 COREPACK_NPM_REGISTRY 走淘宝源
+ENV COREPACK_NPM_REGISTRY=https://registry.npmmirror.com/
+RUN corepack enable
 
-# 先复制根 package 文件（用于复用根目录的 components/hooks/lib）
-# .npmrc 必须在 install 之前到位：项目依赖 node-linker=hoisted 才能让传递依赖
-# （如 needle/cheerio 带入的 iconv-lite）被 lib/music-core/request.js 顶层 require 解析
+# 先复制 package 文件（利用 docker layer cache：源码变动不会使依赖安装缓存失效）
+# .npmrc 必须在 install 之前到位：node-linker=hoisted 影响 needle/cheerio 等传递依赖的解析
 COPY package.json pnpm-lock.yaml .npmrc ./
 COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml frontend/
 
-# 安装根依赖（前端通过 @/* 别名引用根目录的 components/hooks/lib）
-RUN pnpm install --frozen-lockfile
+# 带 pnpm store cache mount 安装依赖：
+# - 首次构建：照常下载
+# - 后续构建（即使 layer cache 失效）：pnpm store 命中缓存，秒级完成
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile && \
+    cd frontend && pnpm install --frozen-lockfile
 
-# 安装前端依赖
-RUN cd frontend && pnpm install --frozen-lockfile
+# ============================================================================
+# 阶段 2: 构建前端（Vite SPA）
+# ============================================================================
+FROM deps AS frontend-builder
+
+WORKDIR /app
 
 # 复制源码
 COPY . .
@@ -24,52 +44,70 @@ COPY . .
 # 缺失会导致 TS2307 + 连锁 TS7006 隐式 any 错误）
 RUN pnpm prisma generate
 
-# 构建前端
+# 构建前端（dist 已含 publicDir 指向的根 public/ 资源：manifest.json / icon.svg / sw.js / icons/ 等 PWA 资源）
 RUN cd frontend && pnpm build
 
-# ============ 阶段 2: 构建后端（Next.js API） ============
-FROM node:20-bookworm-slim AS backend-builder
+# ============================================================================
+# 阶段 3: 构建后端（Next.js standalone）
+# ============================================================================
+FROM deps AS backend-builder
 
 WORKDIR /app
 
-RUN npm config set registry https://registry.npmmirror.com && npm install -g pnpm
-
-COPY package.json pnpm-lock.yaml .npmrc ./
-RUN pnpm install --frozen-lockfile
-
+# 复制源码
 COPY . .
-RUN pnpm prisma generate
-RUN pnpm build
 
-# ============ 阶段 3: 运行时（nginx + Node.js） ============
+# 生成 Prisma Client（含 Linux 引擎二进制，依赖 schema.prisma 的 binaryTargets）
+RUN pnpm prisma generate
+
+# ★★★ 关键：必须用 webpack 构建，不能用默认的 Turbopack ★★★
+# Next.js 16.0+ 默认用 Turbopack，但 16.1.x~16.2.x 有回归（issues #88844、#91654）：
+# serverExternalPackages 的包（needle/tunnel）不会被正确复制进 .next/standalone/node_modules，
+# 导致运行时报 Cannot find module 'needle'。--webpack 退回 webpack 打包，行为与 15.x 一致。
+RUN pnpm build --webpack
+
+# ============================================================================
+# 阶段 4: 运行时（nginx + Node.js standalone）
+# ============================================================================
 # bookworm（Debian 12, glibc 2.36）：rollup 4.x 的 native 二进制要求 glibc ≥ 2.32，
 # bullseye 只有 2.31 会导致 vite build 时 dlopen 失败
 FROM node:20-bookworm-slim
 
-# 安装 nginx
-RUN apt-get update && apt-get install -y nginx && rm -rf /var/lib/apt/lists/*
+# 切换 apt 为清华源，加速 nginx/wget 安装（默认 deb.debian.org 国内极慢）
+# bookworm-slim 用新格式 debian.sources（非老的 sources.list）
+RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g; s|security.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/debian.sources \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends nginx wget \
+ && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-RUN npm install -g pnpm
+ENV NODE_ENV=production
+# standalone server.js 读 HOSTNAME（不是 HOST），漏设会只监听 localhost 导致 nginx 反代连接被拒
+ENV PORT=3001
+ENV HOSTNAME=0.0.0.0
 
-# 从后端构建阶段复制
-COPY --from=backend-builder /app/.next ./.next
-COPY --from=backend-builder /app/node_modules ./node_modules
-COPY --from=backend-builder /app/package.json ./package.json
+# ---------- standalone 核心三件套 ----------
+# server.js + 最小化 node_modules（已通过 outputFileTracingIncludes 纳入 prisma/needle/tunnel）
+COPY --from=backend-builder /app/.next/standalone ./
+# 静态资源（独立于 standalone，需手动放到 .next/static）
+COPY --from=backend-builder /app/.next/static ./.next/static
+
+# ---------- Prisma 相关（双保险，防止追踪漏文件） ----------
+# 客户端 + 查询引擎二进制（自定义 output 路径 lib/generated/prisma，.node 不是 JS import 可能被漏）
+COPY --from=backend-builder /app/lib/generated/prisma ./lib/generated/prisma
+# schema + migrations（容器启动时 prisma migrate deploy 需要）
+COPY --from=backend-builder /app/prisma ./prisma
+
+# ---------- 业务配置与音源 ----------
 COPY --from=backend-builder /app/config ./config
 COPY --from=backend-builder /app/custom-sources ./custom-sources
-COPY --from=backend-builder /app/prisma ./prisma
-COPY --from=backend-builder /app/lib/generated/prisma ./lib/generated/prisma
 
-# 从前端构建阶段复制静态文件（dist 已含 publicDir 指向的根 public/ 资源：
-# manifest.json / icon.svg / sw.js / icons/ 等 PWA 资源，由 vite build 拷入）
+# ---------- 前端静态产物给 nginx ----------
 COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
 
-# 复制 nginx 配置
+# ---------- nginx 配置 + 启动脚本 ----------
 COPY nginx-spa.conf /etc/nginx/conf.d/default.conf
-
-# 复制启动脚本
 COPY scripts/start-spa.sh /app/start-spa.sh
 RUN chmod +x /app/start-spa.sh
 
