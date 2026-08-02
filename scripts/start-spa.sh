@@ -1,4 +1,5 @@
-#!/bin/sh
+#!/bin/bash
+# 用 bash 而非 sh：wait -n 需要 bash 4+，dash（/bin/sh）不支持
 set -e
 
 # ============ standalone 模式启动脚本 ============
