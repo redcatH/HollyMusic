@@ -10,7 +10,7 @@ export default defineConfig({
       '@': path.resolve(__dirname, '..'),
       '@@': path.resolve(__dirname, 'src'),
       // Next.js → react-router shims（让现有组件零修改可用）
-      'next/link': path.resolve(__dirname, 'src/shims/next-link.ts'),
+      'next/link': path.resolve(__dirname, 'src/shims/next-link.tsx'),
       'next/navigation': path.resolve(__dirname, 'src/shims/next-navigation.ts'),
     },
   },
