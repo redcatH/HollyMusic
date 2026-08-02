@@ -329,5 +329,14 @@ export async function serve(opts: ServeOptions): Promise<Response> {
   }
 
   void touchAccess(opts.cacheKey)
+
+  // Windows 兼容：job 可能已完成并 rename .tmp → 正式文件，
+  // 此时 .tmp 已不存在，createReadStream(tmpPath) 会 ENOENT。
+  // 检查 job 状态：complete → 读正式文件；否则读 .tmp（边下边播）
+  if (job.getStatus() === 'complete') {
+    const filePath = readiness.paths.filePath
+    return buildPartialResponse(filePath, size, contentType, { start: serveRange.start, end: actualEnd }, opts.isHead)
+  }
+
   return buildPartialResponse(tmpPath, size, contentType, { start: serveRange.start, end: actualEnd }, opts.isHead)
 }
