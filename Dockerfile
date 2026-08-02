@@ -62,11 +62,9 @@ COPY --from=backend-builder /app/custom-sources ./custom-sources
 COPY --from=backend-builder /app/prisma ./prisma
 COPY --from=backend-builder /app/lib/generated/prisma ./lib/generated/prisma
 
-# 从前端构建阶段复制静态文件
+# 从前端构建阶段复制静态文件（dist 已含 publicDir 指向的根 public/ 资源：
+# manifest.json / icon.svg / sw.js / icons/ 等 PWA 资源，由 vite build 拷入）
 COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
-
-# 复制 public 资源（SW、manifest、图标）到 nginx 静态目录
-COPY --from=frontend-builder /app/frontend/public /usr/share/nginx/html/
 
 # 复制 nginx 配置
 COPY nginx-spa.conf /etc/nginx/conf.d/default.conf

@@ -27,4 +27,8 @@ export default defineConfig({
     // 静态资源在 nginx 下直接 serve
     base: '/',
   },
+  // 静态资源目录指向仓库根的 public/（PWA 资源：manifest.json / icon.svg / sw.js / icons/）。
+  // 不能用默认的 frontend/public——那只是本地一个未跟踪的 symlink，git pull 后不存在，
+  // 会导致 Docker 构建时 COPY frontend/public 失败。统一用根 public/ 作为唯一来源。
+  publicDir: path.resolve(__dirname, '..', 'public'),
 })
