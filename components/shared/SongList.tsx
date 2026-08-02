@@ -1,4 +1,3 @@
-'use client'
 
 import { SongRow } from './SongRow'
 import type { Track } from '@/lib/types/player'

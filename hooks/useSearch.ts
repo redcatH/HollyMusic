@@ -1,44 +1,29 @@
-'use client'
 
-import { useCallback, useRef, useState } from 'react'
-import { search } from '@/lib/api/search'
-import type { Song, SourceType } from '@/lib/types/music'
+import { useCallback } from 'react'
+import { useSearchStore } from '@/lib/store/search-store'
+import type { SourceType } from '@/lib/types/music'
 
-const ALL_SOURCES: SourceType[] = ['tx', 'wy', 'kw', 'kg', 'mg']
-
+/**
+ * 搜索 hook（store 薄包装）
+ *
+ * 数据存放在 search-store（组件外部），组件卸载不丢数据：
+ * 切换到其他页面再切回搜索页，输入框/源/结果均保留。
+ * 参考实现：hooks/useRandomSongs.ts + lib/store/discover-store.ts。
+ */
 export function useSearch() {
-  const [results, setResults] = useState<Song[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [keyword, setKeyword] = useState('')
-  const reqIdRef = useRef(0)
+  const results = useSearchStore(s => s.results)
+  const loading = useSearchStore(s => s.loading)
+  const error = useSearchStore(s => s.error)
+  const keyword = useSearchStore(s => s.keyword)
+  const source = useSearchStore(s => s.source)
+  const setKeyword = useSearchStore(s => s.setKeyword)
+  const setSource = useSearchStore(s => s.setSource)
+  const runStore = useSearchStore(s => s.run)
 
-  const run = useCallback(async (kw: string, source: SourceType | 'all') => {
-    if (!kw.trim()) {
-      setResults([])
-      return
-    }
-    const reqId = ++reqIdRef.current
-    setLoading(true)
-    setError(null)
-    try {
-      const sources = source === 'all' ? ALL_SOURCES : [source]
-      const responses = await Promise.all(
-        sources.map(s =>
-          search(s, kw, 1, 30)
-            .then(r => r.list)
-            .catch(() => [] as Song[])
-        )
-      )
-      if (reqId !== reqIdRef.current) return // 过期请求，丢弃
-      setResults(responses.flat())
-    } catch (e) {
-      if (reqId !== reqIdRef.current) return
-      setError(e instanceof Error ? e.message : '搜索失败')
-    } finally {
-      if (reqId === reqIdRef.current) setLoading(false)
-    }
-  }, [])
+  const run = useCallback(
+    (kw: string, src: SourceType | 'all') => runStore(kw, src),
+    [runStore]
+  )
 
-  return { results, loading, error, keyword, setKeyword, run }
+  return { results, loading, error, keyword, source, setKeyword, setSource, run }
 }

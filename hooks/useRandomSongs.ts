@@ -1,4 +1,3 @@
-'use client'
 
 import { useEffect } from 'react'
 import { useDiscoverStore } from '@/lib/store/discover-store'

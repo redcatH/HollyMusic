@@ -1,4 +1,3 @@
-'use client'
 
 import { useToastStore } from '@/lib/toast'
 import { X, AlertCircle, CheckCircle, Info, AlertTriangle } from 'lucide-react'

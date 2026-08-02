@@ -1,4 +1,3 @@
-'use client'
 
 import { useEffect, useRef } from 'react'
 import { usePlayerStore } from '@/lib/store/player-store'

@@ -1,6 +1,5 @@
-'use client'
 
-import Link from 'next/link'
+import { Link } from 'react-router-dom'
 import type { PlaylistSummary } from '@/lib/api/playlists'
 import { ListMusic } from 'lucide-react'
 
@@ -10,7 +9,7 @@ export function PlaylistGrid({ playlists }: { playlists: PlaylistSummary[] }) {
       {playlists.map(p => (
         <Link
           key={p.id}
-          href={`/playlists/${p.id}`}
+          to={`/playlists/${p.id}`}
           className="group flex flex-col gap-2 rounded-lg p-2 hover:bg-accent/40"
         >
           <div className="flex aspect-square items-center justify-center rounded bg-gradient-to-br from-primary/30 to-primary/10">

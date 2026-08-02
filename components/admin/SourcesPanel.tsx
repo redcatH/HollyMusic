@@ -1,4 +1,3 @@
-'use client'
 
 /**
  * 音源管理面板（admin Tab 子组件）。

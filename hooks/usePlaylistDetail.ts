@@ -1,4 +1,3 @@
-'use client'
 
 import { useCallback, useEffect, useState } from 'react'
 import { getPlaylist, type PlaylistDetail } from '@/lib/api/playlists'

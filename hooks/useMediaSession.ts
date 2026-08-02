@@ -1,4 +1,3 @@
-'use client'
 
 /**
  * Media Session API 封装

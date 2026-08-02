@@ -1,4 +1,3 @@
-'use client'
 
 /**
  * 缓存管理面板（admin Tab 子组件）。
@@ -14,7 +13,6 @@ import {
   clearCache,
   scanOrphans,
   cleanOrphans,
-  scanStale,
   type CacheStats,
 } from '@/lib/api/admin-cache'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
@@ -40,7 +38,6 @@ export function CachePanel() {
   const [msg, setMsg] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
   const [scanning, setScanning] = useState(false)
   const [cleaningOrphans, setCleaningOrphans] = useState(false)
-  const [scanningStale, setScanningStale] = useState(false)
   const [orphanResult, setOrphanResult] = useState<{
     count: number
     bytes: number
@@ -131,32 +128,6 @@ export function CachePanel() {
       setMsg({ kind: 'error', text: e instanceof Error ? e.message : '清理失败' })
     } finally {
       setCleaningOrphans(false)
-    }
-  }
-
-  const handleScanStale = async () => {
-    setScanningStale(true)
-    setMsg(null)
-    try {
-      const result = await scanStale()
-      const s = result.stale
-      if (s && s.totalDeleted > 0) {
-        const parts: string[] = []
-        if (s.staleDownloads > 0) parts.push(`卡死下载 ${s.staleDownloads}`)
-        if (s.ghostRecords > 0) parts.push(`幽灵记录 ${s.ghostRecords}`)
-        if (s.orphanFiles > 0) parts.push(`孤儿文件 ${s.orphanFiles}`)
-        setMsg({
-          kind: 'success',
-          text: `扫描清理完成：${parts.join('、')}，释放 ${formatBytes(s.bytesFreed)}`,
-        })
-        await reload()
-      } else {
-        setMsg({ kind: 'success', text: '扫描完成：未发现异常' })
-      }
-    } catch (e) {
-      setMsg({ kind: 'error', text: e instanceof Error ? e.message : '扫描失败' })
-    } finally {
-      setScanningStale(false)
     }
   }
 
@@ -269,28 +240,20 @@ export function CachePanel() {
             <div className="mt-1 text-xs text-muted-foreground">命中率 {stats?.memory.url.hitRate ?? '0%'}</div>
             </div>
 
-            {/* 扫描孤儿文件 + 扫描清理 */}
+            {/* 扫描孤儿文件 */}
             <div className="mt-3 border-t border-border pt-3">
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={handleScanOrphans}
-                  disabled={scanning || cleaningOrphans || clearing !== null || scanningStale}
+                  disabled={scanning || cleaningOrphans || clearing !== null}
                   className="flex items-center gap-1 rounded border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
                 >
                   {scanning ? <Loader2 className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}
                   扫描孤儿文件
                 </button>
-                <button
-                  onClick={handleScanStale}
-                  disabled={scanning || cleaningOrphans || clearing !== null || scanningStale}
-                  className="flex items-center gap-1 rounded border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
-                >
-                  {scanningStale ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-                  扫描清理
-                </button>
               </div>
               <p className="mt-1 text-[10px] text-muted-foreground">
-                扫描孤儿：检查磁盘上无 DB 记录的文件 · 扫描清理：清理卡死下载（&gt;30分钟）+ 幽灵记录 + 孤儿文件
+                扫描磁盘上无 DB 记录的残留文件（通常是进程异常退出留下的下载半成品）
               </p>
             </div>
           </div>
@@ -345,22 +308,11 @@ export function CachePanel() {
               />
             </div>
 
-            {/* 文件状态明细 */}
+            {/* 文件状态明细（新设计：DB 只存已完整下载的记录） */}
             <div className="flex flex-wrap gap-4 text-xs">
               <span className="flex items-center gap-1">
                 <CheckCircle2 className="h-3 w-3 text-green-500" />
-                完整 <span className="font-medium">{stats?.disk.complete ?? 0}</span>
-              </span>
-              <span className="flex items-center gap-1">
-                <AlertCircle className="h-3 w-3 text-amber-500" />
-                不完整 <span className="font-medium">{stats?.disk.partial ?? 0}</span>
-              </span>
-              <span className="flex items-center gap-1">
-                <Loader2 className="h-3 w-3 text-blue-500" />
-                下载中 <span className="font-medium">{stats?.disk.downloading ?? 0}</span>
-              </span>
-              <span className="text-muted-foreground">
-                共 <span className="font-medium text-foreground">{stats?.disk.total ?? 0}</span> 个文件
+                共 <span className="font-medium">{stats?.disk.total ?? 0}</span> 个文件
               </span>
             </div>
           </div>
