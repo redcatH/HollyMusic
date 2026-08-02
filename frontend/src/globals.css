@@ -1,6 +1,13 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* Tailwind v4 默认只扫描当前目录及子目录，
+   但我们的组件在父目录的 components/hooks/lib，
+   需要显式 @source 让 Tailwind 扫描这些目录生成对应的 class */
+@source "../../components";
+@source "../../hooks";
+@source "../../lib";
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
