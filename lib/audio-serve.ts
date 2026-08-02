@@ -705,6 +705,53 @@ function parseRange(rangeHeader: string | null, size: number): RangeSpec | 'unsa
   return { start, end }
 }
 
+/**
+ * 把 Node fs.ReadStream 包装成 Web ReadableStream<Uint8Array>。
+ *
+ * 必要性：直接把 fs.ReadStream cast 成 ReadableStream 传给 Next.js Response，
+ * 客户端拖动进度条取消请求时，undici 会调用 stream.cancel()；此时若底层
+ * fs.ReadStream 已结束/关闭，再次 cancel/error 会抛
+ * `TypeError: Invalid state: ReadableStream is already closed`（ERR_INVALID_STATE），
+ * 成为 uncaughtException 导致进程告警甚至崩溃。
+ *
+ * 本包装：
+ * 1. 用 Web ReadableStream 标准生命周期接管 pull/cancel
+ * 2. cancel() 主动 destroy 底层 fs.ReadStream，吞掉后续 'error' 事件
+ * 3. 底层 'error' 先于 'end' 触发时，通过 controller.error() 优雅传递给下游
+ */
+function wrapFileStream(nodeStream: fs.ReadStream): ReadableStream<Uint8Array> {
+  // 底层流已绑定的 error 事件（防止 destroy 后再抛）
+  let errored = false
+  nodeStream.on('error', () => {
+    errored = true
+  })
+
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      nodeStream.on('data', chunk => {
+        // backpressure：队列满时暂停，drain 后恢复
+        if (!controller.desiredSize || controller.desiredSize <= 0) {
+          nodeStream.pause()
+          // drain 只在非 flowing 模式下触发，这里用 nextTick 恢复
+          process.nextTick(() => nodeStream.resume())
+        }
+        // fs.ReadStream 的 chunk 是 Buffer（Uint8Array 子类），直接 enqueue
+        controller.enqueue(chunk as Uint8Array)
+      })
+      nodeStream.on('end', () => {
+        if (!errored) controller.close()
+      })
+      nodeStream.on('error', err => {
+        controller.error(err)
+      })
+    },
+    cancel() {
+      // 客户端断连：销毁底层流，吞掉 destroy 触发的 error
+      nodeStream.destroy()
+    },
+  })
+}
+
 function buildPartialResponse(
   filePath: string,
   size: number,
@@ -722,7 +769,7 @@ function buildPartialResponse(
   }
   if (isHead) return new Response(null, { status: 206, headers })
   const stream = fs.createReadStream(filePath, { start: range.start, end: range.end })
-  return new Response(stream as unknown as ReadableStream, { status: 206, headers })
+  return new Response(wrapFileStream(stream), { status: 206, headers })
 }
 
 function buildFullResponse(
@@ -739,7 +786,7 @@ function buildFullResponse(
   }
   if (isHead) return new Response(null, { status: 200, headers })
   const stream = fs.createReadStream(filePath)
-  return new Response(stream as unknown as ReadableStream, { status: 200, headers })
+  return new Response(wrapFileStream(stream), { status: 200, headers })
 }
 
 function buildUnsatisfiable(size: number): Response {
