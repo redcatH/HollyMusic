@@ -18,6 +18,10 @@ RUN cd frontend && pnpm install --frozen-lockfile
 # 复制源码
 COPY . .
 
+# 生成 Prisma Client（前端 tsconfig 通过 ../lib 引用了 lib/generated/prisma，
+# 缺失会导致 TS2307 + 连锁 TS7006 隐式 any 错误）
+RUN pnpm prisma generate
+
 # 构建前端
 RUN cd frontend && pnpm build
 
