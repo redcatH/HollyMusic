@@ -11,12 +11,10 @@ FROM node:20-bookworm-slim AS deps
 
 WORKDIR /app
 
-# 用 corepack 替代 `npm install -g pnpm`：
-# - Node 20 自带 corepack，无需走 npm 网络下载
-# - 自动读取 package.json 的 packageManager 字段锁定 pnpm 版本（当前 pnpm@10.22.0）
-# 注意：corepack 不读 .npmrc 的 registry，需单独设 COREPACK_NPM_REGISTRY 走淘宝源
-ENV COREPACK_NPM_REGISTRY=https://registry.npmmirror.com/
-RUN corepack enable
+# 安装 pnpm（走淘宝源加速）
+# 注：曾尝试 corepack + COREPACK_NPM_REGISTRY，但淘宝镜像对 corepack 的
+# fetchTarballURL 兼容性差（HTTP 404），改回 npm install -g 更稳
+RUN npm config set registry https://registry.npmmirror.com && npm install -g pnpm
 
 # 先复制 package 文件（利用 docker layer cache：源码变动不会使依赖安装缓存失效）
 # .npmrc 必须在 install 之前到位：node-linker=hoisted 影响 needle/cheerio 等传递依赖的解析
