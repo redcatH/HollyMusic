@@ -2,6 +2,7 @@
  * 音乐搜索 API
  * GET /api/search?source=kw&keyword=xxx&page=1&limit=30
  *
+ * 需登录（requireUser），未登录返回 401。
  * 结果会入库（带 checksum 去重）并附加对外 uid，使前端可直接调封面/歌词/收藏。
  */
 
@@ -10,6 +11,7 @@ import { createSuccessResponse, createErrorResponse, ErrorCodes } from '@/lib/ap
 import { searchCache } from '@/lib/cache-manager'
 import { upsertMusicInfo, getStorageSongmidForMusicInfo } from '@/lib/db'
 import { logger } from '@/lib/logger'
+import { requireUser, AuthError } from '@/lib/services/user-context'
 import type { SearchResult, SourceType, Song } from '@/lib/types/music'
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -20,6 +22,8 @@ const SEARCH_CACHE_TTL = 210 * 60 * 1000
 
 export async function GET(request: NextRequest) {
   try {
+    await requireUser(request) // 未登录 → AuthError → 401
+
     const searchParams = request.nextUrl.searchParams
     const source = searchParams.get('source') as SourceType
     const keyword = searchParams.get('keyword')
@@ -73,6 +77,9 @@ export async function GET(request: NextRequest) {
 
     return createSuccessResponse(enriched)
   } catch (error) {
+    if (error instanceof AuthError) {
+      return createErrorResponse('UNAUTHORIZED', error.message, 401)
+    }
     logger.error('搜索失败:', error)
     return createErrorResponse(
       ErrorCodes.SEARCH_FAILED,
