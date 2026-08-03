@@ -35,6 +35,8 @@
     "lx-music-desktop-master",
     "frontend",
     "components",
-    "hooks"
+    "hooks",
+    "**/*.test.ts",
+    "**/*.test.tsx"
   ]
 }
