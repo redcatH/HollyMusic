@@ -5,8 +5,9 @@
  */
 
 import { create } from 'zustand'
-import type { Track, PlaybackMode } from '@/lib/types/player'
-import { buildAudioUrl } from '@/lib/api/music'
+import { toTrack, type Track, type PlaybackMode } from '@/lib/types/player'
+import type { QualityType } from '@/lib/types/music'
+import { buildAudioUrl, getTrackByUid } from '@/lib/api/music'
 import { reportPlay } from '@/lib/api/history'
 import { useAuthStore } from '@/hooks/useAuth'
 
@@ -16,6 +17,21 @@ function reportPlayIfAuthed(musicInfo: Track['musicInfo']) {
     reportPlay(musicInfo).catch(() => {})
   }
 }
+
+// ---- 音质偏好持久化（项目无 zustand persist，直接读写 localStorage）----
+const QUALITY_KEY = 'player:quality'
+const VALID_QUALITIES: QualityType[] = ['128k', '320k', 'flac', 'flac24bit']
+/** 默认最高音质；用户手动切换后以 localStorage 记忆为准 */
+const DEFAULT_QUALITY: QualityType = 'flac24bit'
+function loadStoredQuality(): QualityType {
+  if (typeof window === 'undefined') return DEFAULT_QUALITY
+  const q = window.localStorage.getItem(QUALITY_KEY) as QualityType | null
+  return q && VALID_QUALITIES.includes(q) ? q : DEFAULT_QUALITY
+}
+
+// ---- 睡眠定时器（句柄放模块级，避免进 store 触发重渲染）----
+let sleepTimerHandle: ReturnType<typeof setTimeout> | null = null
+const SLEEP_STEPS = [15, 30, 45, 60] // 分钟
 
 interface PlayerStore {
   // 队列与当前
@@ -35,8 +51,12 @@ interface PlayerStore {
   volume: number
   isMuted: boolean
   playbackMode: PlaybackMode
+  /** 当前播放音质（持久化到 localStorage） */
+  quality: QualityType
   /** 音频 blob 下载进度：0-100 表示下载中，null 表示未在下载 */
   bufferProgress: number | null
+  /** 睡眠定时器：到点自动暂停；null 表示未启用 */
+  sleepTimer: { minutes: number; expiresAt: number } | null
 
   // seek 指令（通过 nonce 触发音频 seek）
   seekTarget: number | null
@@ -49,6 +69,8 @@ interface PlayerStore {
   // 核心动作
   playTrack: (track: Track, queue?: Track[]) => Promise<void>
   loadStreamUrl: (track: Track) => Promise<void>
+  /** 通过 uid 反查并播放（分享链接 ?uid= 自动播放用） */
+  playByUid: (uid: string) => Promise<void>
   togglePlay: () => void
   setIsPlaying: (v: boolean) => void
   setCurrentTime: (t: number) => void
@@ -59,6 +81,7 @@ interface PlayerStore {
   setVolume: (v: number) => void
   toggleMute: () => void
   cyclePlaybackMode: () => void
+  setQuality: (q: QualityType) => void
 
   next: () => void
   previous: () => void
@@ -75,6 +98,10 @@ interface PlayerStore {
   setQueueOpen: (v: boolean) => void
   toggleLyrics: () => void
   setLyricsOpen: (v: boolean) => void
+
+  // 睡眠定时器
+  cycleSleepTimer: () => void
+  clearSleepTimer: () => void
 }
 
 export const usePlayerStore = create<PlayerStore>((set, get) => ({
@@ -92,7 +119,9 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   volume: 0.8,
   isMuted: false,
   playbackMode: 'sequence',
+  quality: loadStoredQuality(),
   bufferProgress: null,
+  sleepTimer: null,
 
   seekTarget: null,
   seekNonce: 0,
@@ -118,15 +147,18 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   },
 
   loadStreamUrl: async (track) => {
-    console.log('[diag] loadStreamUrl', track?.name)
     // 直接构建 /api/audio URL：服务端磁盘缓存 + Range，
     // 无需先 POST 获取上游 URL（解析+降级在 /api/audio 内完成）
     set({
-      streamUrl: buildAudioUrl(track.uid, '320k'),
+      streamUrl: buildAudioUrl(track.uid, get().quality),
       isFetchingUrl: false,
       isPlaying: true,
       bufferProgress: null,
     })
+  },
+  playByUid: async (uid) => {
+    const { musicInfo } = await getTrackByUid(uid)
+    await get().playTrack(toTrack({ uid, musicInfo }))
   },
 
   togglePlay: () => {
@@ -165,6 +197,13 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       const i = modes.indexOf(s.playbackMode)
       return { playbackMode: modes[(i + 1) % modes.length] }
     }),
+  setQuality: (q) => {
+    if (typeof window !== 'undefined') window.localStorage.setItem(QUALITY_KEY, q)
+    set({ quality: q })
+    // 切音质需重建 streamUrl（不同音质独立缓存键）
+    const { currentTrack } = get()
+    if (currentTrack) get().loadStreamUrl(currentTrack)
+  },
 
   next: () => {
     const { queue, currentIndex, playbackMode } = get()
@@ -241,4 +280,29 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   setQueueOpen: (v) => set({ isQueueOpen: v }),
   toggleLyrics: () => set(s => ({ isLyricsOpen: !s.isLyricsOpen })),
   setLyricsOpen: (v) => set({ isLyricsOpen: v }),
+
+  cycleSleepTimer: () => {
+    const cur = get().sleepTimer
+    const nextMinutes = !cur
+      ? SLEEP_STEPS[0]
+      : SLEEP_STEPS.indexOf(cur.minutes) >= SLEEP_STEPS.length - 1
+        ? null
+        : SLEEP_STEPS[SLEEP_STEPS.indexOf(cur.minutes) + 1]
+    if (sleepTimerHandle) { clearTimeout(sleepTimerHandle); sleepTimerHandle = null }
+    if (nextMinutes === null) {
+      set({ sleepTimer: null })
+      return
+    }
+    const ms = nextMinutes * 60_000
+    sleepTimerHandle = setTimeout(() => {
+      usePlayerStore.getState().setIsPlaying(false)
+      usePlayerStore.setState({ sleepTimer: null })
+      sleepTimerHandle = null
+    }, ms)
+    set({ sleepTimer: { minutes: nextMinutes, expiresAt: Date.now() + ms } })
+  },
+  clearSleepTimer: () => {
+    if (sleepTimerHandle) { clearTimeout(sleepTimerHandle); sleepTimerHandle = null }
+    set({ sleepTimer: null })
+  },
 }))

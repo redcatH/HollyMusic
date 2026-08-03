@@ -2,7 +2,7 @@
  * 播放 URL 与媒体资源 API
  */
 
-import { apiPost } from './client'
+import { apiGet, apiPost } from './client'
 import type { MusicInfo, QualityType } from '@/lib/types/music'
 
 export function getMusicUrl(
@@ -29,4 +29,9 @@ export function buildAudioUrl(uid: string, quality: QualityType = '320k'): strin
 /** 构建封面 URL */
 export function buildCoverUrl(uid: string): string {
   return `/api/cover/${encodeURIComponent(uid)}`
+}
+
+/** 通过 uid 反查曲目元数据（分享链接 ?uid= 自动播放用） */
+export function getTrackByUid(uid: string): Promise<{ uid: string; musicInfo: MusicInfo }> {
+  return apiGet('track', { uid })
 }

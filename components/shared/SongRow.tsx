@@ -1,6 +1,7 @@
 
 import { usePlayerStore } from '@/lib/store/player-store'
 import { useFavoritesStore } from '@/lib/store/favorites-store'
+import { useContextMenuStore } from '@/lib/store/context-menu-store'
 import { useAuthStore } from '@/hooks/useAuth'
 import { useDownload } from '@/hooks/useDownload'
 import { CoverImage } from './CoverImage'
@@ -14,15 +15,15 @@ interface SongRowProps {
   track: Track
   queue?: Track[]
   index?: number
-  onAddToPlaylist?: (track: Track) => void
 }
 
-export function SongRow({ track, queue, index, onAddToPlaylist }: SongRowProps) {
+export function SongRow({ track, queue, index }: SongRowProps) {
   const currentTrack = usePlayerStore(s => s.currentTrack)
   const isPlaying = usePlayerStore(s => s.isPlaying)
   const playTrack = usePlayerStore(s => s.playTrack)
   const isFav = useFavoritesStore(s => s.ids.has(track.uid))
   const toggleFav = useFavoritesStore(s => s.toggle)
+  const openMenu = useContextMenuStore(s => s.openMenu)
   const authenticated = useAuthStore(s => s.authenticated)
   const { download, downloading, error } = useDownload()
 
@@ -39,6 +40,10 @@ export function SongRow({ track, queue, index, onAddToPlaylist }: SongRowProps) 
 
   return (
     <div
+      onContextMenu={e => {
+        e.preventDefault()
+        openMenu(track, e.clientX, e.clientY)
+      }}
       className={`group flex items-center gap-3 rounded-md px-2 py-2 ${
         isCurrent ? 'bg-accent/50' : 'hover:bg-accent/30'
       }`}
@@ -112,15 +117,17 @@ export function SongRow({ track, queue, index, onAddToPlaylist }: SongRowProps) 
         </button>
       )}
 
-      {onAddToPlaylist && (
-        <button
-          onClick={() => onAddToPlaylist(track)}
-          className="hidden shrink-0 p-1 text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100 md:block"
-          aria-label="更多"
-        >
-          <MoreHorizontal className="h-4 w-4" />
-        </button>
-      )}
+      <button
+        onClick={e => {
+          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+          openMenu(track, rect.right, rect.bottom)
+        }}
+        className="hidden shrink-0 p-1 text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100 md:block"
+        aria-label="更多操作"
+        title="更多操作"
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </button>
 
       <span className="w-12 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
         {formatTime(track.duration)}

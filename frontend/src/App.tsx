@@ -5,7 +5,7 @@
  * react-router 的 navigate() 同步更新 URL，组件立即切换——无需 pendingPath/activePath。
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Sidebar, MobileSidebar } from './components/Layout'
 import { MobileHeader } from './components/MobileHeader'
@@ -14,7 +14,9 @@ import { PlayerBar } from '@/components/player/PlayerBar'
 import { QueuePanel } from '@/components/player/QueuePanel'
 import { LyricsPanel } from '@/components/player/LyricsPanel'
 import { ToastContainer } from '@/components/toast/ToastContainer'
+import { SongContextMenu } from '@/components/shared/SongContextMenu'
 import { useFavoritesStore } from '@/lib/store/favorites-store'
+import { usePlayerStore } from '@/lib/store/player-store'
 import { useAuthStore } from '@/hooks/useAuth'
 import { HomePage } from './routes/HomePage'
 import { SearchPage } from './routes/SearchPage'
@@ -33,6 +35,7 @@ export function App() {
   const initAuth = useAuthStore(s => s.init)
   const authenticated = useAuthStore(s => s.authenticated)
   const loadFavorites = useFavoritesStore(s => s.load)
+  const playByUid = usePlayerStore(s => s.playByUid)
   const [drawerOpen, setDrawerOpen] = useState(false)
 
   // 启动时获取会话状态
@@ -46,6 +49,16 @@ export function App() {
       loadFavorites()
     }
   }, [authenticated, loadFavorites])
+
+  // 分享链接 ?uid= 自动播放（仅初始加载触发一次）
+  const autoPlayRef = useRef(false)
+  useEffect(() => {
+    if (autoPlayRef.current) return
+    const uid = new URLSearchParams(window.location.search).get('uid')
+    if (!uid) return
+    autoPlayRef.current = true
+    void playByUid(uid).catch(() => {})
+  }, [playByUid])
 
   // 路由守卫：未登录访问受保护页面 → 跳登录
   useEffect(() => {
@@ -114,6 +127,7 @@ export function App() {
       <MobileSidebar open={drawerOpen} onClose={() => setDrawerOpen(false)} />
       <QueuePanel />
       <LyricsPanel />
+      <SongContextMenu />
       <ToastContainer />
     </div>
   )

@@ -1,76 +1,66 @@
 
 import { usePlayerStore } from '@/lib/store/player-store'
-import { ProgressBar } from './ProgressBar'
-import { Play, Pause, SkipBack, SkipForward, Repeat, Repeat1, Shuffle, Loader2 } from 'lucide-react'
-import { formatTime } from '@/lib/utils/format'
+import { PlayerButton } from './PlayerButton'
+import { TransportButtons } from './TransportButtons'
+import { SeekBar } from './SeekBar'
+import { Repeat, Repeat1, Shuffle } from 'lucide-react'
+import type { QualityType } from '@/lib/types/music'
 
+// 音质循环顺序与展示文案（label 规则同 QualityBadge：flac24bit→Hi-Res，其余 toUpperCase）
+const QUALITY_CYCLE: QualityType[] = ['320k', 'flac', 'flac24bit', '128k']
+const QUALITY_LABEL: Record<QualityType, string> = {
+  '320k': '320K',
+  '128k': '128K',
+  flac: 'FLAC',
+  flac24bit: 'Hi-Res',
+}
+const QUALITY_TITLE: Record<QualityType, string> = {
+  '320k': '320K 高品质',
+  '128k': '128K 标准',
+  flac: 'FLAC 无损',
+  flac24bit: 'Hi-Res 无损',
+}
+
+/**
+ * 桌面端播放控制（仅渲染于桌面 footer 分支）。
+ * 上行：播放模式 + 传输按钮 + 音质；下行：进度条。
+ */
 export function PlayerControls() {
-  const isPlaying = usePlayerStore(s => s.isPlaying)
-  const currentTrack = usePlayerStore(s => s.currentTrack)
-  const currentTime = usePlayerStore(s => s.currentTime)
-  const duration = usePlayerStore(s => s.duration)
   const playbackMode = usePlayerStore(s => s.playbackMode)
-  const bufferProgress = usePlayerStore(s => s.bufferProgress)
-  const togglePlay = usePlayerStore(s => s.togglePlay)
-  const next = usePlayerStore(s => s.next)
-  const previous = usePlayerStore(s => s.previous)
   const cyclePlaybackMode = usePlayerStore(s => s.cyclePlaybackMode)
-  const seek = usePlayerStore(s => s.seek)
+  const quality = usePlayerStore(s => s.quality)
+  const setQuality = usePlayerStore(s => s.setQuality)
 
-  const buffering = bufferProgress !== null
   const ModeIcon = playbackMode === 'loop' ? Repeat1 : playbackMode === 'random' ? Shuffle : Repeat
-  // 下载中：进度条显示下载进度；否则显示播放进度
-  const progressValue = buffering
-    ? bufferProgress
-    : duration > 0
-      ? (currentTime / duration) * 100
-      : 0
+  const modeLabel = playbackMode === 'loop' ? '单曲循环' : playbackMode === 'random' ? '随机播放' : '顺序播放'
 
   return (
     <div className="flex flex-1 flex-col items-center gap-1">
-      <div className="flex items-center gap-3 md:gap-4">
-        <button
+      <div className="flex items-center gap-2">
+        <PlayerButton
+          icon={ModeIcon}
+          label={modeLabel}
           onClick={cyclePlaybackMode}
-          className={`hover:text-foreground ${playbackMode !== 'sequence' ? 'text-primary' : 'text-muted-foreground'}`}
-          aria-label="播放模式"
-          title={playbackMode === 'loop' ? '单曲循环' : playbackMode === 'random' ? '随机播放' : '顺序播放'}
-        >
-          <ModeIcon className="h-4 w-4" />
-        </button>
-        <button onClick={previous} className="text-muted-foreground hover:text-foreground" aria-label="上一首">
-          <SkipBack className="h-5 w-5 fill-current" />
-        </button>
-        <button
-          onClick={togglePlay}
-          disabled={buffering}
-          className="rounded-full bg-foreground p-2 text-background transition hover:scale-105 disabled:opacity-60 disabled:hover:scale-100"
-          aria-label="播放/暂停"
-        >
-          {buffering ? (
-            <Loader2 className="h-5 w-5 animate-spin" />
-          ) : isPlaying ? (
-            <Pause className="h-5 w-5 fill-current" />
-          ) : (
-            <Play className="h-5 w-5 fill-current" />
-          )}
-        </button>
-        <button onClick={next} className="text-muted-foreground hover:text-foreground" aria-label="下一首">
-          <SkipForward className="h-5 w-5 fill-current" />
-        </button>
-        <div className="w-4" />
-      </div>
-      <div className="hidden w-full max-w-xl items-center gap-2 md:flex">
-        <span className="w-10 text-right text-xs tabular-nums text-muted-foreground">
-          {buffering ? `${bufferProgress}%` : formatTime(currentTime)}
-        </span>
-        <ProgressBar
-          value={progressValue}
-          onChange={pct => seek((pct / 100) * duration)}
-          disabled={!currentTrack || buffering}
+          active={playbackMode !== 'sequence'}
         />
-        <span className="w-10 text-xs tabular-nums text-muted-foreground">
-          {buffering ? '加载' : formatTime(duration)}
-        </span>
+        <TransportButtons />
+        <button
+          type="button"
+          onClick={() => {
+            const i = QUALITY_CYCLE.indexOf(quality)
+            setQuality(QUALITY_CYCLE[(i + 1) % QUALITY_CYCLE.length])
+          }}
+          className={`rounded-md px-2 py-2 text-xs font-semibold tabular-nums transition-colors hover:bg-accent ${
+            quality !== '320k' ? 'text-primary' : 'text-foreground/70 hover:text-foreground'
+          }`}
+          aria-label="切换音质"
+          title={`当前音质：${QUALITY_TITLE[quality]}`}
+        >
+          {QUALITY_LABEL[quality]}
+        </button>
+      </div>
+      <div className="flex w-full max-w-xl items-center gap-2">
+        <SeekBar />
       </div>
     </div>
   )
