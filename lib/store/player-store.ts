@@ -8,6 +8,7 @@ import { create } from 'zustand'
 import { toTrack, type Track, type PlaybackMode } from '@/lib/types/player'
 import type { QualityType } from '@/lib/types/music'
 import { buildAudioUrl, getTrackByUid } from '@/lib/api/music'
+import { resolveQuality } from '@/lib/quality-options'
 import { reportPlay } from '@/lib/api/history'
 import { useAuthStore } from '@/hooks/useAuth'
 
@@ -21,8 +22,8 @@ function reportPlayIfAuthed(musicInfo: Track['musicInfo']) {
 // ---- 音质偏好持久化（项目无 zustand persist，直接读写 localStorage）----
 const QUALITY_KEY = 'player:quality'
 const VALID_QUALITIES: QualityType[] = ['128k', '320k', 'flac', 'flac24bit']
-/** 默认最高音质；用户手动切换后以 localStorage 记忆为准 */
-const DEFAULT_QUALITY: QualityType = 'flac24bit'
+/** 默认音质（320k 平衡音质与带宽/缓存）；用户手动切换后以 localStorage 记忆为准 */
+const DEFAULT_QUALITY: QualityType = '320k'
 function loadStoredQuality(): QualityType {
   if (typeof window === 'undefined') return DEFAULT_QUALITY
   const q = window.localStorage.getItem(QUALITY_KEY) as QualityType | null
@@ -53,6 +54,8 @@ interface PlayerStore {
   playbackMode: PlaybackMode
   /** 当前播放音质（持久化到 localStorage） */
   quality: QualityType
+  /** 当前歌曲实际播放音质（loadStreamUrl 时由 resolveQuality 算出，不持久化；无曲目时 null） */
+  effectiveQuality: QualityType | null
   /** 音频 blob 下载进度：0-100 表示下载中，null 表示未在下载 */
   bufferProgress: number | null
   /** 睡眠定时器：到点自动暂停；null 表示未启用 */
@@ -120,6 +123,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   isMuted: false,
   playbackMode: 'sequence',
   quality: loadStoredQuality(),
+  effectiveQuality: null,
   bufferProgress: null,
   sleepTimer: null,
 
@@ -147,10 +151,12 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   },
 
   loadStreamUrl: async (track) => {
-    // 直接构建 /api/audio URL：服务端磁盘缓存 + Range，
-    // 无需先 POST 获取上游 URL（解析+降级在 /api/audio 内完成）
+    // 前端按歌曲支持范围就近降级，URL 带准确音质 → 缓存键准确、UI 如实显示。
+    // 服务端 getMusicUrl 仍保留降级作音源级兜底。
+    const eff = resolveQuality(get().quality, track.musicInfo.types)
     set({
-      streamUrl: buildAudioUrl(track.uid, get().quality),
+      streamUrl: buildAudioUrl(track.uid, eff),
+      effectiveQuality: eff,
       isFetchingUrl: false,
       isPlaying: true,
       bufferProgress: null,
@@ -264,17 +270,25 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     set(s => {
       if (index < 0 || index >= s.queue.length) return {}
       const newQueue = s.queue.filter((_, i) => i !== index)
-      let newIndex = s.currentIndex
-      let newTrack = s.currentTrack
-      if (index < s.currentIndex) newIndex = s.currentIndex - 1
-      else if (index === s.currentIndex) {
-        newIndex = -1
-        newTrack = null
+      if (index < s.currentIndex) {
+        return { queue: newQueue, currentIndex: s.currentIndex - 1 }
       }
-      return { queue: newQueue, currentIndex: newIndex, currentTrack: newTrack }
+      if (index === s.currentIndex) {
+        // 移除当前曲目：清空播放状态（顺带修预存 bug——原实现留下指向已移除曲目的 streamUrl）
+        return {
+          queue: newQueue,
+          currentIndex: -1,
+          currentTrack: null,
+          effectiveQuality: null,
+          streamUrl: null,
+          isPlaying: false,
+          bufferProgress: null,
+        }
+      }
+      return { queue: newQueue }
     }),
   clearQueue: () =>
-    set({ queue: [], currentIndex: -1, currentTrack: null, streamUrl: null, isPlaying: false, bufferProgress: null }),
+    set({ queue: [], currentIndex: -1, currentTrack: null, streamUrl: null, effectiveQuality: null, isPlaying: false, bufferProgress: null }),
 
   toggleQueue: () => set(s => ({ isQueueOpen: !s.isQueueOpen })),
   setQueueOpen: (v) => set({ isQueueOpen: v }),
