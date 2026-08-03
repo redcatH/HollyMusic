@@ -36,3 +36,10 @@ export async function login(username: string, password: string): Promise<{ usern
 export async function logout(): Promise<void> {
   await fetch('/api/auth/logout', { method: 'POST' })
 }
+
+/**
+ * 心跳上报（在线状态）。失败静默，不影响用户。
+ */
+export async function heartbeat(): Promise<void> {
+  await fetch('/api/auth/heartbeat', { method: 'POST' }).catch(() => {})
+}

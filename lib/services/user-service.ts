@@ -11,6 +11,7 @@
 
 import { PrismaClient } from '../generated/prisma'
 import { logger } from '../logger'
+import { ONLINE_TTL_MS } from '../user'
 
 const prisma = new PrismaClient()
 
@@ -22,6 +23,14 @@ export interface AdminUserView {
   /** 是否设置了密码（不返回密码本身） */
   hasPassword: boolean
   lastLogin: Date | null
+  /** 最近一次活跃时间（登录/心跳） */
+  lastSeen: Date | null
+  /** 最近一次活跃的客户端 IP */
+  lastSeenIp: string | null
+  /** 最近一次活跃的 User-Agent */
+  lastSeenUa: string | null
+  /** 是否在线（最近活跃在 ONLINE_TTL_MS 内） */
+  isOnline: boolean
   createdAt: Date
   updatedAt: Date
 }
@@ -32,6 +41,9 @@ function toView(u: {
   username: string
   subsonicSecret: string | null
   lastLogin: Date | null
+  lastSeen: Date | null
+  lastSeenIp: string | null
+  lastSeenUa: string | null
   createdAt: Date
   updatedAt: Date
 }): AdminUserView {
@@ -41,6 +53,10 @@ function toView(u: {
     isAdmin: u.username === 'admin',
     hasPassword: !!u.subsonicSecret,
     lastLogin: u.lastLogin,
+    lastSeen: u.lastSeen,
+    lastSeenIp: u.lastSeenIp,
+    lastSeenUa: u.lastSeenUa,
+    isOnline: !!(u.lastSeen && Date.now() - u.lastSeen.getTime() < ONLINE_TTL_MS),
     createdAt: u.createdAt,
     updatedAt: u.updatedAt,
   }

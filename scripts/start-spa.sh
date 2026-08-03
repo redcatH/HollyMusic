@@ -11,8 +11,8 @@ set -e
 # 3. 必须显式设置 HOSTNAME=0.0.0.0，否则 server.js 只监听 localhost，nginx 反代连不上
 
 echo "Running Prisma migrations..."
-node ./node_modules/prisma/build/index.js migrate deploy --schema ./prisma/schema.prisma \
-  || echo "No pending migrations"
+# migrate deploy 无待应用时 exit 0；失败则由 set -e 终止容器启动，避免带着缺失的 schema 静默运行
+node ./node_modules/prisma/build/index.js migrate deploy --schema ./prisma/schema.prisma
 
 echo "Starting Next.js standalone API backend on port 3001..."
 export PORT=3001

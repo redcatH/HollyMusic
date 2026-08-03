@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "User" ADD COLUMN "lastSeen" DATETIME;
+ALTER TABLE "User" ADD COLUMN "lastSeenIp" TEXT;
+ALTER TABLE "User" ADD COLUMN "lastSeenUa" TEXT;
