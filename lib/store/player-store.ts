@@ -8,7 +8,8 @@ import { create } from 'zustand'
 import { toTrack, type Track, type PlaybackMode } from '@/lib/types/player'
 import type { QualityType } from '@/lib/types/music'
 import { buildAudioUrl, getTrackByUid } from '@/lib/api/music'
-import { resolveQuality } from '@/lib/quality-options'
+import { resolveQuality, nextLowerQuality } from '@/lib/quality-options'
+import { detectCodecCap, capQuality } from '@/lib/codec-support'
 import { reportPlay } from '@/lib/api/history'
 import { useAuthStore } from '@/hooks/useAuth'
 
@@ -24,6 +25,11 @@ const QUALITY_KEY = 'player:quality'
 const VALID_QUALITIES: QualityType[] = ['128k', '320k', 'flac', 'flac24bit']
 /** 默认音质（320k 平衡音质与带宽/缓存）；用户手动切换后以 localStorage 记忆为准 */
 const DEFAULT_QUALITY: QualityType = '320k'
+
+/** 可降级重试的浏览器 audio 错误码（MediaError）：3=DECODE 4=SRC_NOT_SUPPORTED。
+ *  这两种通常是「浏览器解不了该格式」（典型：手机 WebView 解不了 FLAC），降一档换 MP3 即可播。
+ *  用数字而非 MediaError 常量：store 模块 SSR 也会加载，Node 端无 MediaError 全局。 */
+const DEGRADABLE_ERR_CODES = new Set([3, 4])
 function loadStoredQuality(): QualityType {
   if (typeof window === 'undefined') return DEFAULT_QUALITY
   const q = window.localStorage.getItem(QUALITY_KEY) as QualityType | null
@@ -56,6 +62,10 @@ interface PlayerStore {
   quality: QualityType
   /** 当前歌曲实际播放音质（loadStreamUrl 时由 resolveQuality 算出，不持久化；无曲目时 null） */
   effectiveQuality: QualityType | null
+  /** 浏览器原生解码能力上限（启动 canPlayType 探测 + 实测校准）。
+   *  loadStreamUrl 会用它再压一遍音质，避免请求已知解不了的高音质格式。仅内存，不持久化：
+   *  浏览器更新后下次启动重新探测即可恢复。 */
+  codecCap: QualityType
   /** 音频 blob 下载进度：0-100 表示下载中，null 表示未在下载 */
   bufferProgress: number | null
   /** 睡眠定时器：到点自动暂停；null 表示未启用 */
@@ -79,7 +89,7 @@ interface PlayerStore {
   setCurrentTime: (t: number) => void
   setDuration: (d: number) => void
   setBufferProgress: (v: number | null) => void
-  handleTrackError: (msg: string) => void
+  handleTrackError: (msg: string, errCode?: number) => void
   seek: (t: number) => void
   setVolume: (v: number) => void
   toggleMute: () => void
@@ -124,6 +134,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   playbackMode: 'sequence',
   quality: loadStoredQuality(),
   effectiveQuality: null,
+  codecCap: detectCodecCap(),
   bufferProgress: null,
   sleepTimer: null,
 
@@ -150,10 +161,14 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     reportPlayIfAuthed(track.musicInfo)
   },
 
-  loadStreamUrl: async (track) => {
+  loadStreamUrl: async (track, forceQuality?) => {
     // 前端按歌曲支持范围就近降级，URL 带准确音质 → 缓存键准确、UI 如实显示。
     // 服务端 getMusicUrl 仍保留降级作音源级兜底。
-    const eff = resolveQuality(get().quality, track.musicInfo.types)
+    // forceQuality：解码失败降级重试时强制指定（绕过用户偏好），见 handleTrackError。
+    // codecCap：浏览器能力上限（canPlayType 探测 + 实测校准），把已知解不了的格式压掉，
+    //          避免对不支持 FLAC 的浏览器反复请求 FLAC。
+    const resolved = forceQuality ?? resolveQuality(get().quality, track.musicInfo.types)
+    const eff = capQuality(resolved, get().codecCap)
     set({
       streamUrl: buildAudioUrl(track.uid, eff),
       effectiveQuality: eff,
@@ -171,12 +186,35 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     console.log('[diag] togglePlay, isPlaying=', get().isPlaying)
     set(s => (s.currentTrack ? { isPlaying: !s.isPlaying } : {}))
   },
-  // 播放成功时（onPlayState true）重置连续失败计数
-  setIsPlaying: (v) => set(v ? { isPlaying: true, errorRetryCount: 0 } : { isPlaying: false }),
-  setCurrentTime: (t) => set({ currentTime: t }),
+  // 不在此处重置 errorRetryCount：解码失败常是「播一瞬间就挂」，play 事件已触发会把计数清零，
+  // 导致连续失败上限永远达不到 → 无限循环跳歌。改由 setCurrentTime 在播放稳定(>5s)时重置。
+  setIsPlaying: (v) => set(v ? { isPlaying: true } : { isPlaying: false }),
+  setCurrentTime: (t) => set(s => {
+    // 播放超过 5 秒视为「播放稳定」，重置连续失败计数（区分「真失败」与「稳定播放」）
+    if (t > 5 && s.errorRetryCount > 0) return { currentTime: t, errorRetryCount: 0 }
+    return { currentTime: t }
+  }),
   setDuration: (d) => set({ duration: d }),
   setBufferProgress: (v) => set({ bufferProgress: v }),
-  handleTrackError: (msg) => {
+  handleTrackError: (msg, errCode?) => {
+    // 解码/格式不支持 → 降一档音质重试（手机 WebView 常解不了 FLAC，降到 MP3 即可播）。
+    // 降到最低档仍失败，才走下面的跳歌逻辑。网络错误(2)不降级（换格式无意义）。
+    if (errCode !== undefined && DEGRADABLE_ERR_CODES.has(errCode)) {
+      const { currentTrack, effectiveQuality, codecCap } = get()
+      const lower = effectiveQuality ? nextLowerQuality(effectiveQuality) : null
+      if (currentTrack && lower) {
+        // 实测校准：当前档解不了 → 浏览器能力上限下调到 lower（取与原 cap 的较低者，只降不升），
+        // 后续歌曲直接跳过已知解不了的高档。仅内存：浏览器更新后下次启动 canPlayType 重新探测即恢复。
+        const newCap = capQuality(codecCap, lower)
+        if (newCap !== codecCap) set({ codecCap: newCap })
+        console.warn(
+          `[player] 解码失败(err=${errCode})，${effectiveQuality} → ${lower} 降级重试：${currentTrack.name}`
+        )
+        get().loadStreamUrl(currentTrack, lower)
+        return
+      }
+    }
+
     const { queue, errorRetryCount } = get()
     // 连续失败上限：min(3, 队列长度)；队列只有 1 首时失败 1 次即停止，避免对同一首无限重试
     const limit = Math.max(1, Math.min(3, queue.length))

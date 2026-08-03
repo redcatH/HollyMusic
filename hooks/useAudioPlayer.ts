@@ -25,8 +25,10 @@ interface UseAudioPlayerOptions {
   onEnd?: () => void
   /** 缓冲态变化：true=进入缓冲（waiting），false=可播放（canplay）；null=无缓冲态 */
   onLoading?: (percent: number | null) => void
-  /** 音频拉取/播放失败回调（如 HTTP 500、解码失败），由上层决定是否跳下一首 */
-  onError?: (msg: string) => void
+  /** 音频拉取/播放失败回调（如 HTTP 500、解码失败），由上层决定是否跳下一首。
+   *  errCode 为浏览器 MediaError.code（3=DECODE 4=SRC_NOT_SUPPORTED 2=NETWORK），
+   *  上层据此判断是否降级音质重试。 */
+  onError?: (msg: string, errCode?: number) => void
 }
 
 export function useAudioPlayer(opts: UseAudioPlayerOptions) {
@@ -149,7 +151,7 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
             return // 主动 abort（如切歌时），不算错误
         }
       }
-      optsRef.current.onError?.(msg)
+      optsRef.current.onError?.(msg, err?.code)
     }
 
     audio.addEventListener('loadedmetadata', onLoadedMetadata)
