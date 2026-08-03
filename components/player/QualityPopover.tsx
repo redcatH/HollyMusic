@@ -11,7 +11,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ChevronUp } from 'lucide-react'
 import { usePlayerStore } from '@/lib/store/player-store'
-import { QUALITY_LABEL, QUALITY_ORDER, getAvailableQualities } from '@/lib/quality-options'
+import { QUALITY_LABEL, QUALITY_ORDER } from '@/lib/quality-options'
 import { QualityList } from './QualityList'
 
 export function QualityPopover() {
@@ -25,8 +25,8 @@ export function QualityPopover() {
   const [pos, setPos] = useState<{ right: number; bottom: number } | null>(null)
 
   const types = currentTrack?.musicInfo.types
-  const available = getAvailableQualities(types)
-  const items = available.length ? available : QUALITY_ORDER // types 异常时回退全量
+  // 偏好选择器：始终列出全部音质，不随歌曲变动（实际播放音质由歌名旁标签显示）
+  const items = QUALITY_ORDER
 
   // 每次打开前测量锚点（layout 避免首帧闪烁）
   useLayoutEffect(() => {

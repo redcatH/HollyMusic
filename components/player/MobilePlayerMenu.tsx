@@ -11,7 +11,7 @@ import { ProgressBar } from './ProgressBar'
 import { PlayerButton } from './PlayerButton'
 import { QualityList } from './QualityList'
 import { MoreHorizontal, Repeat, Repeat1, Shuffle, Timer, Volume2, VolumeX, ChevronDown } from 'lucide-react'
-import { QUALITY_LABEL, QUALITY_ORDER, getAvailableQualities } from '@/lib/quality-options'
+import { QUALITY_LABEL, QUALITY_ORDER } from '@/lib/quality-options'
 
 export function MobilePlayerMenu() {
   const [open, setOpen] = useState(false)
@@ -62,8 +62,8 @@ export function MobilePlayerMenu() {
   const VolIcon = isMuted || volume === 0 ? VolumeX : Volume2
 
   const types = currentTrack?.musicInfo.types
-  const available = getAvailableQualities(types)
-  const qualityItems = available.length ? available : QUALITY_ORDER
+  // 偏好选择器：始终列出全部音质，不随歌曲变动（实际播放音质由歌名旁标签显示）
+  const qualityItems = QUALITY_ORDER
 
   return (
     <div className="relative" ref={ref}>
