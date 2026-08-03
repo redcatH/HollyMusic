@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { resolveQuality, getAvailableQualities } from './quality-options'
+import { resolveQuality, getAvailableQualities, nextLowerQuality } from './quality-options'
 import type { QualityInfo, QualityType } from './types/music'
 
 /** 快速构造 types 数组 */
@@ -51,5 +51,23 @@ describe('getAvailableQualities', () => {
   it('types 空 → 返回空数组', () => {
     expect(getAvailableQualities([])).toEqual([])
     expect(getAvailableQualities(undefined)).toEqual([])
+  })
+})
+
+describe('nextLowerQuality - 解码失败降级链路', () => {
+  it('flac24bit → flac', () => {
+    expect(nextLowerQuality('flac24bit')).toBe('flac')
+  })
+
+  it('flac → 320k（FLAC 解不了降 MP3，典型手机 WebView 场景）', () => {
+    expect(nextLowerQuality('flac')).toBe('320k')
+  })
+
+  it('320k → 128k', () => {
+    expect(nextLowerQuality('320k')).toBe('128k')
+  })
+
+  it('128k（最低档）→ null，表示无法再降级，交跳歌逻辑', () => {
+    expect(nextLowerQuality('128k')).toBeNull()
   })
 })

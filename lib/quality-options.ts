@@ -64,3 +64,16 @@ export function resolveQuality(preference: QualityType, types?: QualityInfo[]): 
 export function getSizeOf(types: QualityInfo[] | undefined, q: QualityType): string | undefined {
   return types?.find(t => t.type === q)?.size
 }
+
+/**
+ * 返回比给定音质低一档的音质（用于解码失败时降级重试）。
+ * 已是最低档（128k）时返回 null。QUALITY_ORDER 已是高→低，故降级 = index + 1。
+ *
+ * 刻意不看 types：降级的目的是「换一种浏览器能解的格式」（如 FLAC→MP3），
+ * 即便歌曲不支持该档，服务端 getMusicUrl 也会继续降级到可播的 MP3，故无需在此过滤。
+ */
+export function nextLowerQuality(q: QualityType): QualityType | null {
+  const idx = QUALITY_ORDER.indexOf(q)
+  if (idx < 0 || idx >= QUALITY_ORDER.length - 1) return null
+  return QUALITY_ORDER[idx + 1]
+}

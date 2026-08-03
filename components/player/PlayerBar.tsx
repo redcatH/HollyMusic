@@ -36,7 +36,7 @@ export function PlayerBar() {
     onPlayState: p => usePlayerStore.getState().setIsPlaying(p),
     onEnd: () => usePlayerStore.getState().handleTrackEnd(),
     onLoading: pct => usePlayerStore.getState().setBufferProgress(pct),
-    onError: msg => usePlayerStore.getState().handleTrackError(msg),
+    onError: (msg, errCode) => usePlayerStore.getState().handleTrackError(msg, errCode),
   })
 
   // 同步当前曲目到 MediaSession（锁屏/通知/耳机控制）
