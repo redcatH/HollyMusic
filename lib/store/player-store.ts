@@ -81,7 +81,7 @@ interface PlayerStore {
 
   // 核心动作
   playTrack: (track: Track, queue?: Track[]) => Promise<void>
-  loadStreamUrl: (track: Track) => Promise<void>
+  loadStreamUrl: (track: Track, forceQuality?: QualityType) => Promise<void>
   /** 通过 uid 反查并播放（分享链接 ?uid= 自动播放用） */
   playByUid: (uid: string) => Promise<void>
   togglePlay: () => void
