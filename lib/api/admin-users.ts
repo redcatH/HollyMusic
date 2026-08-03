@@ -10,6 +10,10 @@ export interface AdminUser {
   isAdmin: boolean
   hasPassword: boolean
   lastLogin: string | null
+  lastSeen: string | null
+  lastSeenIp: string | null
+  lastSeenUa: string | null
+  isOnline: boolean
   createdAt: string
   updatedAt: string
 }

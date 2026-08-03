@@ -3,7 +3,7 @@
  * POST /api/auth/login  body { username, password }
  *
  * 校验 DB User.subsonicSecret（= config/users.json 的 password），
- * 成功则签发 holly_user + holly_sig 签名 cookie。
+ * 成功则签发 holly_user + holly_sig 签名 cookie，并记录登录活动（lastLogin + 最近活跃 IP/UA）。
  */
 
 import { NextRequest } from 'next/server'
@@ -11,6 +11,7 @@ import { createSuccessResponse, createErrorResponse, ErrorCodes } from '@/lib/ap
 import { createSessionCookies } from '@/lib/services/auth'
 import { logger } from '@/lib/logger'
 import { PrismaClient } from '@/lib/generated/prisma'
+import { updateLastLoginByUsername, updateLastSeenByUsername, getClientIp, getUa } from '@/lib/user'
 
 const prisma = new PrismaClient()
 
@@ -36,6 +37,10 @@ export async function POST(request: NextRequest) {
     for (const c of cookies) {
       res.cookies.set(c.name, c.value, c)
     }
+
+    // best-effort 记录登录活动：lastLogin + 最近活跃(IP/UA)，登录即在线
+    try { await updateLastLoginByUsername(username) } catch {}
+    try { await updateLastSeenByUsername(username, getClientIp(request), getUa(request)) } catch {}
 
     logger.info(`[auth/login] 用户登录成功: ${username}`)
     return res
