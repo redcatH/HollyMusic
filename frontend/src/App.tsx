@@ -25,7 +25,7 @@ import { HistoryPage } from './routes/HistoryPage'
 import { LoginPage } from './routes/LoginPage'
 import { AdminPage, AdminUsersPage, AdminSourcesPage } from './routes/AdminPage'
 
-const PROTECTED_PREFIXES = ['/favorites', '/playlists', '/history', '/admin']
+const PROTECTED_PREFIXES = ['/favorites', '/playlists', '/history', '/admin', '/search']
 
 export function App() {
   const location = useLocation()

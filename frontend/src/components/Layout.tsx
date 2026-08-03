@@ -5,7 +5,7 @@ import { useAuthStore } from '@/hooks/useAuth'
 
 const nav = [
   { href: '/', label: '首页', icon: Home, protected: false },
-  { href: '/search', label: '搜索', icon: Search, protected: false },
+  { href: '/search', label: '搜索', icon: Search, protected: true },
   { href: '/favorites', label: '收藏', icon: Heart, protected: true },
   { href: '/playlists', label: '歌单', icon: ListMusic, protected: true },
   { href: '/history', label: '历史', icon: History, protected: true },
