@@ -3,9 +3,15 @@ import { useEffect, useRef } from 'react'
 import { usePlayerStore } from '@/lib/store/player-store'
 import { useAudioPlayer } from '@/hooks/useAudioPlayer'
 import { useMediaSession } from '@/hooks/useMediaSession'
+import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { NowPlaying } from './NowPlaying'
 import { PlayerControls } from './PlayerControls'
-import { VolumeControl } from './VolumeControl'
+import { PlayerTools } from './PlayerTools'
+import { PlayerButton } from './PlayerButton'
+import { TransportButtons } from './TransportButtons'
+import { SeekBar } from './SeekBar'
+import { MobilePlayerMenu } from './MobilePlayerMenu'
+import { Mic2, ListMusic } from 'lucide-react'
 
 export function PlayerBar() {
   const streamUrl = usePlayerStore(s => s.streamUrl)
@@ -13,6 +19,8 @@ export function PlayerBar() {
   const volume = usePlayerStore(s => s.volume)
   const isMuted = usePlayerStore(s => s.isMuted)
   const seekNonce = usePlayerStore(s => s.seekNonce)
+  const toggleLyrics = usePlayerStore(s => s.toggleLyrics)
+  const toggleQueue = usePlayerStore(s => s.toggleQueue)
 
   /**
    * loadSeq：每次 streamUrl 变化自增。
@@ -33,6 +41,8 @@ export function PlayerBar() {
 
   // 同步当前曲目到 MediaSession（锁屏/通知/耳机控制）
   useMediaSession()
+  // PC 端全局键盘快捷键
+  useKeyboardShortcuts()
 
   // streamUrl 变化 → 加载音频（load 内部决定是否 autoplay）
   useEffect(() => {
@@ -69,10 +79,31 @@ export function PlayerBar() {
   }, [seekNonce, seek])
 
   return (
-    <footer className="safe-area-bottom flex items-center justify-between gap-4 border-t border-border bg-card px-4 py-3">
-      <NowPlaying />
-      <PlayerControls />
-      <VolumeControl />
-    </footer>
+    <>
+      {/* 桌面：单行三栏 */}
+      <footer className="safe-area-bottom hidden items-center justify-between gap-4 border-t border-border bg-card px-4 py-3 md:flex">
+        <NowPlaying />
+        <PlayerControls />
+        <PlayerTools />
+      </footer>
+
+      {/* 手机：两行（行1 信息+入口，行2 传输+进度） */}
+      <footer className="safe-area-bottom flex flex-col gap-2 border-t border-border bg-card px-3 py-2 md:hidden">
+        <div className="flex items-center gap-1">
+          <NowPlaying />
+          <div className="flex items-center">
+            <PlayerButton icon={Mic2} label="歌词" onClick={toggleLyrics} size="sm" />
+            <PlayerButton icon={ListMusic} label="队列" onClick={toggleQueue} size="sm" />
+            <MobilePlayerMenu />
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <TransportButtons size="sm" />
+          <div className="flex flex-1 items-center gap-2">
+            <SeekBar />
+          </div>
+        </div>
+      </footer>
+    </>
   )
 }

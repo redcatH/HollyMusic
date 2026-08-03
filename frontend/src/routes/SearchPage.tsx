@@ -1,11 +1,9 @@
-import { useState } from 'react'
 import { useSearch } from '@/hooks/useSearch'
 import { SongList } from '@/components/shared/SongList'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { AddToPlaylistDialog } from '@/components/playlists/AddToPlaylistDialog'
 import { Search, Music } from 'lucide-react'
-import { toTrack, type Track } from '@/lib/types/player'
+import { toTrack } from '@/lib/types/player'
 import type { SourceType } from '@/lib/types/music'
 
 const SOURCES: { value: SourceType | 'all'; label: string }[] = [
@@ -21,7 +19,6 @@ export function SearchPage() {
   // keyword/source/results/loading 全部来自 search-store（外部状态）：
   // 离开搜索页再回来时输入框与结果都保留。
   const { results, loading, keyword, source, setKeyword, setSource, run } = useSearch()
-  const [addTrack, setAddTrack] = useState<Track | null>(null)
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -59,14 +56,12 @@ export function SearchPage() {
       {loading ? (
         <LoadingSkeleton />
       ) : tracks.length > 0 ? (
-        <SongList tracks={tracks} onAddToPlaylist={t => setAddTrack(t)} />
+        <SongList tracks={tracks} />
       ) : keyword ? (
         <EmptyState icon={Search} title="未找到结果" />
       ) : (
         <EmptyState icon={Music} title="开始搜索" description="输入歌曲名或歌手名开始探索" />
       )}
-
-      {addTrack && <AddToPlaylistDialog uid={addTrack.uid} onClose={() => setAddTrack(null)} />}
     </div>
   )
 }
