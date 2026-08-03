@@ -70,3 +70,7 @@ next-env.d.ts
 
 # opencode workspace
 /.omo/
+
+# runtime audio cache & local test files
+/data/
+/test/

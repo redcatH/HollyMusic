@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "dev:web": "cd frontend && pnpm dev",
-    "dev:all": "concurrently -n api,web -c blue,green \"next dev\" \"cd frontend && pnpm dev\"",
+    "dev:all": "concurrently -n api,web -c blue,green \"next dev -H 0.0.0.0\" \"cd frontend && pnpm dev --host\"",
     "build": "next build",
     "build:web": "cd frontend && pnpm build",
     "build:all": "next build && cd frontend && pnpm build",
