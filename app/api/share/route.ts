@@ -46,8 +46,7 @@ export async function GET(request: NextRequest) {
   const d = escapeHtml(description)
   const img = escapeHtml(cover)
   const canonical = escapeHtml(ogUrl)
-  const playerJson = JSON.stringify(playerUrl) // <script> 内用 JSON.stringify 安全嵌入
-  const playerHref = escapeHtml(playerUrl)     // <noscript> href 用 HTML 转义
+  const playerHref = escapeHtml(playerUrl)     // <meta refresh> + <noscript> href 用 HTML 转义
 
   const html = `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -65,9 +64,9 @@ export async function GET(request: NextRequest) {
 <meta name="twitter:title" content="${t}">
 <meta name="twitter:description" content="${d}">
 <meta name="twitter:image" content="${img}">
+<meta http-equiv="refresh" content="0;url=${playerHref}">
 </head>
 <body>
-<script>window.location.replace(${playerJson})</script>
 <noscript><a href="${playerHref}">打开 Holly Music</a></noscript>
 </body>
 </html>`
