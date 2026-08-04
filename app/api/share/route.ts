@@ -89,8 +89,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica N
 .cover-link{position:relative;display:block;width:100%;aspect-ratio:1;border-radius:16px;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.6);margin-bottom:28px;background:#1a1a1a}
 .cover{width:100%;height:100%;object-fit:cover;display:block}
 .cover-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0);transition:background .2s}
-.play-circle{width:72px;height:72px;border-radius:50%;background:rgba(29,185,84,.92);display:flex;align-items:center;justify-content:center;opacity:0;transform:scale(.8);transition:opacity .2s,transform .2s}
-.play-circle svg{width:30px;height:30px;margin-left:3px;fill:#000}
+.play-circle{width:72px;height:72px;border-radius:50%;background:rgba(255,255,255,.18);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.35);display:flex;align-items:center;justify-content:center;opacity:0;transform:scale(.8);transition:opacity .2s,transform .2s,background .2s}
+.play-circle svg{width:28px;height:28px;margin-left:4px;fill:#fff}
+.cover-link:hover .play-circle,.cover-link:active .play-circle{background:rgba(255,255,255,.28)}
 .cover-link:hover .cover-overlay,.cover-link:active .cover-overlay{background:rgba(0,0,0,.45)}
 .cover-link:hover .play-circle,.cover-link:active .play-circle{opacity:1;transform:scale(1)}
 /* 触屏设备无 hover，播放按钮常驻显示 */
