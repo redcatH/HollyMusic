@@ -39,10 +39,13 @@ export async function GET(request: NextRequest) {
     playerUrl = `${origin}/?uid=${encodeURIComponent(uid)}`
   }
 
+  // ponytail: og:url 用相对路径，避免 origin 协议判断错误导致 canonical 与实际 URL 不一致
+  const ogUrl = uid ? `/api/share?uid=${encodeURIComponent(uid)}` : `/api/share`
+
   const t = escapeHtml(title)
   const d = escapeHtml(description)
   const img = escapeHtml(cover)
-  const canonical = escapeHtml(uid ? `${origin}/api/share?uid=${encodeURIComponent(uid)}` : `${origin}/api/share`)
+  const canonical = escapeHtml(ogUrl)
   const playerJson = JSON.stringify(playerUrl) // <script> 内用 JSON.stringify 安全嵌入
   const playerHref = escapeHtml(playerUrl)     // <noscript> href 用 HTML 转义
 
