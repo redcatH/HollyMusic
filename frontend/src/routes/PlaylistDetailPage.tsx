@@ -3,8 +3,9 @@ import { usePlaylistDetail } from '@/hooks/usePlaylistDetail'
 import { SongList } from '@/components/shared/SongList'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { Play, Trash2, Music } from 'lucide-react'
+import { Play, Trash2, Music, Share2 } from 'lucide-react'
 import { usePlayerStore } from '@/lib/store/player-store'
+import { shareContent, buildPlaylistShareUrl } from '@/lib/share'
 import { toTrack, type Track } from '@/lib/types/player'
 import { deletePlaylist } from '@/lib/api/playlists'
 
@@ -59,6 +60,18 @@ export function PlaylistDetailPage() {
                   className="flex items-center gap-1 rounded-full border border-border px-3 py-2 text-sm text-muted-foreground hover:text-destructive"
                 >
                   <Trash2 className="h-4 w-4" /> 删除歌单
+                </button>
+                <button
+                  onClick={() =>
+                    shareContent({
+                      title: detail.name,
+                      text: `歌单：${detail.name}`,
+                      url: buildPlaylistShareUrl(id),
+                    })
+                  }
+                  className="flex items-center gap-1 rounded-full border border-border px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
+                >
+                  <Share2 className="h-4 w-4" /> 分享歌单
                 </button>
               </div>
             </div>

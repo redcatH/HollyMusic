@@ -71,6 +71,16 @@ export function App() {
     void playByUid(uid).catch(() => {})
   }, [playByUid])
 
+  // 分享链接 ?playlist= 跳转歌单详情（仅初始加载触发一次）
+  const playlistRef = useRef(false)
+  useEffect(() => {
+    if (playlistRef.current) return
+    const pid = new URLSearchParams(window.location.search).get('playlist')
+    if (!pid) return
+    playlistRef.current = true
+    navigate(`/playlists/${pid}`, { replace: true })
+  }, [navigate])
+
   // 路由守卫：未登录访问受保护页面 → 跳登录
   useEffect(() => {
     if (authenticated === null) return

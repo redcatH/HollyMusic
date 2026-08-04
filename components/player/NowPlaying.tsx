@@ -2,8 +2,9 @@
 import { usePlayerStore } from '@/lib/store/player-store'
 import { useFavoritesStore } from '@/lib/store/favorites-store'
 import { CoverImage } from '@/components/shared/CoverImage'
-import { Heart } from 'lucide-react'
+import { Heart, Share2 } from 'lucide-react'
 import { QUALITY_LABEL } from '@/lib/quality-options'
+import { shareContent, buildSongShareUrl } from '@/lib/share'
 
 export function NowPlaying() {
   const track = usePlayerStore(s => s.currentTrack)
@@ -58,6 +59,20 @@ export function NowPlaying() {
         title={isFav ? '取消收藏' : '收藏'}
       >
         <Heart className={`h-4 w-4 ${isFav ? 'fill-current' : ''}`} />
+      </button>
+      <button
+        onClick={() =>
+          shareContent({
+            title: track.name,
+            text: `${track.name} - ${track.artist}`,
+            url: buildSongShareUrl(track.uid),
+          })
+        }
+        className="shrink-0 rounded-md p-2 text-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
+        aria-label="分享"
+        title="分享"
+      >
+        <Share2 className="h-4 w-4" />
       </button>
     </div>
   )

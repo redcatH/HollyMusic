@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import { Play, ListPlus, Plus, Heart, ListMusic, Download, Link2 } from 'lucide-react'
+import { Play, ListPlus, Plus, Heart, ListMusic, Download, Share2 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useContextMenuStore } from '@/lib/store/context-menu-store'
 import { usePlayerStore } from '@/lib/store/player-store'
@@ -17,6 +17,7 @@ import { useFavoritesStore } from '@/lib/store/favorites-store'
 import { useAuthStore } from '@/hooks/useAuth'
 import { useDownload } from '@/hooks/useDownload'
 import { toast } from '@/lib/toast'
+import { shareContent, buildSongShareUrl } from '@/lib/share'
 import { AddToPlaylistDialog } from '@/components/playlists/AddToPlaylistDialog'
 
 const MENU_WIDTH = 192
@@ -57,14 +58,12 @@ export function SongContextMenu() {
   const left = Math.min(x, window.innerWidth - MENU_WIDTH - 8)
   const top = Math.min(y, window.innerHeight - MENU_MAX_HEIGHT - 8)
 
-  const handleCopyLink = async () => {
-    const url = `${window.location.origin}/?uid=${encodeURIComponent(track.uid)}`
-    try {
-      await navigator.clipboard.writeText(url)
-      toast.success('分享链接已复制')
-    } catch {
-      toast.error('复制失败，请手动复制')
-    }
+  const handleShare = () => {
+    void shareContent({
+      title: track.name,
+      text: `${track.name} - ${track.artist}`,
+      url: buildSongShareUrl(track.uid),
+    })
     close()
   }
 
@@ -87,7 +86,7 @@ export function SongContextMenu() {
         {authenticated && (
           <MenuItem icon={Download} label="下载" onClick={() => { download({ uid: track.uid }); close() }} />
         )}
-        <MenuItem icon={Link2} label="复制分享链接" onClick={handleCopyLink} />
+        <MenuItem icon={Share2} label="分享" onClick={handleShare} />
       </div>
       {playlistUid && <AddToPlaylistDialog uid={playlistUid} onClose={() => setPlaylistUid(null)} />}
     </>
