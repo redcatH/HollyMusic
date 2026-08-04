@@ -62,7 +62,7 @@ interface PlayerStore {
   quality: QualityType
   /** 当前歌曲实际播放音质（loadStreamUrl 时由 resolveQuality 算出，不持久化；无曲目时 null） */
   effectiveQuality: QualityType | null
-  /** 浏览器原生解码能力上限（启动 canPlayType 探测 + 实测校准）。
+  /** 浏览器原生解码能力上限（启动 canPlayType 探测得出）。
    *  loadStreamUrl 会用它再压一遍音质，避免请求已知解不了的高音质格式。仅内存，不持久化：
    *  浏览器更新后下次启动重新探测即可恢复。 */
   codecCap: QualityType
@@ -165,7 +165,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     // 前端按歌曲支持范围就近降级，URL 带准确音质 → 缓存键准确、UI 如实显示。
     // 服务端 getMusicUrl 仍保留降级作音源级兜底。
     // forceQuality：解码失败降级重试时强制指定（绕过用户偏好），见 handleTrackError。
-    // codecCap：浏览器能力上限（canPlayType 探测 + 实测校准），把已知解不了的格式压掉，
+    // codecCap：浏览器能力上限（启动 canPlayType 探测），把已知解不了的格式压掉，
     //          避免对不支持 FLAC 的浏览器反复请求 FLAC。
     const resolved = forceQuality ?? resolveQuality(get().quality, track.musicInfo.types)
     const eff = capQuality(resolved, get().codecCap)
@@ -197,16 +197,16 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   setDuration: (d) => set({ duration: d }),
   setBufferProgress: (v) => set({ bufferProgress: v }),
   handleTrackError: (msg, errCode?) => {
-    // 解码/格式不支持 → 降一档音质重试（手机 WebView 常解不了 FLAC，降到 MP3 即可播）。
+    // 解码/格式不支持 → 仅对当前这首歌降一档重试（手机 WebView 常解不了 FLAC，降到 MP3 即可播）。
     // 降到最低档仍失败，才走下面的跳歌逻辑。网络错误(2)不降级（换格式无意义）。
     if (errCode !== undefined && DEGRADABLE_ERR_CODES.has(errCode)) {
-      const { currentTrack, effectiveQuality, codecCap } = get()
+      const { currentTrack, effectiveQuality } = get()
       const lower = effectiveQuality ? nextLowerQuality(effectiveQuality) : null
       if (currentTrack && lower) {
-        // 实测校准：当前档解不了 → 浏览器能力上限下调到 lower（取与原 cap 的较低者，只降不升），
-        // 后续歌曲直接跳过已知解不了的高档。仅内存：浏览器更新后下次启动 canPlayType 重新探测即恢复。
-        const newCap = capQuality(codecCap, lower)
-        if (newCap !== codecCap) set({ codecCap: newCap })
+        // ponytail: 只对当前歌曲降级重试，不再全局下调 codecCap。
+        // errCode 3/4 多是单首音源坏数据 / 网络截断 / 服务端返回非音频，而非浏览器能力不足；
+        // 旧实现把瞬时失败误判为能力上限并只降不升，一次失败就把整会话压到 128k（即使用户 flac 优先）。
+        // 浏览器能力探测交给启动时的 canPlayType（detectCodecCap），已足够覆盖真不支持 FLAC 的设备。
         console.warn(
           `[player] 解码失败(err=${errCode})，${effectiveQuality} → ${lower} 降级重试：${currentTrack.name}`
         )

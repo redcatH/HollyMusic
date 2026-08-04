@@ -4,9 +4,9 @@
  * 目的：避免对已知解不了的高音质格式（典型：手机 WebView 解不了 FLAC）反复试错请求。
  * - 启动时 canPlayType 探测一次 → 得到能力上限
  * - resolveQuality 结果再用 codecCap 压一遍 → 不请求已知不支持的格式
- * - 实测解码失败时（canPlayType 误报）校准下调 codecCap（仅内存）
  *
  * 仅内存、不持久化：浏览器更新后下次启动 canPlayType 重新探测即可恢复最高支持。
+ * 不再做"实测失败下调"：errCode 3/4 多是单首音源问题，误判为能力不足会污染整会话音质。
  */
 import type { QualityType } from './types/music'
 import { QUALITY_ORDER } from './quality-options'
