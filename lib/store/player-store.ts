@@ -326,7 +326,20 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       return { queue: newQueue }
     }),
   clearQueue: () =>
-    set({ queue: [], currentIndex: -1, currentTrack: null, streamUrl: null, effectiveQuality: null, isPlaying: false, bufferProgress: null }),
+    set({
+      queue: [],
+      currentIndex: -1,
+      currentTrack: null,
+      streamUrl: null,
+      isFetchingUrl: false,
+      urlFetchError: null,
+      errorRetryCount: 0,
+      isPlaying: false,
+      currentTime: 0,
+      duration: 0,
+      effectiveQuality: null,
+      bufferProgress: null,
+    }),
 
   toggleQueue: () => set(s => ({ isQueueOpen: !s.isQueueOpen })),
   setQueueOpen: (v) => set({ isQueueOpen: v }),
