@@ -17,6 +17,7 @@ import { ToastContainer } from '@/components/toast/ToastContainer'
 import { SongContextMenu } from '@/components/shared/SongContextMenu'
 import { useFavoritesStore } from '@/lib/store/favorites-store'
 import { usePlayerStore } from '@/lib/store/player-store'
+import { useSearchStore } from '@/lib/store/search-store'
 import { useAuthStore } from '@/hooks/useAuth'
 import { HomePage } from './routes/HomePage'
 import { SearchPage } from './routes/SearchPage'
@@ -49,6 +50,16 @@ export function App() {
       loadFavorites()
     }
   }, [authenticated, loadFavorites])
+
+  // 登出/会话失效 → 清空上一个用户的播放器、收藏、搜索等残留状态
+  useEffect(() => {
+    if (authenticated !== false) return
+    const p = usePlayerStore.getState()
+    p.clearQueue()       // 队列/当前曲目/streamUrl/isPlaying（停声音 + 清 MediaSession）
+    p.clearSleepTimer()  // 上一个用户的睡眠定时器
+    useFavoritesStore.getState().reset()
+    useSearchStore.getState().reset()
+  }, [authenticated])
 
   // 分享链接 ?uid= 自动播放（仅初始加载触发一次）
   const autoPlayRef = useRef(false)

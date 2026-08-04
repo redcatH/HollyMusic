@@ -17,6 +17,8 @@ interface FavoritesStore {
   load: () => Promise<void>
   toggle: (uid: string) => Promise<void>
   isFavorite: (uid: string) => boolean
+  /** 登出/切换用户时清空，避免上一个用户的收藏红心残留 */
+  reset: () => void
 }
 
 export const useFavoritesStore = create<FavoritesStore>((set, get) => ({
@@ -58,4 +60,6 @@ export const useFavoritesStore = create<FavoritesStore>((set, get) => ({
   },
 
   isFavorite: (uid) => get().ids.has(uid),
+
+  reset: () => set({ ids: new Set<string>(), loaded: false }),
 }))
