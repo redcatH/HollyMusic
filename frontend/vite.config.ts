@@ -18,7 +18,8 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://localhost:3000',
-        changeOrigin: true,
+        // changeOrigin: false 保留原始 Host（localhost:5173），让 /api/share 构造的跳转 URL 指回前端 SPA，而非 next 端口
+        changeOrigin: false,
       },
     },
   },

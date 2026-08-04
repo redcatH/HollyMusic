@@ -34,9 +34,9 @@ export async function shareContent({ title, text, url }: ShareOptions) {
   }
 }
 
-/** 单曲分享链接：首页 ?uid= 自动播放（App.tsx 接收） */
+/** 单曲分享链接：指向 /api/share（服务端渲染 og meta，微信等卡片显示歌名），真人打开后 JS 跳转 /?uid= 自动播放 */
 export function buildSongShareUrl(uid: string): string {
-  return `${window.location.origin}/?uid=${encodeURIComponent(uid)}`
+  return `${window.location.origin}/api/share?uid=${encodeURIComponent(uid)}`
 }
 
 /** 歌单分享链接：首页 ?playlist= 跳转（App.tsx 接收 → /playlists/:id） */
