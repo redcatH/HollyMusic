@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { usePlaylists } from '@/hooks/usePlaylists'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { CreatePlaylistDialog } from '@/components/playlists/CreatePlaylistDialog'
-import { PlaylistGrid } from '@/components/playlists/PlaylistGrid'
+import { CreatePlaylistDialog } from '@@/components/playlists/CreatePlaylistDialog'
+import { PlaylistGrid } from '@@/components/playlists/PlaylistGrid'
 import { ListMusic, Plus } from 'lucide-react'
 
 export function PlaylistsPage() {

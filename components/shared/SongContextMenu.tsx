@@ -18,7 +18,10 @@ import { useAuthStore } from '@/hooks/useAuth'
 import { useDownload } from '@/hooks/useDownload'
 import { toast } from '@/lib/toast'
 import { shareContent, buildSongShareUrl } from '@/lib/share'
-import { AddToPlaylistDialog } from '@/components/playlists/AddToPlaylistDialog'
+import { AddToPlaylistDialog } from '../../frontend/src/components/playlists/AddToPlaylistDialog'
+// ponytail: AddToPlaylistDialog 已移至 frontend/src/components/playlists，
+// 根目录共享代码用相对路径引用 frontend 副本，确保 react-router context 与 BrowserRouter 同源，
+// 避免双副本导致 context 为 null（黑屏 bug 根因）
 
 const MENU_WIDTH = 192
 const MENU_MAX_HEIGHT = 360
