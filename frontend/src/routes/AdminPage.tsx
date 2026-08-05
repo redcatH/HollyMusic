@@ -5,18 +5,20 @@ import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { UsersPanel } from '@/components/admin/UsersPanel'
 import { SourcesPanel } from '@/components/admin/SourcesPanel'
 import { CachePanel } from '@/components/admin/CachePanel'
-import { Users, Music, Database } from 'lucide-react'
+import { RecommendPanel } from '@/components/admin/RecommendPanel'
+import { Users, Music, Database, Sparkles } from 'lucide-react'
 
 const TABS = [
   { key: 'users', label: '用户管理', icon: Users },
   { key: 'sources', label: '音源管理', icon: Music },
+  { key: 'recommend', label: '推荐管理', icon: Sparkles },
   { key: 'cache', label: '缓存管理', icon: Database },
 ] as const
 
 type TabKey = (typeof TABS)[number]['key']
 
 function isValidTab(v: string | null): v is TabKey {
-  return v === 'users' || v === 'sources' || v === 'cache'
+  return v === 'users' || v === 'sources' || v === 'recommend' || v === 'cache'
 }
 
 export function AdminPage() {
@@ -77,6 +79,7 @@ export function AdminPage() {
       <div>
         {tab === 'users' && <UsersPanel />}
         {tab === 'sources' && <SourcesPanel />}
+        {tab === 'recommend' && <RecommendPanel />}
         {tab === 'cache' && <CachePanel />}
       </div>
     </div>
@@ -88,5 +91,9 @@ export function AdminUsersPage() {
 }
 
 export function AdminSourcesPage() {
+  return <AdminPage />
+}
+
+export function AdminRecommendPage() {
   return <AdminPage />
 }

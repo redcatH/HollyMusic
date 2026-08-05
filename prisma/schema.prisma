@@ -23,6 +23,9 @@ model MusicInfo {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // 是否加入推荐白名单（管理员勾选）。推荐接口只从 true 的歌曲中随机抽取。
+  isRecommended Boolean @default(false)
+
   // Denormalized/searchable fields
   name           String?   // 歌曲名
   singer         String?   // 歌手/艺人
@@ -58,6 +61,7 @@ model MusicInfo {
   @@index([albumId])
   @@index([albumName])
   @@index([songId])
+  @@index([isRecommended])
 }
 
 model User {

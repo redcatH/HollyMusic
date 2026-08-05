@@ -129,13 +129,14 @@ export async function getMusicInfoListByAlbumId(albumId: string): Promise<MusicI
 export async function getRandomMusicInfoList(size: number, allowedSources?: string[]): Promise<MusicInfo[]> {
   try {
     const limit = Math.max(1, Math.min(size, 500))
-    // 只从 allowedSources 平台抽取（= enabled 音源的 pt 并集），保证抽出的歌可播放
+    // 只从推荐白名单（isRecommended = 1）抽取，避免推荐到垃圾歌曲；
+    // 同时按 allowedSources 过滤为启用音源，保证抽出的歌可播放
     const rows = allowedSources && allowedSources.length > 0
       ? await prisma.$queryRaw<{ data: string | null }[]>`
-          SELECT data FROM MusicInfo WHERE source IN (${Prisma.join(allowedSources)}) ORDER BY RANDOM() LIMIT ${limit}
+          SELECT data FROM MusicInfo WHERE source IN (${Prisma.join(allowedSources)}) AND isRecommended = 1 ORDER BY RANDOM() LIMIT ${limit}
         `
       : await prisma.$queryRaw<{ data: string | null }[]>`
-          SELECT data FROM MusicInfo ORDER BY RANDOM() LIMIT ${limit}
+          SELECT data FROM MusicInfo WHERE isRecommended = 1 ORDER BY RANDOM() LIMIT ${limit}
         `
     const list: MusicInfo[] = []
     for (const row of rows) {
@@ -151,6 +152,114 @@ export async function getRandomMusicInfoList(size: number, allowedSources?: stri
     console.warn('getRandomMusicInfoList error', e)
     return []
   }
+}
+
+/**
+ * 推荐歌曲精简视图（用于管理后台列表展示，直接查反范式列，不解析 data JSON）。
+ */
+export interface RecommendedSongView {
+  uid: string
+  source: string
+  name: string | null
+  singer: string | null
+  img: string | null
+  albumName: string | null
+  updatedAt: Date
+}
+
+/**
+ * 列出推荐白名单中的歌曲（分页，按 updatedAt 倒序）。
+ */
+export async function listRecommendedMusicInfo(
+  page = 1,
+  limit = 50,
+  opts?: { keyword?: string; sortBy?: 'updatedAt' | 'name' | 'singer'; sortOrder?: 'asc' | 'desc' },
+): Promise<{ list: RecommendedSongView[]; total: number }> {
+  try {
+    const take = Math.max(1, Math.min(limit, 200))
+    const skip = Math.max(0, page - 1) * take
+    const keyword = opts?.keyword?.trim()
+    const where = {
+      isRecommended: true,
+      ...(keyword
+        ? { OR: [{ name: { contains: keyword } }, { singer: { contains: keyword } }] }
+        : {}),
+    }
+    const sortBy = opts?.sortBy ?? 'updatedAt'
+    const sortOrder = opts?.sortOrder === 'asc' ? 'asc' : 'desc'
+    const [rows, total] = await Promise.all([
+      prisma.musicInfo.findMany({
+        where,
+        orderBy: { [sortBy]: sortOrder } as Prisma.MusicInfoOrderByWithRelationInput,
+        skip,
+        take,
+        select: {
+          source: true,
+          songmid: true,
+          name: true,
+          singer: true,
+          img: true,
+          albumName: true,
+          updatedAt: true,
+        },
+      }),
+      prisma.musicInfo.count({ where }),
+    ])
+    const list: RecommendedSongView[] = rows.map(r => ({
+      uid: `${r.source}-${r.songmid}`,
+      source: r.source,
+      name: r.name,
+      singer: r.singer,
+      img: r.img,
+      albumName: r.albumName,
+      updatedAt: r.updatedAt,
+    }))
+    return { list, total }
+  } catch (e) {
+    console.warn('listRecommendedMusicInfo error', e)
+    return { list: [], total: 0 }
+  }
+}
+
+/**
+ * 解析对外 uid（`source-{存储songmid}`）为 (source, songmid)。
+ * 与 resolveMusicInfoById 一致：取第一个 '-' 分隔，保证 kg 的 FileHash（纯 hex）正确解析。
+ */
+function parseUid(uid: string): { source: string; songmid: string } | null {
+  if (!uid || !uid.includes('-')) return null
+  const idx = uid.indexOf('-')
+  const source = uid.substring(0, idx)
+  const songmid = uid.substring(idx + 1)
+  if (!source || !songmid) return null
+  return { source, songmid }
+}
+
+/**
+ * 设置单首歌曲的推荐状态。记录不存在返回 updated: 0。
+ */
+export async function setRecommendedStatus(uid: string, value: boolean): Promise<{ updated: number }> {
+  const parsed = parseUid(uid)
+  if (!parsed) return { updated: 0 }
+  try {
+    await prisma.musicInfo.update({
+      where: { source_songmid: { source: parsed.source, songmid: parsed.songmid } },
+      data: { isRecommended: value },
+    })
+    return { updated: 1 }
+  } catch (e) {
+    // Prisma P2025: 记录不存在（update 的 where 未命中）
+    console.warn('setRecommendedStatus error', e)
+    return { updated: 0 }
+  }
+}
+
+/**
+ * 批量设置推荐状态（并行）。返回成功更新的数量。
+ */
+export async function setRecommendedBatch(uids: string[], value: boolean): Promise<{ updated: number }> {
+  if (!Array.isArray(uids) || uids.length === 0) return { updated: 0 }
+  const results = await Promise.all(uids.map(uid => setRecommendedStatus(uid, value)))
+  return { updated: results.reduce((sum, r) => sum + r.updated, 0) }
 }
 
 /**
@@ -303,6 +412,9 @@ const dbAPI = {
   getRandomMusicInfoList,
   upsertMusicInfo,
   resolveMusicInfoById,
+  listRecommendedMusicInfo,
+  setRecommendedStatus,
+  setRecommendedBatch,
 }
 
 export default dbAPI
