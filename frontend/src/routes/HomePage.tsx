@@ -22,7 +22,7 @@ export function HomePage() {
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">发现音乐</h1>
-          <p className="text-sm text-muted-foreground">从曲库中随机推荐</p>
+          <p className="text-sm text-muted-foreground">精选好歌随机推荐</p>
         </div>
         <div className="flex gap-2">
           <button
@@ -46,7 +46,7 @@ export function HomePage() {
       ) : error ? (
         <EmptyState icon={Shuffle} title="加载失败" description={error} />
       ) : tracks.length === 0 ? (
-        <EmptyState icon={Shuffle} title="曲库为空" description="先去搜索一些歌曲，它们会进入曲库" />
+        <EmptyState icon={Shuffle} title="暂无推荐" description="管理员还未添加推荐歌曲" />
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
           {tracks.map(t => (

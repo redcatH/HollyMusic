@@ -26,7 +26,7 @@ import { PlaylistsPage } from './routes/PlaylistsPage'
 import { PlaylistDetailPage } from './routes/PlaylistDetailPage'
 import { HistoryPage } from './routes/HistoryPage'
 import { LoginPage } from './routes/LoginPage'
-import { AdminPage, AdminUsersPage, AdminSourcesPage } from './routes/AdminPage'
+import { AdminPage, AdminUsersPage, AdminSourcesPage, AdminRecommendPage } from './routes/AdminPage'
 
 const PROTECTED_PREFIXES = ['/favorites', '/playlists', '/history', '/admin', '/search']
 
@@ -140,6 +140,7 @@ export function App() {
             <Route path="/admin" element={<AdminPage />} />
             <Route path="/admin/users" element={<AdminUsersPage />} />
             <Route path="/admin/sources" element={<AdminSourcesPage />} />
+            <Route path="/admin/recommend" element={<AdminRecommendPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
