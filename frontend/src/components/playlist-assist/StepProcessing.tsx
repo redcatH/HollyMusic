@@ -1,14 +1,14 @@
 import { motion, AnimatePresence } from 'framer-motion'
-import { Loader2, Search, AlertCircle, RotateCw, CheckCircle2 } from 'lucide-react'
+import { Loader2, Search, AlertCircle, RotateCw, CheckCircle2, ChevronLeft } from 'lucide-react'
 import type { ProcessingState } from '@@/hooks/useAiPlaylist'
 
-export function StepProcessing({
-  processing,
-  onRetry,
-}: {
+interface Props {
   processing: ProcessingState | null
   onRetry: () => void
-}) {
+  onBack: () => void
+}
+
+export function StepProcessing({ processing, onRetry, onBack }: Props) {
   if (!processing) return null
   const pct =
     processing.totalKeywords > 0
@@ -68,8 +68,8 @@ export function StepProcessing({
       {(isSearch || isFilter) && (
         <div className="mt-6 w-full max-w-xs">
           <div className="mb-1.5 flex justify-between text-[11px] text-muted-foreground">
-            <span>{isSearch ? `${processing.hitKeywords}/${processing.totalKeywords} 命中` : ' '}</span>
-            <span>{isSearch ? `${pct}%` : ' '}</span>
+            <span>{isSearch ? `${processing.hitKeywords}/${processing.totalKeywords} 命中` : ' '}</span>
+            <span>{isSearch ? `${pct}%` : ' '}</span>
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-muted">
             <motion.div
@@ -79,6 +79,16 @@ export function StepProcessing({
             />
           </div>
         </div>
+      )}
+
+      {/* 处理中/出错时提供返回出口（done 时自动跳 Step3，无需按钮） */}
+      {(isSearch || isFilter || isError) && (
+        <button
+          onClick={onBack}
+          className="touch-target mt-8 flex items-center gap-1 text-xs text-muted-foreground transition hover:text-foreground"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" /> 返回修改候选
+        </button>
       )}
     </div>
   )
