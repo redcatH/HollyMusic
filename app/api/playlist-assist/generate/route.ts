@@ -33,11 +33,14 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}))
     const userPrompt =
       typeof body?.prompt === 'string' ? body.prompt.trim().slice(0, 500) : ''
+    const count = Math.max(5, Math.min(50, Number(body?.count) || 15))
     if (!userPrompt) {
       return createErrorResponse('INVALID_PARAMS', '缺少必填字段: prompt (需求描述)', 400)
     }
 
     const user = DEFAULT_PROMPT_AI_PLAYLIST_GENERATE.replace(/\{\{userPrompt\}\}/g, userPrompt)
+      .replace(/\{\{count\}\}/g, String(count))
+      .replace(/\{\{artistCount\}\}/g, String(Math.ceil(count / 3)))
 
     const raw = await callAI({
       apiKey,
@@ -59,7 +62,7 @@ export async function POST(request: NextRequest) {
     const items = (Array.isArray(obj.items) ? obj.items : [])
       .map((s: unknown) => (typeof s === 'string' ? s.trim() : ''))
       .filter(Boolean)
-      .slice(0, 15)
+      .slice(0, count)
     const playlistName =
       typeof obj.playlistName === 'string' && obj.playlistName.trim()
         ? obj.playlistName.trim().slice(0, 24)

@@ -1,9 +1,11 @@
 /**
- * AI 协助创建歌单 - 状态机 + 编排 hook
+ * AI 协助建歌单 - 状态机 + 编排 hook
  *
- * 4 步向导：输入需求 → 候选勾选 → 处理中(搜索+过滤) → 歌曲确认+创建
+ * 3 步向导：0 输入需求 / 1 候选勾选 / 2 歌曲确认+创建
+ * processing 是 1→2 之间的异步过渡态（搜索+过滤），不占 step 编号
  * 搜索并发池 + 跨源去重抄 lib/services/recommend-engine.ts 的 pool/songKey 模式。
  * 只搜启用音源（进入时 getSearchSources 拿到）。
+ * mode: 'new' 新建歌单 / 'add' 给已有歌单加歌（playlistId）
  */
 
 import { useCallback, useEffect, useState } from 'react'
@@ -17,13 +19,13 @@ import {
 import { createPlaylist, addSongsToPlaylist } from '@/lib/api/playlists'
 import type { Song, SourceType } from '@/lib/types/music'
 
-export type AssistStep = 0 | 1 | 2 | 3
+export type AssistStep = 0 | 1 | 2
 
 export interface ProcessingState {
   phase: 'searching' | 'filtering' | 'done' | 'error'
   doneKeywords: number
   totalKeywords: number
-  hitKeywords: number // 搜到至少一首的词数
+  hitKeywords: number
   foundSongs: number
   message: string
 }
@@ -34,9 +36,13 @@ export interface ConfirmSong {
   reason: string
 }
 
+export interface UseAiPlaylistOpts {
+  mode?: 'new' | 'add'
+  playlistId?: number
+}
+
 // ============ 模块级纯函数 ============
 
-/** 跨源去重键：归一化 name|singer（去括号/空白/分隔符） */
 function songKey(s: Song): string {
   const norm = (str: string) =>
     str
@@ -45,7 +51,6 @@ function songKey(s: Song): string {
   return `${norm(s.name || '')}|${norm(s.singer || '')}`
 }
 
-/** 简单并发池：items 按 concurrency 并发执行 fn */
 async function pool<T>(items: T[], concurrency: number, fn: (item: T) => Promise<void>): Promise<void> {
   let i = 0
   const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
@@ -57,10 +62,6 @@ async function pool<T>(items: T[], concurrency: number, fn: (item: T) => Promise
   await Promise.all(workers)
 }
 
-/**
- * 并发搜索多个关键词（每个词并发所有启用源），跨源去重。
- * 进度按「词」计：一个词的所有源搜完算完成一个。
- */
 async function searchKeywords(
   keywords: string[],
   sources: string[],
@@ -92,19 +93,22 @@ async function searchKeywords(
     onProgress(doneKeywords, hitKeywords)
   })
 
-  // 截断防爆 token（喂给 AI 过滤）
-  return { songs: merged.slice(0, 150), hitCount: hitKeywords }
+  return { songs: merged, hitCount: hitKeywords }
 }
 
 // ============ hook ============
 
-export function useAiPlaylist() {
+export function useAiPlaylist(opts: UseAiPlaylistOpts = {}) {
+  const mode = opts.mode ?? 'new'
+  const playlistId = opts.playlistId
+
   const [step, setStep] = useState<AssistStep>(0)
-  const [direction, setDirection] = useState(1) // 1 前进 / -1 后退，驱动动画
+  const [direction, setDirection] = useState(1)
   const [sources, setSources] = useState<string[]>([])
   const [sourcesLoading, setSourcesLoading] = useState(true)
 
   const [prompt, setPrompt] = useState('')
+  const [targetCount, setTargetCount] = useState(15)
   const [generating, setGenerating] = useState(false)
   const [generateError, setGenerateError] = useState('')
   const [generateResult, setGenerateResult] = useState<AiPlaylistGenerateResult | null>(null)
@@ -119,7 +123,6 @@ export function useAiPlaylist() {
   const [createError, setCreateError] = useState('')
   const [createdId, setCreatedId] = useState<number | null>(null)
 
-  // 进入时拿启用音源
   useEffect(() => {
     let cancelled = false
     setSourcesLoading(true)
@@ -136,10 +139,14 @@ export function useAiPlaylist() {
     }
   }, [])
 
-  const goBack = useCallback((to: AssistStep) => {
+  // 无参 goBack：hook 内部决定目标，自动跳过过渡态
+  const goBack = useCallback(() => {
     setDirection(-1)
-    setStep(to)
+    setStep((s) => (s === 2 ? 1 : s === 1 ? 0 : s))
   }, [])
+
+  // 是否处于过渡态（搜索+过滤中，或出错停留）
+  const isProcessing = processing !== null && processing.phase !== 'done'
 
   // Step0 → 1：AI 生成候选
   const runGenerate = useCallback(async () => {
@@ -148,10 +155,10 @@ export function useAiPlaylist() {
     setGenerating(true)
     setGenerateError('')
     try {
-      const result = await aiPlaylistGenerate(p)
+      const result = await aiPlaylistGenerate(p, targetCount)
       setGenerateResult(result)
       setPlaylistName(result.playlistName)
-      setSelectedItems(new Set(result.items)) // 默认全选
+      setSelectedItems(new Set(result.items))
       setDirection(1)
       setStep(1)
     } catch (e) {
@@ -159,7 +166,7 @@ export function useAiPlaylist() {
     } finally {
       setGenerating(false)
     }
-  }, [prompt])
+  }, [prompt, targetCount])
 
   const toggleItem = useCallback((item: string) => {
     setSelectedItems((prev) => {
@@ -170,14 +177,13 @@ export function useAiPlaylist() {
     })
   }, [])
 
-  // Step1 → 2 → 3：并发搜索 + AI 过滤
+  // Step1 → 过渡态 → Step2：并发搜索 + AI 过滤
   const runProcess = useCallback(async () => {
     if (!generateResult) return
     const keywords = generateResult.items.filter((it) => selectedItems.has(it))
     if (keywords.length === 0 || sources.length === 0) return
 
     setDirection(1)
-    setStep(2)
     setProcessing({
       phase: 'searching',
       doneKeywords: 0,
@@ -232,7 +238,6 @@ export function useAiPlaylist() {
           reason: sug?.reason || '',
         }
       })
-      // keep 排前
       confirm.sort((a, b) => (a.action === b.action ? 0 : a.action === 'keep' ? -1 : 1))
 
       setConfirmSongs(confirm)
@@ -246,7 +251,7 @@ export function useAiPlaylist() {
         message: `命中 ${hitCount}/${keywords.length} 个，找到 ${songs.length} 首`,
       })
       setDirection(1)
-      setStep(3)
+      setStep(2)
     } catch (e) {
       const msg = e instanceof Error ? e.message : '处理失败'
       setProcessing((prev) => (prev ? { ...prev, phase: 'error', message: msg } : prev))
@@ -262,22 +267,27 @@ export function useAiPlaylist() {
     })
   }, [])
 
-  // Step3：创建歌单 + 灌歌
+  // Step2：创建歌单 + 灌歌（new）或仅灌歌（add）
   const createPlaylistAndSongs = useCallback(async () => {
     if (selectedUids.size === 0) return
     setCreating(true)
     setCreateError('')
     try {
-      const name = playlistName.trim() || generateResult?.playlistName || 'AI 歌单'
-      const pl = await createPlaylist(name)
-      await addSongsToPlaylist(pl.id, Array.from(selectedUids))
-      setCreatedId(pl.id)
+      let targetId = playlistId
+      if (mode === 'new') {
+        const name = playlistName.trim() || generateResult?.playlistName || 'AI 歌单'
+        const pl = await createPlaylist(name)
+        targetId = pl.id
+      }
+      if (targetId == null) throw new Error('缺少目标歌单 id')
+      await addSongsToPlaylist(targetId, Array.from(selectedUids))
+      setCreatedId(targetId)
     } catch (e) {
       setCreateError(e instanceof Error ? e.message : '创建失败')
     } finally {
       setCreating(false)
     }
-  }, [selectedUids, playlistName, generateResult])
+  }, [selectedUids, playlistName, generateResult, mode, playlistId])
 
   const reset = useCallback(() => {
     setStep(0)
@@ -294,12 +304,15 @@ export function useAiPlaylist() {
   }, [])
 
   return {
+    mode,
     step,
     direction,
     sources,
     sourcesLoading,
     prompt,
     setPrompt,
+    targetCount,
+    setTargetCount,
     generating,
     generateError,
     generateResult,
@@ -310,6 +323,7 @@ export function useAiPlaylist() {
     runGenerate,
     runProcess,
     processing,
+    isProcessing,
     confirmSongs,
     selectedUids,
     toggleUid,
