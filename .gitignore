@@ -74,3 +74,22 @@ next-env.d.ts
 # runtime audio cache & local test files
 /data/
 /test/
+
+# AI / 编辑器工具产物 (本地, 不提交)
+.playwright-mcp/
+.sisyphus/
+.cursor/
+.windsurf/
+.continue/
+.aider*
+.codeium/
+.gemini/
+.copilot/
+
+# Python 编译/缓存
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
