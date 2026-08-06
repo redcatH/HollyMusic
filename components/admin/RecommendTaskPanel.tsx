@@ -298,6 +298,7 @@ export function RecommendTaskPanel() {
   const [genLoading, setGenLoading] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
   const [genItems, setGenItems] = useState<string[]>([])
+  const [genSelected, setGenSelected] = useState<Set<number>>(new Set()) // 生成结果里勾选的索引
   const [genCreds, setGenCreds] = useState<AICreds>(initialCreds)
 
   // ── 重跑弹窗（可编辑全部参数后重跑）──
@@ -307,6 +308,7 @@ export function RecommendTaskPanel() {
   const openGenerate = () => {
     setGenPrompt('')
     setGenItems([])
+    setGenSelected(new Set())
     setGenError(null)
     setGenCreds(loadAICreds())
     setGenOpen(true)
@@ -328,6 +330,8 @@ export function RecommendTaskPanel() {
         model: genCreds.model.trim() || undefined,
       })
       setGenItems(items)
+      // 默认全选，用户可取消几个再填入
+      setGenSelected(new Set(items.map((_, i) => i)))
       saveAICreds(genCreds)
     } catch (e) {
       setGenError(e instanceof Error ? e.message : '生成失败')
@@ -336,12 +340,23 @@ export function RecommendTaskPanel() {
     }
   }
 
-  // 把生成结果追加到名单（保留已有内容，去重）
+  const toggleGenSelect = (i: number) => {
+    setGenSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(i)) next.delete(i)
+      else next.add(i)
+      return next
+    })
+  }
+
+  // 把勾选的生成结果追加到名单（保留已有内容，去重）
   const applyGenerate = () => {
+    const picked = genItems.filter((_, i) => genSelected.has(i))
+    if (picked.length === 0) return
     const existing = artistsText.split('\n').map((s) => s.trim()).filter(Boolean)
-    const merged = Array.from(new Set([...existing, ...genItems]))
+    const merged = Array.from(new Set([...existing, ...picked]))
     setArtistsText(merged.join('\n'))
-    setMsg({ kind: 'success', text: `已填入 ${genItems.length} 个${taskType === 'songs' ? '歌曲' : '歌手'}（合并去重后 ${merged.length} 个）` })
+    setMsg({ kind: 'success', text: `已填入 ${picked.length} 个${taskType === 'songs' ? '歌曲' : '歌手'}（合并去重后 ${merged.length} 个）` })
     setGenOpen(false)
   }
 
@@ -768,12 +783,31 @@ export function RecommendTaskPanel() {
 
             {genItems.length > 0 && (
               <div className="mb-3 max-h-[35vh] overflow-y-auto rounded-md border border-border p-2">
+                <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
+                  <span>点击取消不需要的项，只填入勾选项</span>
+                  <button
+                    onClick={() => setGenSelected(genSelected.size === genItems.length ? new Set() : new Set(genItems.map((_, i) => i)))}
+                    className="text-primary hover:underline"
+                  >
+                    {genSelected.size === genItems.length ? '全不选' : '全选'}
+                  </button>
+                </div>
                 <div className="flex flex-wrap gap-1">
-                  {genItems.map((it, i) => (
-                    <span key={i} className="rounded bg-accent px-2 py-0.5 text-xs">
-                      {it}
-                    </span>
-                  ))}
+                  {genItems.map((it, i) => {
+                    const checked = genSelected.has(i)
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => toggleGenSelect(i)}
+                        className={`rounded px-2 py-0.5 text-xs ring-1 transition ${
+                          checked ? 'bg-primary/15 text-primary ring-primary' : 'bg-muted text-muted-foreground ring-transparent line-through opacity-50'
+                        }`}
+                        title={checked ? '点击取消' : '点击选中'}
+                      >
+                        {it}
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
             )}
@@ -788,11 +822,11 @@ export function RecommendTaskPanel() {
               </button>
               <button
                 onClick={applyGenerate}
-                disabled={genLoading || genItems.length === 0}
+                disabled={genLoading || genSelected.size === 0}
                 className="flex items-center gap-1 rounded-full bg-primary px-4 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
               >
                 <CheckCircle2 className="h-3.5 w-3.5" />
-                填入名单{genItems.length > 0 ? ` (${genItems.length})` : ''}
+                填入名单{genSelected.size > 0 ? ` (${genSelected.size})` : ''}
               </button>
             </div>
           </div>
