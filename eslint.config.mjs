@@ -20,6 +20,8 @@ const eslintConfig = defineConfig([
     "lib/generated/**",
     "lib/music-core/**",
     "scripts/**",
+    // Local third-party music source scripts (CommonJS, executed via vm at runtime)
+    "custom-sources/**",
   ]),
 ]);
 

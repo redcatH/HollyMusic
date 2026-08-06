@@ -104,15 +104,38 @@ class MusicSourceManager {
     this.initialized = false
   }
 
+  private initPromise: Promise<void> | null = null
+
   /**
    * 初始化音源管理器
+   * 多次并发调用会复用同一个初始化 Promise，避免重复加载脚本
    */
   async initialize(): Promise<void> {
     if (this.initialized) {
       logger.debug('音源管理器已初始化')
       return
     }
+    if (this.initPromise) {
+      return this.initPromise
+    }
+    this.initPromise = this.doInitialize().finally(() => {
+      this.initPromise = null
+    })
+    return this.initPromise
+  }
 
+  /**
+   * 强制重建所有音源实例。
+   * 供管理端 CRUD（增删改配置）后主动调用，使改动立即生效，
+   * 无需等待下次播放/歌词/封面请求触发 MD5 懒重载。
+   */
+  async reload(): Promise<void> {
+    logger.info('触发音源实例重建（管理端 CRUD）...')
+    this.resetInstances()
+    await this.initialize()
+  }
+
+  private async doInitialize(): Promise<void> {
     logger.info('开始初始化音源管理器...')
 
     // 读取配置文件
