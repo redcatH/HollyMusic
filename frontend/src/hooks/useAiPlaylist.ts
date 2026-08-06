@@ -62,6 +62,12 @@ async function pool<T>(items: T[], concurrency: number, fn: (item: T) => Promise
   await Promise.all(workers)
 }
 
+/**
+ * 并发搜索多个关键词，控制候选总量。
+ * 每个词按音源优先级顺序搜，首个有结果的源即停（不堆所有源）；
+ * 每词 limit 较小（一个词不需要太多版本，AI 会选好版本）。
+ * 进度按「词」计：一个词搜完算完成一个。
+ */
 async function searchKeywords(
   keywords: string[],
   sources: string[],
@@ -74,18 +80,22 @@ async function searchKeywords(
   let hitKeywords = 0
 
   await pool(keywords, 3, async (kw) => {
-    const perSource = await Promise.allSettled(
-      sources.map((src) => search(src as SourceType, kw, 1, limit)),
-    )
     let kwHit = false
-    for (const r of perSource) {
-      if (r.status !== 'fulfilled') continue
-      for (const s of r.value.list) {
-        const key = songKey(s)
-        if (seen.has(key)) continue
-        seen.add(key)
-        merged.push(s)
-        kwHit = true
+    // 按优先级逐源搜，首个有结果的源即停（避免堆量）
+    for (const src of sources) {
+      try {
+        const r = await search(src as SourceType, kw, 1, limit)
+        if (r.list.length === 0) continue
+        for (const s of r.list) {
+          const key = songKey(s)
+          if (seen.has(key)) continue
+          seen.add(key)
+          merged.push(s)
+          kwHit = true
+        }
+        break // 该词已有结果，不再降级下一源
+      } catch {
+        // 该源失败/超时，降级下一源
       }
     }
     doneKeywords++
@@ -194,13 +204,22 @@ export function useAiPlaylist(opts: UseAiPlaylistOpts = {}) {
     })
 
     try {
-      const { songs, hitCount } = await searchKeywords(keywords, sources, 15, (done, hit) => {
-        setProcessing((prev) =>
-          prev
-            ? { ...prev, doneKeywords: done, hitKeywords: hit, message: `搜索中 ${done}/${keywords.length}` }
-            : prev,
-        )
-      })
+      // limit 小（一个词不需要太多版本）；截断到 targetCount*5 防 AI token 爆炸
+      const perWordLimit = 10
+      const cap = targetCount * 5
+      const { songs: rawSongs, hitCount } = await searchKeywords(
+        keywords,
+        sources,
+        perWordLimit,
+        (done, hit) => {
+          setProcessing((prev) =>
+            prev
+              ? { ...prev, doneKeywords: done, hitKeywords: hit, message: `搜索中 ${done}/${keywords.length}` }
+              : prev,
+          )
+        },
+      )
+      const songs = rawSongs.slice(0, cap)
 
       if (songs.length === 0) {
         setProcessing({
@@ -238,17 +257,29 @@ export function useAiPlaylist(opts: UseAiPlaylistOpts = {}) {
           reason: sug?.reason || '',
         }
       })
-      confirm.sort((a, b) => (a.action === b.action ? 0 : a.action === 'keep' ? -1 : 1))
+      // 二次去重：按归一化歌名，同名只留 AI 标 keep 的第一首（兜底防 AI 漏判重复）
+      const dedupedByName = new Map<string, ConfirmSong>()
+      for (const c of confirm) {
+        const nameKey = songKey(c.song).split('|')[0]
+        const existing = dedupedByName.get(nameKey)
+        if (!existing) {
+          dedupedByName.set(nameKey, c)
+        } else if (existing.action === 'remove' && c.action === 'keep') {
+          dedupedByName.set(nameKey, c) // 优先留 keep 的
+        }
+      }
+      const finalConfirm = Array.from(dedupedByName.values())
+      finalConfirm.sort((a, b) => (a.action === b.action ? 0 : a.action === 'keep' ? -1 : 1))
 
-      setConfirmSongs(confirm)
-      setSelectedUids(new Set(confirm.filter((c) => c.action === 'keep').map((c) => c.song.uid)))
+      setConfirmSongs(finalConfirm)
+      setSelectedUids(new Set(finalConfirm.filter((c) => c.action === 'keep').map((c) => c.song.uid)))
       setProcessing({
         phase: 'done',
         doneKeywords: keywords.length,
         totalKeywords: keywords.length,
         hitKeywords: hitCount,
         foundSongs: songs.length,
-        message: `命中 ${hitCount}/${keywords.length} 个，找到 ${songs.length} 首`,
+        message: `命中 ${hitCount}/${keywords.length} 个，找到 ${finalConfirm.length} 首`,
       })
       setDirection(1)
       setStep(2)
@@ -256,7 +287,7 @@ export function useAiPlaylist(opts: UseAiPlaylistOpts = {}) {
       const msg = e instanceof Error ? e.message : '处理失败'
       setProcessing((prev) => (prev ? { ...prev, phase: 'error', message: msg } : prev))
     }
-  }, [generateResult, selectedItems, sources, prompt])
+  }, [generateResult, selectedItems, sources, prompt, targetCount])
 
   const toggleUid = useCallback((uid: string) => {
     setSelectedUids((prev) => {
