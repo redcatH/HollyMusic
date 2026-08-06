@@ -64,8 +64,8 @@ async function pool<T>(items: T[], concurrency: number, fn: (item: T) => Promise
 
 /**
  * 并发搜索多个关键词，控制候选总量。
- * 每个词按音源优先级顺序搜，首个有结果的源即停（不堆所有源）；
- * 每词 limit 较小（一个词不需要太多版本，AI 会选好版本）。
+ * 多源聚合：每个词遍历所有勾选音源全部搜索，跨源去重（歌名+歌手归一化），
+ * 同一首歌保留高优先级（优质）音源的版本（sources 按 priority 升序，先入为主）。
  * 进度按「词」计：一个词搜完算完成一个。
  */
 async function searchKeywords(
@@ -81,21 +81,20 @@ async function searchKeywords(
 
   await pool(keywords, 3, async (kw) => {
     let kwHit = false
-    // 按优先级逐源搜，首个有结果的源即停（避免堆量）
+    // 多源聚合：遍历所有勾选音源，跨源去重保留高优先级（优质）源版本
     for (const src of sources) {
       try {
         const r = await search(src as SourceType, kw, 1, limit)
         if (r.list.length === 0) continue
         for (const s of r.list) {
           const key = songKey(s)
-          if (seen.has(key)) continue
+          if (seen.has(key)) continue // 跨源去重，先入为主 = 保留优质源版本
           seen.add(key)
           merged.push(s)
           kwHit = true
         }
-        break // 该词已有结果，不再降级下一源
       } catch {
-        // 该源失败/超时，降级下一源
+        // 该源失败/超时，继续下一源
       }
     }
     doneKeywords++
@@ -258,18 +257,9 @@ export function useAiPlaylist(opts: UseAiPlaylistOpts = {}) {
           reason: sug?.reason || '',
         }
       })
-      // 二次去重：按归一化歌名，同名只留 AI 标 keep 的第一首（兜底防 AI 漏判重复）
-      const dedupedByName = new Map<string, ConfirmSong>()
-      for (const c of confirm) {
-        const nameKey = songKey(c.song).split('|')[0]
-        const existing = dedupedByName.get(nameKey)
-        if (!existing) {
-          dedupedByName.set(nameKey, c)
-        } else if (existing.action === 'remove' && c.action === 'keep') {
-          dedupedByName.set(nameKey, c) // 优先留 keep 的
-        }
-      }
-      const finalConfirm = Array.from(dedupedByName.values())
+      // 不在前端做去重/截断：重复判定与数量控制完全交给 AI（提示词约束）。
+      // 搜索阶段已按「歌名+歌手」跨源去重，这里仅按 AI 的 keep/remove 排序展示。
+      const finalConfirm = confirm.slice()
       finalConfirm.sort((a, b) => (a.action === b.action ? 0 : a.action === 'keep' ? -1 : 1))
 
       setConfirmSongs(finalConfirm)
@@ -280,7 +270,7 @@ export function useAiPlaylist(opts: UseAiPlaylistOpts = {}) {
         totalKeywords: keywords.length,
         hitKeywords: hitCount,
         foundSongs: songs.length,
-        message: `命中 ${hitCount}/${keywords.length} 个，找到 ${finalConfirm.length} 首`,
+        message: `命中 ${hitCount}/${keywords.length} 个，找到 ${finalConfirm.length} 首（AI 保留 ${finalConfirm.filter((c) => c.action === 'keep').length} 首）`,
       })
       setDirection(1)
       setStep(2)
