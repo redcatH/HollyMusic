@@ -40,6 +40,13 @@ export function cancelRecommendTask(id: string): Promise<RecommendTaskView> {
   return apiPost<RecommendTaskView>(`admin/recommend-tasks/${encodeURIComponent(id)}/cancel`)
 }
 
+/** 回滚任务：把该任务推荐的歌曲撤销为不推荐 */
+export function rollbackRecommendTask(id: string): Promise<{ task: RecommendTaskView; removed: number }> {
+  return apiPost<{ task: RecommendTaskView; removed: number }>(
+    `admin/recommend-tasks/${encodeURIComponent(id)}/rollback`,
+  )
+}
+
 export function deleteRecommendTask(id: string): Promise<{ ok: boolean }> {
   return apiDelete<{ ok: boolean }>(`admin/recommend-tasks/${encodeURIComponent(id)}`)
 }

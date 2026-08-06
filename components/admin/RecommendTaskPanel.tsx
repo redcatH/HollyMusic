@@ -16,6 +16,7 @@ import {
   rerunRecommendTask,
   cancelRecommendTask,
   deleteRecommendTask,
+  rollbackRecommendTask,
   aiGenerateList,
   type RecommendTaskView,
   type TaskStatus,
@@ -42,6 +43,7 @@ import {
   X,
   KeyRound,
   Sparkles,
+  Undo2,
 } from 'lucide-react'
 
 const PLATFORMS = ['kw', 'kg', 'tx', 'wy', 'mg'] as const
@@ -443,6 +445,18 @@ export function RecommendTaskPanel() {
     }
   }
 
+  const handleRollback = async (t: RecommendTaskView) => {
+    const n = t.progress.addedTotal || 0
+    if (!confirm(`确定回滚任务「${t.name}」？\n该任务推荐的 ${n} 首歌曲将被移出推荐白名单（恢复为不推荐）。`)) return
+    try {
+      const { removed } = await rollbackRecommendTask(t.id)
+      setMsg({ kind: 'success', text: `已回滚，移出推荐 ${removed} 首歌曲` })
+      await reload()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '回滚失败')
+    }
+  }
+
   const openRerun = (t: RecommendTaskView) => {
     setRerun({
       target: t,
@@ -636,6 +650,7 @@ export function RecommendTaskPanel() {
               onCancel={() => handleCancel(t.id)}
               onDelete={() => handleDelete(t)}
               onRerun={() => openRerun(t)}
+              onRollback={() => handleRollback(t)}
             />
           ))}
         </div>
@@ -844,6 +859,7 @@ function TaskCard({
   onCancel,
   onDelete,
   onRerun,
+  onRollback,
 }: {
   task: RecommendTaskView
   expanded: boolean
@@ -851,11 +867,14 @@ function TaskCard({
   onCancel: () => void
   onDelete: () => void
   onRerun: () => void
+  onRollback: () => void
 }) {
   const p = task.progress
   const pct = p.total > 0 ? Math.round((p.done / p.total) * 100) : 0
   const isActive = task.status === 'running' || task.status === 'queued'
   const finished = task.status === 'done' || task.status === 'failed' || task.status === 'interrupted' || task.status === 'cancelled'
+  const rolledBack = !!p.rolledBackAt
+  const canRollback = finished && (p.addedTotal || 0) > 0 && !rolledBack
 
   return (
     <div className="rounded-lg border border-border p-4">
@@ -880,6 +899,11 @@ function TaskCard({
           {isActive && (
             <button onClick={onCancel} title="取消" className="rounded p-1.5 text-muted-foreground hover:bg-destructive/20 hover:text-destructive">
               <Ban className="h-4 w-4" />
+            </button>
+          )}
+          {canRollback && (
+            <button onClick={onRollback} title="回滚（移出该任务推荐的歌）" className="rounded p-1.5 text-muted-foreground hover:bg-orange-500/20 hover:text-orange-600">
+              <Undo2 className="h-4 w-4" />
             </button>
           )}
           {finished && (
@@ -911,6 +935,11 @@ function TaskCard({
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-0.5 text-[11px]">
         <span className="text-green-600">选中 {p.selectedTotal}</span>
         <span className="text-blue-600">加入推荐 {p.addedTotal}</span>
+        {rolledBack && (
+          <span className="text-orange-600" title={p.rolledBackAt ? new Date(p.rolledBackAt).toLocaleString('zh-CN', { hour12: false }) : ''}>
+            已回滚
+          </span>
+        )}
         {p.failedTotal > 0 && <span className="text-destructive">失败 {p.failedTotal}</span>}
         {task.error && <span className="break-all text-destructive">错误：{task.error}</span>}
       </div>
