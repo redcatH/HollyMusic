@@ -40,15 +40,17 @@ export async function POST(request: NextRequest) {
     const user = await requireAdmin(request)
     const body = await request.json().catch(() => ({}))
     const name = typeof body?.name === 'string' ? body.name : ''
+    const taskType = body?.taskType === 'songs' ? 'songs' : 'artists'
     const artists = Array.isArray(body?.artists) ? body.artists.filter((a: unknown) => typeof a === 'string') : []
     const config = body?.config && typeof body.config === 'object' ? body.config : {}
     const apiKey = typeof body?.apiKey === 'string' ? body.apiKey.trim() : ''
 
     if (artists.length === 0) {
-      return createErrorResponse('INVALID_PARAMS', '歌手列表不能为空（每行一个歌手）', 400)
+      const msg = taskType === 'songs' ? '歌曲列表不能为空（每行一首歌）' : '歌手列表不能为空（每行一个歌手）'
+      return createErrorResponse('INVALID_PARAMS', msg, 400)
     }
 
-    const task = await createTask({ name, artists, config, apiKey, createdBy: user.username })
+    const task = await createTask({ name, taskType, artists, config, apiKey, createdBy: user.username })
     return createSuccessResponse(task, 201)
   } catch (err) {
     const g = guard(err)

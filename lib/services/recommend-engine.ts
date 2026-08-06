@@ -140,13 +140,15 @@ async function searchArtistMulti(config: EngineConfig, artist: string): Promise<
   return Array.from(byKey.values()).slice(0, config.maxCandidates)
 }
 
-// 把一个歌手的全部候选打包一次给 AI，返回本人正规版本
-async function aiFilter(config: EngineConfig, artist: string, songs: SongWithUid[]): Promise<{ selected: SongWithUid[] }> {
+// 把一个主体(歌手/歌曲)的全部候选打包一次给 AI，返回选中版本
+async function aiFilter(config: EngineConfig, subject: string, songs: SongWithUid[]): Promise<{ selected: SongWithUid[] }> {
   const lines = songs
     .map((s, i) => `${i + 1}. ${s.name} | ${s.singer} | ${s.albumName || '-'}`)
     .join('\n')
   const user = config.promptUser
-    .replace(/\{\{artist\}\}/g, artist)
+    .replace(/\{\{artist\}\}/g, subject)
+    .replace(/\{\{song\}\}/g, subject)
+    .replace(/\{\{subject\}\}/g, subject)
     .replace(/\{\{candidates\}\}/g, lines)
   const raw = await callAI(config, [
     { role: 'system', content: config.promptSystem },
