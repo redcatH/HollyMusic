@@ -246,6 +246,7 @@ export function useAiPlaylist(opts: UseAiPlaylistOpts = {}) {
           albumName: s.albumName,
         })),
         prompt,
+        targetCount,
       )
 
       const sugMap = new Map(suggestions.map((s) => [s.uid, s]))

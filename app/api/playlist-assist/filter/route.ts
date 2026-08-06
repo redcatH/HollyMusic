@@ -1,7 +1,7 @@
 /**
  * AI 协助创建歌单 - 过滤候选 API（所有登录用户）
  * POST /api/playlist-assist/filter
- *   { songs: [{uid,name,singer,source,albumName?}], prompt? }
+ *   { songs: [{uid,name,singer,source,albumName?}], prompt?, count? }
  *
  * 凭证强制服务端环境变量。只读建议（keep/remove + 原因），不写库。
  * 复用 DEFAULT_PROMPT_AI_ADD（选好版本、排除 live/伴奏/粗制）。
@@ -44,6 +44,7 @@ export async function POST(request: NextRequest) {
     ).slice(0, 200) // 截断防爆 token
     const userPrompt =
       typeof body?.prompt === 'string' ? body.prompt.trim().slice(0, 500) : ''
+    const count = Math.max(1, Math.min(50, Number(body?.count) || 15))
 
     if (songs.length === 0) {
       return createErrorResponse('INVALID_PARAMS', '缺少必填字段: songs (非空数组)', 400)
@@ -52,10 +53,9 @@ export async function POST(request: NextRequest) {
     const lines = songs
       .map((s, i) => `${i + 1}. ${s.name || '-'} | ${s.singer || '-'} | ${s.albumName || '-'}`)
       .join('\n')
-    const user = DEFAULT_PROMPT_AI_PLAYLIST_FILTER.replace(/\{\{candidates\}\}/g, lines).replace(
-      /\{\{userPrompt\}\}/g,
-      userPrompt || '（无具体需求，按大众认可的好版本筛）',
-    )
+    const user = DEFAULT_PROMPT_AI_PLAYLIST_FILTER.replace(/\{\{candidates\}\}/g, lines)
+      .replace(/\{\{userPrompt\}\}/g, userPrompt || '（无具体需求，按大众认可的好版本筛）')
+      .replace(/\{\{count\}\}/g, String(count))
 
     const raw = await callAI({
       apiKey,
