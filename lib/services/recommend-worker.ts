@@ -11,13 +11,14 @@
  */
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
-import type { TaskStatus, TaskConfig, TaskProgress, RecommendTaskView } from '@/lib/types/recommend-task'
-import { DEFAULT_PROMPT_SYSTEM, DEFAULT_PROMPT_USER } from '@/lib/recommend-defaults'
+import type { TaskStatus, TaskType, TaskConfig, TaskProgress, RecommendTaskView } from '@/lib/types/recommend-task'
+import { DEFAULT_PROMPT_SYSTEM, DEFAULT_PROMPT_USER, DEFAULT_PROMPT_USER_FOR_SONGS } from '@/lib/recommend-defaults'
 import { runRecommendTask } from './recommend-engine'
 
 // ============ 类型 ============
 export interface CreateTaskInput {
   name: string
+  taskType: TaskType
   artists: string[]
   config: Partial<TaskConfig>
   apiKey: string
@@ -44,7 +45,7 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 const VALID_SOURCES = ['kw', 'kg', 'tx', 'wy', 'mg']
 
 /** 填默认值 + 校验范围（容错：字段缺失/类型错用默认值，不抛错） */
-export function normalizeConfig(c: Partial<TaskConfig> | undefined): TaskConfig {
+export function normalizeConfig(c: Partial<TaskConfig> | undefined, taskType: TaskType = 'artists'): TaskConfig {
   const sources = Array.isArray(c?.sources)
     ? c!.sources.filter((s) => VALID_SOURCES.includes(s))
     : []
@@ -58,7 +59,12 @@ export function normalizeConfig(c: Partial<TaskConfig> | undefined): TaskConfig 
     openaiModel: c?.openaiModel || process.env.OPENAI_MODEL || 'gpt-4o-mini',
     extraBody: isPlainObject(c?.extraBody) ? c!.extraBody : {},
     promptSystem: typeof c?.promptSystem === 'string' && c!.promptSystem.trim() ? c!.promptSystem : DEFAULT_PROMPT_SYSTEM,
-    promptUser: typeof c?.promptUser === 'string' && c!.promptUser.trim() ? c!.promptUser : DEFAULT_PROMPT_USER,
+    promptUser:
+      typeof c?.promptUser === 'string' && c!.promptUser.trim()
+        ? c!.promptUser
+        : taskType === 'songs'
+          ? DEFAULT_PROMPT_USER_FOR_SONGS
+          : DEFAULT_PROMPT_USER,
   }
 }
 
@@ -89,6 +95,7 @@ function rowToView(row: any): RecommendTaskView {
   return {
     id: row.id,
     name: row.name,
+    taskType: row.taskType === 'songs' ? 'songs' : 'artists',
     artists,
     config,
     status: row.status as TaskStatus,
@@ -121,13 +128,16 @@ export async function getTask(id: string): Promise<RecommendTaskView | null> {
 }
 
 export async function createTask(input: CreateTaskInput): Promise<RecommendTaskView> {
+  const taskType: TaskType = input.taskType === 'songs' ? 'songs' : 'artists'
   const artists = Array.from(new Set((input.artists || []).map((s) => String(s).trim()).filter(Boolean)))
-  if (!artists.length) throw new Error('歌手列表为空')
-  const config = normalizeConfig(input.config)
-  const name = (input.name || '').trim() || `推荐任务 ${artists.length} 位歌手`
+  if (!artists.length) throw new Error(taskType === 'songs' ? '歌曲列表为空' : '歌手列表为空')
+  const config = normalizeConfig(input.config, taskType)
+  const subjectLabel = taskType === 'songs' ? '首歌' : '位歌手'
+  const name = (input.name || '').trim() || `推荐任务 ${artists.length} ${subjectLabel}`
   const row = await prisma.recommendTask.create({
     data: {
       name,
+      taskType,
       artistsJson: JSON.stringify(artists),
       configJson: JSON.stringify(config),
       status: 'queued',
@@ -158,9 +168,10 @@ export async function rerunTask(
   try {
     prevConfig = JSON.parse(row.configJson)
   } catch {
-    prevConfig = normalizeConfig({})
+    prevConfig = normalizeConfig({}, row.taskType === 'songs' ? 'songs' : 'artists')
   }
-  const config = configOverride ? normalizeConfig({ ...prevConfig, ...configOverride }) : prevConfig
+  const taskType: TaskType = row.taskType === 'songs' ? 'songs' : 'artists'
+  const config = configOverride ? normalizeConfig({ ...prevConfig, ...configOverride }, taskType) : prevConfig
 
   let total = 0
   try {
@@ -262,7 +273,7 @@ async function runOne(task: any) {
     })
     .catch(() => {})
 
-  logger.info(`[recommend-worker] 开始任务 ${task.id} (${task.name}): ${artists.length} 位歌手`)
+  logger.info(`[recommend-worker] 开始任务 ${task.id} (${task.name}): ${artists.length} 个主体`)
 
   try {
     const { interrupted } = await runRecommendTask(

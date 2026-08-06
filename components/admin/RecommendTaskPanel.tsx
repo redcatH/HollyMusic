@@ -18,9 +18,10 @@ import {
   deleteRecommendTask,
   type RecommendTaskView,
   type TaskStatus,
+  type TaskType,
   type TaskConfig,
 } from '@/lib/api/admin-recommend-tasks'
-import { DEFAULT_PROMPT_SYSTEM, DEFAULT_PROMPT_USER } from '@/lib/recommend-defaults'
+import { DEFAULT_PROMPT_SYSTEM, DEFAULT_PROMPT_USER, DEFAULT_PROMPT_USER_FOR_SONGS } from '@/lib/recommend-defaults'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
 import {
@@ -100,6 +101,7 @@ function parseExtraBody(text: string): Record<string, unknown> {
 
 // ============ 共享：config 字段（创建表单 + 重跑弹窗复用）============
 interface ConfigFieldsProps {
+  taskType: TaskType
   sources: string[]
   onSources: (v: string[]) => void
   concurrency: number
@@ -121,13 +123,17 @@ interface ConfigFieldsProps {
 }
 
 function ConfigFields(p: ConfigFieldsProps) {
+  const isSongs = p.taskType === 'songs'
+  const defaultPromptUser = isSongs ? DEFAULT_PROMPT_USER_FOR_SONGS : DEFAULT_PROMPT_USER
+  const subjectWord = isSongs ? '歌曲' : '歌手'
+  const placeholderWord = isSongs ? 'song' : 'artist'
   const toggleSource = (src: string) =>
     p.onSources(p.sources.includes(src) ? p.sources.filter((s) => s !== src) : [...p.sources, src])
   return (
     <>
       <div className="grid gap-3 md:grid-cols-2">
         <div>
-          <label className="mb-1 block text-xs text-muted-foreground">并发歌手数</label>
+          <label className="mb-1 block text-xs text-muted-foreground">并发{subjectWord}数</label>
           <input
             type="number"
             min={1}
@@ -220,10 +226,10 @@ function ConfigFields(p: ConfigFieldsProps) {
             <div>
               <div className="mb-1 flex items-center justify-between">
                 <label className="text-xs text-muted-foreground">
-                  User 提示词（支持 <code className="rounded bg-muted px-1">{'{{artist}}'}</code>{' '}
+                  User 提示词（支持 <code className="rounded bg-muted px-1">{`{{${placeholderWord}}}`}</code>{' '}
                   <code className="rounded bg-muted px-1">{'{{candidates}}'}</code> 占位符）
                 </label>
-                <button onClick={() => p.onPromptUser(DEFAULT_PROMPT_USER)} className="text-[10px] text-primary hover:underline">
+                <button onClick={() => p.onPromptUser(defaultPromptUser)} className="text-[10px] text-primary hover:underline">
                   恢复默认
                 </button>
               </div>
@@ -234,7 +240,7 @@ function ConfigFields(p: ConfigFieldsProps) {
                 className="w-full rounded-md bg-background px-3 py-2 text-xs outline-none ring-1 ring-border focus:ring-primary"
               />
               <p className="mt-1 text-[10px] text-muted-foreground">
-                返回格式必须保持 <code className="rounded bg-muted px-1">{`{"selected":[...],"dropped":{...}}`}</code>，否则对应歌手判失败。
+                返回格式必须保持 <code className="rounded bg-muted px-1">{`{"selected":[...],"dropped":{...}}`}</code>，否则对应{subjectWord}判失败。
               </p>
             </div>
             <div>
@@ -279,6 +285,7 @@ export function RecommendTaskPanel() {
 
   // ── 创建表单 ──
   const initialCreds = loadCreds()
+  const [taskType, setTaskType] = useState<TaskType>('artists')
   const [name, setName] = useState('')
   const [artistsText, setArtistsText] = useState('')
   const [sources, setSources] = useState<string[]>(['tx'])
@@ -290,6 +297,14 @@ export function RecommendTaskPanel() {
   const [extraBodyText, setExtraBodyText] = useState('')
   const [promptSystem, setPromptSystem] = useState(DEFAULT_PROMPT_SYSTEM)
   const [promptUser, setPromptUser] = useState(DEFAULT_PROMPT_USER)
+
+  // 切换任务类型：若用户没自定义过 prompt，则同步切到对应默认值；自定义过的不动
+  const switchTaskType = (next: TaskType) => {
+    if (next === taskType) return
+    const prevDefault = taskType === 'songs' ? DEFAULT_PROMPT_USER_FOR_SONGS : DEFAULT_PROMPT_USER
+    setPromptUser((cur) => (cur === prevDefault ? (next === 'songs' ? DEFAULT_PROMPT_USER_FOR_SONGS : DEFAULT_PROMPT_USER) : cur))
+    setTaskType(next)
+  }
 
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
@@ -328,7 +343,7 @@ export function RecommendTaskPanel() {
       .map((s) => s.trim())
       .filter(Boolean)
     if (artists.length === 0) {
-      setMsg({ kind: 'error', text: '歌手列表不能为空（每行一个歌手）' })
+      setMsg({ kind: 'error', text: taskType === 'songs' ? '歌曲列表不能为空（每行一首歌）' : '歌手列表不能为空（每行一个歌手）' })
       return
     }
     if (sources.length === 0) {
@@ -347,9 +362,10 @@ export function RecommendTaskPanel() {
         promptSystem,
         promptUser,
       }
-      await createRecommendTask({ name: name.trim(), artists, config, apiKey: apiKey.trim() })
+      await createRecommendTask({ name: name.trim(), taskType, artists, config, apiKey: apiKey.trim() })
       saveCreds({ apiKey: apiKey.trim(), baseUrl, model })
-      setMsg({ kind: 'success', text: `任务已创建，${artists.length} 位歌手已入队` })
+      const unit = taskType === 'songs' ? '首歌' : '位歌手'
+      setMsg({ kind: 'success', text: `任务已创建，${artists.length} ${unit}已入队` })
       setName('')
       setArtistsText('')
       await reload()
@@ -463,6 +479,20 @@ export function RecommendTaskPanel() {
 
       {/* 创建表单 */}
       <div className="rounded-lg border border-border p-4 space-y-3">
+        {/* 任务类型切换 */}
+        <div className="flex items-center gap-1 rounded-lg bg-muted p-1 w-fit">
+          {(['artists', 'songs'] as const).map((tt) => (
+            <button
+              key={tt}
+              onClick={() => switchTaskType(tt)}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                taskType === tt ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {tt === 'artists' ? '按歌手' : '按歌曲'}
+            </button>
+          ))}
+        </div>
         <div>
           <label className="mb-1 block text-xs text-muted-foreground">任务名（可选）</label>
           <input
@@ -473,17 +503,20 @@ export function RecommendTaskPanel() {
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs text-muted-foreground">歌手名单（每行一个）</label>
+          <label className="mb-1 block text-xs text-muted-foreground">
+            {taskType === 'songs' ? '歌曲名单（每行一首歌）' : '歌手名单（每行一个）'}
+          </label>
           <textarea
             value={artistsText}
             onChange={(e) => setArtistsText(e.target.value)}
-            placeholder={'周杰伦\n林俊杰\n陈奕迅'}
+            placeholder={taskType === 'songs' ? '海阔天空\n喜欢你\n容易受伤的女人' : '周杰伦\n林俊杰\n陈奕迅'}
             rows={4}
             className="w-full rounded-md bg-background px-3 py-2 text-sm outline-none ring-1 ring-border focus:ring-primary"
           />
         </div>
 
         <ConfigFields
+          taskType={taskType}
           sources={sources}
           onSources={setSources}
           concurrency={concurrency}
@@ -569,10 +602,11 @@ export function RecommendTaskPanel() {
               </button>
             </div>
             <p className="mb-3 text-xs text-muted-foreground">
-              可修改任意参数后重跑（{rerun.target.artists.length} 位歌手不变，已推荐的歌曲会自动跳过）。提示词/URL/模型/音源都可在此调整。
+              可修改任意参数后重跑（{rerun.target.artists.length} {rerun.target.taskType === 'songs' ? '首歌' : '位歌手'}不变，已推荐的歌曲会自动跳过）。提示词/URL/模型/音源都可在此调整。
             </p>
             <div className="space-y-3">
               <ConfigFields
+                taskType={rerun.target.taskType}
                 sources={rerun.sources}
                 onSources={(v) => updateRerun({ sources: v })}
                 concurrency={rerun.concurrency}
@@ -651,7 +685,7 @@ function TaskCard({
             <span className="truncate text-sm font-medium">{task.name}</span>
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
-            <span>{task.artists.length} 位歌手</span>
+            <span>{task.artists.length} {task.taskType === 'songs' ? '首歌' : '位歌手'}</span>
             <span>音源 {task.config.sources.join('/')}</span>
             <span>模型 {task.config.openaiModel}</span>
             {task.createdAt && <span>{new Date(task.createdAt).toLocaleString('zh-CN', { hour12: false })}</span>}
@@ -678,7 +712,7 @@ function TaskCard({
       <div className="mt-3">
         <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
           <span>
-            {p.done}/{p.total} 歌手
+            {p.done}/{p.total} {task.taskType === 'songs' ? '歌' : '歌手'}
             {task.status === 'running' && p.currentArtist ? ` · 正在处理：${p.currentArtist}` : ''}
           </span>
           <span>{pct}%</span>
@@ -701,7 +735,7 @@ function TaskCard({
         <div className="mt-2">
           <button onClick={onToggleExpand} className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
             {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-            歌手明细（{p.results.length}）
+            {task.taskType === 'songs' ? '歌曲' : '歌手'}明细（{p.results.length}）
           </button>
           {expanded && (
             <div className="mt-1 divide-y divide-border rounded-md border border-border px-2">

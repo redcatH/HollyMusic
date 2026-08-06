@@ -3,9 +3,9 @@
  */
 
 import { apiGet, apiPost, apiDelete } from './client'
-import type { RecommendTaskView, TaskConfig, TaskStatus } from '@/lib/types/recommend-task'
+import type { RecommendTaskView, TaskConfig, TaskStatus, TaskType } from '@/lib/types/recommend-task'
 
-export type { RecommendTaskView, TaskConfig, TaskProgress, ArtistResult, TaskStatus } from '@/lib/types/recommend-task'
+export type { RecommendTaskView, TaskConfig, TaskProgress, ArtistResult, TaskStatus, TaskType } from '@/lib/types/recommend-task'
 
 export function listRecommendTasks(
   page = 1,
@@ -17,6 +17,7 @@ export function listRecommendTasks(
 
 export function createRecommendTask(input: {
   name: string
+  taskType: TaskType
   artists: string[]
   config: Partial<TaskConfig>
   apiKey: string
