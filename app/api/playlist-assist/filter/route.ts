@@ -11,7 +11,7 @@ import { NextRequest } from 'next/server'
 import { createSuccessResponse, createErrorResponse } from '@/lib/api-response'
 import { requireUser, AuthError } from '@/lib/services/user-context'
 import { callAI, extractJSON } from '@/lib/services/ai-helper'
-import { DEFAULT_PROMPT_SYSTEM, DEFAULT_PROMPT_AI_ADD } from '@/lib/recommend-defaults'
+import { DEFAULT_PROMPT_SYSTEM, DEFAULT_PROMPT_AI_PLAYLIST_FILTER } from '@/lib/recommend-defaults'
 import { logger } from '@/lib/logger'
 
 interface SongIn {
@@ -52,9 +52,9 @@ export async function POST(request: NextRequest) {
     const lines = songs
       .map((s, i) => `${i + 1}. ${s.name || '-'} | ${s.singer || '-'} | ${s.albumName || '-'}`)
       .join('\n')
-    const user = DEFAULT_PROMPT_AI_ADD.replace(/\{\{candidates\}\}/g, lines).replace(
+    const user = DEFAULT_PROMPT_AI_PLAYLIST_FILTER.replace(/\{\{candidates\}\}/g, lines).replace(
       /\{\{userPrompt\}\}/g,
-      userPrompt || '（无）',
+      userPrompt || '（无具体需求，按大众认可的好版本筛）',
     )
 
     const raw = await callAI({

@@ -113,3 +113,22 @@ export const DEFAULT_PROMPT_AI_PLAYLIST_GENERATE = `你是音乐曲库编辑。�
 4. 给一个贴切、有吸引力的中文歌单名(≤12字)。
 
 严格返回 JSON: {"mode":"songs"|"artists","items":["...","..."],"playlistName":"歌单名"}`
+
+// ============ AI 协助建歌单 - 过滤候选（按用户需求筛，非单纯"大众认可"）============
+// 占位符: {{candidates}} 候选列表; {{userPrompt}} 用户需求
+// 返回: {"suggestions":[{"index":序号,"action":"keep"|"remove","reason":"≤20字原因"}]}
+export const DEFAULT_PROMPT_AI_PLAYLIST_FILTER = `你是音乐曲库编辑。用户想创建一份歌单, 请根据用户的需求从下列候选歌曲中挑出符合的版本。
+
+用户需求: {{userPrompt}}
+
+候选(序号. 歌名 | 演唱者 | 专辑):
+{{candidates}}
+
+规则:
+1. 优先保留符合用户需求的歌曲——按需求里的主题、风格、情绪、场景、年代、语言等判断。
+2. 在符合需求的前提下, 保留大众认可、传唱度高的好版本（经典原唱录音室版优先, 公认经典翻唱/官方经典 remix 可保留）。
+3. 排除 live/现场版、伴奏/纯音乐/铃声/8bit、粗制 DJ 舞曲版、群星/大合唱/晚会、蹭歌名同名异曲——除非用户需求明确要这类（如"纯音乐""现场版""伴奏""remix"）。
+4. 同名重复只留最经典的 1 个。
+5. 对每条候选给出 keep（符合需求, 建议加入）或 remove（不符合或劣质）及简短原因。
+
+严格返回 JSON: {"suggestions":[{"index":序号,"action":"keep"|"remove","reason":"≤20字原因"}]}`

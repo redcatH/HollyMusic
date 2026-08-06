@@ -321,3 +321,5 @@ export function useAiPlaylist() {
     reset,
   }
 }
+
+export type AiPlaylistController = ReturnType<typeof useAiPlaylist>
