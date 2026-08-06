@@ -43,3 +43,15 @@ export function cancelRecommendTask(id: string): Promise<RecommendTaskView> {
 export function deleteRecommendTask(id: string): Promise<{ ok: boolean }> {
   return apiDelete<{ ok: boolean }>(`admin/recommend-tasks/${encodeURIComponent(id)}`)
 }
+
+/** AI 协助生成歌手/歌曲名单（不写库） */
+export function aiGenerateList(opts: {
+  taskType: TaskType
+  prompt: string
+  apiKey: string
+  baseUrl?: string
+  model?: string
+  extraBody?: Record<string, unknown>
+}): Promise<{ items: string[] }> {
+  return apiPost<{ items: string[] }>('admin/recommend-tasks/ai-generate', opts)
+}

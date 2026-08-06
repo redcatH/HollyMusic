@@ -263,6 +263,17 @@ export async function setRecommendedBatch(uids: string[], value: boolean): Promi
 }
 
 /**
+ * 清空全部推荐（一条 SQL，不先查 uid）。返回取消的条数。
+ */
+export async function clearAllRecommended(): Promise<{ updated: number }> {
+  const result = await prisma.musicInfo.updateMany({
+    where: { isRecommended: true },
+    data: { isRecommended: false },
+  })
+  return { updated: result.count }
+}
+
+/**
  * 计算用于 DB 查询/对外 id 的 songmid（存储键）。
  *
  * 关键设计：分离"原始数据"与"查询键"。

@@ -9,7 +9,6 @@
  *
  * 容错原则：单个歌手失败（含缺 API key、AI 返回异常）只标记该歌手失败，不中断整个任务。
  */
-import { setTimeout as sleep } from 'node:timers/promises'
 import {
   upsertMusicInfo,
   getStorageSongmidForMusicInfo,
@@ -17,6 +16,7 @@ import {
   listRecommendedMusicInfo,
 } from '@/lib/db'
 import { logger } from '@/lib/logger'
+import { callAI, extractJSON } from '@/lib/services/ai-helper'
 import type { MusicInfo } from '@/lib/types/music'
 import type { ArtistResult } from '@/lib/types/recommend-task'
 
@@ -46,58 +46,15 @@ export interface RunProgress {
 
 type SongWithUid = MusicInfo & { uid: string }
 
-// ============ AI 调用（重试 + 思考模型处理，照搬脚本）============
-async function callAI(config: EngineConfig, messages: { role: string; content: string }[]): Promise<string> {
-  if (!config.apiKey) throw new Error('缺少 API key（创建任务时未填写，且服务端未配置 OPENAI_API_KEY）')
-  // 开了思考就不强制 temperature:0（多数思考模型禁止设温度）；extraBody 在最后展开，可覆盖任意默认字段
-  const wantsThinking = 'reasoning_effort' in config.extraBody || 'thinking' in config.extraBody
-  for (let i = 0; i < 15; i++) {
-    let res: Response
-    try {
-      res = await fetch(`${config.openaiBaseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${config.apiKey}` },
-        body: JSON.stringify({
-          model: config.openaiModel,
-          messages,
-          ...(wantsThinking ? {} : { temperature: 0 }),
-          response_format: { type: 'json_object' },
-          ...config.extraBody,
-        }),
-      })
-    } catch (e) {
-      // 网络错误 → 重试
-      if (i < 2) {
-        await sleep(1000 * (i + 1))
-        continue
-      }
-      throw e
-    }
-    const text = await res.text()
-    if (res.ok) {
-      let d: { choices?: { message?: { content?: string }; finish_reason?: string }[] }
-      try {
-        d = JSON.parse(text)
-      } catch {
-        throw new Error('AI 返回非 JSON: ' + text.slice(0, 200))
-      }
-      const content = d.choices?.[0]?.message?.content || ''
-      if (content) return content
-      // content 为空：多半是思考模型把 token 全花在 reasoning 上、被 length 截断
-      const fr = d.choices?.[0]?.finish_reason
-      const hint = fr === 'length' ? 'AI 输出被 max_tokens 截断' : 'AI 返回了空 content'
-      throw new Error(`${hint}; 若开了 thinking 请清空 extraBody 或加大 max_tokens。原始: ` + text.slice(0, 200))
-    }
-    if (res.status === 429 || res.status >= 500) {
-      if (i < 2) {
-        await sleep(1000 * (i + 1))
-        continue // 限流/服务端错误 → 重试
-      }
-    }
-    throw new Error(`AI ${res.status}: ${text.slice(0, 200)}`) // 4xx 直接抛
-  }
-  // 理论上不会走到（循环内必 return 或 throw）
-  throw new Error('AI 调用重试耗尽')
+// ============ AI 调用：复用 ai-helper ============
+async function callEngineAI(config: EngineConfig, messages: { role: string; content: string }[]): Promise<string> {
+  return callAI({
+    apiKey: config.apiKey,
+    baseUrl: config.openaiBaseUrl,
+    model: config.openaiModel,
+    extraBody: config.extraBody,
+    messages,
+  })
 }
 
 // 跨源归一化指纹：去掉同一首歌在不同源的重复（去括号/空白/分隔符，歌名+歌手）
@@ -150,18 +107,11 @@ async function aiFilter(config: EngineConfig, subject: string, songs: SongWithUi
     .replace(/\{\{song\}\}/g, subject)
     .replace(/\{\{subject\}\}/g, subject)
     .replace(/\{\{candidates\}\}/g, lines)
-  const raw = await callAI(config, [
+  const raw = await callEngineAI(config, [
     { role: 'system', content: config.promptSystem },
     { role: 'user', content: user },
   ])
-  const m = raw.match(/\{[\s\S]*\}/)
-  if (!m) throw new Error('AI 未返回 JSON: ' + raw.slice(0, 200))
-  let obj: { selected?: unknown }
-  try {
-    obj = JSON.parse(m[0])
-  } catch {
-    throw new Error('AI 返回 JSON 解析失败: ' + raw.slice(0, 200))
-  }
+  const obj = extractJSON(raw) as { selected?: unknown }
   const idx = (Array.isArray(obj.selected) ? obj.selected : [])
     .map((n) => Number(n) - 1)
     .filter((i) => Number.isInteger(i) && i >= 0 && i < songs.length)

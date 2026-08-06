@@ -42,3 +42,37 @@ export function removeRecommended(uid: string): Promise<{ ok: boolean }> {
 export function removeRecommendedBatch(uids: string[]): Promise<{ updated: number }> {
   return apiPost<{ updated: number }>('admin/recommend/batch-remove', { uids })
 }
+
+/** 清空全部推荐 */
+export function clearAllRecommended(): Promise<{ updated: number }> {
+  return apiPost<{ updated: number }>('admin/recommend/clear-all', {})
+}
+
+// ============ AI 辅助筛选 ============
+
+export interface AISongInput {
+  uid: string
+  name: string | null
+  singer: string | null
+  source: string
+  albumName?: string | null
+}
+
+export interface AISuggestion {
+  uid: string
+  action: 'keep' | 'remove'
+  reason: string
+}
+
+/** AI 辅助筛选：不写库，只返回建议（用户确认后前端再调 add/remove） */
+export function aiFilterRecommend(opts: {
+  action: 'add' | 'remove'
+  songs: AISongInput[]
+  prompt: string
+  apiKey: string
+  baseUrl?: string
+  model?: string
+  extraBody?: Record<string, unknown>
+}): Promise<{ suggestions: AISuggestion[] }> {
+  return apiPost<{ suggestions: AISuggestion[] }>('admin/recommend/ai-filter', opts)
+}
