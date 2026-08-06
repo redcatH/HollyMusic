@@ -88,8 +88,8 @@ docker-compose up --build -d
 
 内置两个 AI 辅助功能，均走 OpenAI 兼容接口（`/chat/completions`），由 `OPENAI_API_KEY` 驱动：
 
-- **管理员 AI 推荐任务**（后台 `/admin/recommend`）：批量按歌手/歌曲筛选入库，写入推荐白名单。前端可临时填 key，未填时回退到服务端 `OPENAI_API_KEY`。
-- **AI 协助建歌单**（用户侧 `/playlists` →「AI 建歌单」）：所有登录用户可用。描述需求 → AI 生成候选 → 搜索真实歌曲 → AI 过滤多版本 → 用户确认 → 创建歌单。**强制使用服务端 `OPENAI_API_KEY`，不向用户暴露**；只搜后台已启用的音源。
+- **管理员 AI 推荐任务**（后台 `/admin/recommend`）：批量按歌手/歌曲筛选入库，写入推荐白名单。多任务排队串行执行，实时进度；支持重跑（可改参数）、取消、删除，**已完成的任务支持回滚**（把该任务推荐的歌曲一键还原为不推荐）。前端可临时填 key，未填时回退到服务端 `OPENAI_API_KEY`。
+- **AI 协助建歌单**（用户侧 `/playlists` →「AI 建歌单」）：所有登录用户可用。描述需求 → AI 生成候选 → **多源聚合搜索**真实歌曲（遍历所有启用音源，跨源去重保留优质源版本）→ AI 过滤多版本（严格按指定数目、绝不重复）→ 用户确认 → 创建歌单。**强制使用服务端 `OPENAI_API_KEY`，不向用户暴露**；只搜后台已启用的音源。
 
 在 `.env` 配 `OPENAI_API_KEY`（必需）、可选 `OPENAI_BASE_URL`（默认 `https://api.openai.com/v1`，可指向 DeepSeek / 通义 / 本地 LMDeploy 等 OpenAI 兼容服务）、可选 `OPENAI_MODEL`（默认 `gpt-4o-mini`）。未配置时：管理员任务需在前端填 key、用户 AI 建歌单不可用（提示未配置）。
 

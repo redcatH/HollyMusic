@@ -89,8 +89,8 @@ AI features (optional)
 
 Two built-in AI helpers, both driven by an OpenAI-compatible `/chat/completions` endpoint via `OPENAI_API_KEY`:
 
-- **Admin AI recommend tasks** (dashboard `/admin/recommend`): batch-filter songs by artist/song and write them to the recommend whitelist. A key may be entered in the UI; if absent, it falls back to the server-side `OPENAI_API_KEY`.
-- **AI-assisted playlist creation** (user side, `/playlists` → "AI 建歌单"): available to all logged-in users. Describe a need → AI generates candidates → search real songs → AI filters versions → user confirms → playlist created. **Forces the server-side `OPENAI_API_KEY` (never exposed to users)**; only searches sources enabled in the admin dashboard.
+- **Admin AI recommend tasks** (dashboard `/admin/recommend`): batch-filter songs by artist/song and write them to the recommend whitelist. Multiple tasks queue and run serially with live progress; supports rerun (with editable params), cancel, delete, and **rollback** of completed tasks (one-click revert a task's recommended songs back to non-recommended). A key may be entered in the UI; if absent, it falls back to the server-side `OPENAI_API_KEY`.
+- **AI-assisted playlist creation** (user side, `/playlists` → "AI 建歌单"): available to all logged-in users. Describe a need → AI generates candidates → **multi-source aggregated search** for real songs (searches all enabled sources, dedupes cross-source keeping the highest-priority version) → AI filters versions (strictly respects the requested count, never duplicates) → user confirms → playlist created. **Forces the server-side `OPENAI_API_KEY` (never exposed to users)**; only searches sources enabled in the admin dashboard.
 
 Set `OPENAI_API_KEY` (required) plus optional `OPENAI_BASE_URL` (default `https://api.openai.com/v1`; can point to DeepSeek / Qwen / local LMDeploy / any OpenAI-compatible service) and `OPENAI_MODEL` (default `gpt-4o-mini`) in `.env`. If unset: admin tasks require a key in the UI, and user AI playlist creation is unavailable (reports "not configured").
 
