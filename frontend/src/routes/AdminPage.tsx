@@ -6,19 +6,21 @@ import { UsersPanel } from '@/components/admin/UsersPanel'
 import { SourcesPanel } from '@/components/admin/SourcesPanel'
 import { CachePanel } from '@/components/admin/CachePanel'
 import { RecommendPanel } from '@/components/admin/RecommendPanel'
-import { Users, Music, Database, Sparkles } from 'lucide-react'
+import { RecommendTaskPanel } from '@/components/admin/RecommendTaskPanel'
+import { Users, Music, Database, Sparkles, ListTodo } from 'lucide-react'
 
 const TABS = [
   { key: 'users', label: '用户管理', icon: Users },
   { key: 'sources', label: '音源管理', icon: Music },
   { key: 'recommend', label: '推荐管理', icon: Sparkles },
+  { key: 'recommend-tasks', label: '推荐任务', icon: ListTodo },
   { key: 'cache', label: '缓存管理', icon: Database },
 ] as const
 
 type TabKey = (typeof TABS)[number]['key']
 
 function isValidTab(v: string | null): v is TabKey {
-  return v === 'users' || v === 'sources' || v === 'recommend' || v === 'cache'
+  return v === 'users' || v === 'sources' || v === 'recommend' || v === 'recommend-tasks' || v === 'cache'
 }
 
 export function AdminPage() {
@@ -80,6 +82,7 @@ export function AdminPage() {
         {tab === 'users' && <UsersPanel />}
         {tab === 'sources' && <SourcesPanel />}
         {tab === 'recommend' && <RecommendPanel />}
+        {tab === 'recommend-tasks' && <RecommendTaskPanel />}
         {tab === 'cache' && <CachePanel />}
       </div>
     </div>
