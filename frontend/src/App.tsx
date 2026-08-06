@@ -24,6 +24,7 @@ import { SearchPage } from './routes/SearchPage'
 import { FavoritesPage } from './routes/FavoritesPage'
 import { PlaylistsPage } from './routes/PlaylistsPage'
 import { PlaylistDetailPage } from './routes/PlaylistDetailPage'
+import { AiPlaylistPage } from './routes/AiPlaylistPage'
 import { HistoryPage } from './routes/HistoryPage'
 import { LoginPage } from './routes/LoginPage'
 import { AdminPage, AdminUsersPage, AdminSourcesPage, AdminRecommendPage } from './routes/AdminPage'
@@ -135,6 +136,7 @@ export function App() {
             <Route path="/search" element={<SearchPage />} />
             <Route path="/favorites" element={<FavoritesPage />} />
             <Route path="/playlists" element={<PlaylistsPage />} />
+            <Route path="/playlists/ai-create" element={<AiPlaylistPage />} />
             <Route path="/playlists/:id" element={<PlaylistDetailPage />} />
             <Route path="/history" element={<HistoryPage />} />
             <Route path="/admin" element={<AdminPage />} />
