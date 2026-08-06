@@ -4,7 +4,7 @@
  * 职责：
  * - 原子读写 config/music-sources.json（临时文件 + rename）
  * - 脚本预校验（用 LXEnvironmentSimulator 试加载，确认能 inited 才保存）
- * - CRUD 业务封装（增删改后无需手动重载，MusicSourceManager 下次请求自动检测 MD5 变更）
+ * - CRUD 业务封装（增删改后主动通知 MusicSourceManager 重建实例，立即生效）
  *
  * 脚本路径约定：相对项目根，存于 custom-sources/ 目录。
  */
@@ -15,12 +15,25 @@ import path from 'path'
 import { logger } from '@/lib/logger'
 import { sanitizeFilename } from '@/lib/server/download-utils'
 import type { MusicSourcesConfig, SourceConfig } from '@/lib/types/music'
+import { musicSourceManager } from '@/lib/music-source-manager'
 
 const CONFIG_PATH = path.resolve(process.cwd(), 'config/music-sources.json')
 const SCRIPTS_DIR = path.resolve(process.cwd(), 'custom-sources')
 
 const VALID_PLATFORMS = ['tx', 'wy', 'kw', 'kg', 'mg'] as const
 const MAX_SCRIPT_SIZE = 5 * 1024 * 1024 // 5MB
+
+/**
+ * 通知 MusicSourceManager 重建实例，使配置改动立即生效。
+ * 失败不抛错：配置已成功写入，下次播放请求的 MD5 懒重载会兜底。
+ */
+async function notifyReload(): Promise<void> {
+  try {
+    await musicSourceManager.reload()
+  } catch (e) {
+    logger.warn('[source-manager-service] 重建音源实例失败，将依赖下次请求懒重载:', e instanceof Error ? e.message : e)
+  }
+}
 
 // 动态 require 模拟器（CommonJS 模块）
 type SimulatorConstructor = new () => {
@@ -202,6 +215,7 @@ export async function addSource(opts: {
 
   config.sources.push(newSource)
   await writeConfig(config)
+  await notifyReload()
   logger.info(`[source-manager-service] 新增源: ${newSource.path}`)
   return newSource
 }
@@ -234,6 +248,7 @@ export async function updateSource(
 
   config.sources[idx] = updated
   await writeConfig(config)
+  await notifyReload()
   logger.info(`[source-manager-service] 更新源: ${sourcePath}`)
   return updated
 }
@@ -246,6 +261,7 @@ export async function removeSource(sourcePath: string): Promise<void> {
 
   config.sources.splice(idx, 1)
   await writeConfig(config)
+  await notifyReload()
 
   // 删除关联脚本文件
   await deleteScript(sourcePath)
