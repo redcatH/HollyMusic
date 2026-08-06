@@ -1,14 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import {
-  ChevronLeft,
-  ChevronDown,
-  ChevronUp,
-  Check,
-  Loader2,
-  ListChecks,
-  ExternalLink,
-} from 'lucide-react'
+import { ChevronDown, ChevronUp, Check, ListChecks } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CoverImage } from '@/components/shared/CoverImage'
 import { SourceBadge } from '@/components/shared/SourceBadge'
@@ -20,12 +12,9 @@ interface Props {
   selectedUids: Set<string>
   toggleUid: (uid: string) => void
   processing: ProcessingState | null
-  creating: boolean
   createError: string
   createdId: number | null
-  onBack: () => void
-  onCreate: () => void
-  onView: () => void
+  mode: 'new' | 'add'
 }
 
 export function StepConfirm({
@@ -33,20 +22,18 @@ export function StepConfirm({
   selectedUids,
   toggleUid,
   processing,
-  creating,
   createError,
   createdId,
-  onBack,
-  onCreate,
-  onView,
+  mode,
 }: Props) {
   const [showRemoved, setShowRemoved] = useState(false)
   const keepSongs = confirmSongs.filter((c) => c.action === 'keep')
   const removeSongs = confirmSongs.filter((c) => c.action === 'remove')
 
+  // 成功态：由壳导航栏显示「查看歌单」，这里只展示成功画面
   if (createdId !== null) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center px-5 py-8 text-center">
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-5 py-8 text-center">
         <motion.div
           initial={{ scale: 0.5, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
@@ -55,23 +42,18 @@ export function StepConfirm({
         >
           <ListChecks className="h-9 w-9 text-primary" />
         </motion.div>
-        <div className="mb-1 text-xl font-bold">歌单已创建</div>
-        <div className="mb-6 text-sm text-muted-foreground">已加入 {selectedUids.size} 首歌</div>
-        <button
-          onClick={onView}
-          className="touch-target flex items-center gap-1.5 rounded-2xl bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 transition hover:opacity-90 active:scale-[0.99]"
-        >
-          查看歌单 <ExternalLink className="h-4 w-4" />
-        </button>
+        <div className="mb-1 text-xl font-bold">{mode === 'add' ? '已加入歌单' : '歌单已创建'}</div>
+        <div className="text-sm text-muted-foreground">已加入 {selectedUids.size} 首歌</div>
       </div>
     )
   }
 
   return (
-    <div className="flex flex-1 flex-col">
-      <div className="flex-1 overflow-y-auto px-5 pt-5">
-        <h2 className="text-xl font-bold">确认并创建</h2>
-        <p className="mt-1 text-sm text-muted-foreground">AI 已筛掉不合适的版本，确认后创建歌单。</p>
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* 固定顶：标题 + 统计 */}
+      <div className="shrink-0 px-5 pt-5">
+        <h2 className="text-xl font-bold">确认并{mode === 'add' ? '加入' : '创建'}</h2>
+        <p className="mt-1 text-sm text-muted-foreground">AI 已筛掉不合适的版本，确认后{mode === 'add' ? '加入歌单' : '创建歌单'}。</p>
 
         {processing && (
           <div className="mt-3 flex items-center gap-1.5 rounded-xl bg-primary/10 px-3 py-2 text-xs text-primary">
@@ -80,11 +62,14 @@ export function StepConfirm({
           </div>
         )}
 
-        <div className="mt-4 mb-2 flex items-center justify-between">
+        <div className="mt-4 flex items-center justify-between">
           <span className="text-sm font-medium">推荐歌曲（{keepSongs.length}）</span>
           <span className="text-xs text-muted-foreground/70">已选 {selectedUids.size}</span>
         </div>
+      </div>
 
+      {/* 滚动区：keep + remove（min-h-0 保证可滚动） */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-2">
         <div className="space-y-0.5">
           {keepSongs.map((c) => (
             <SongCheckRow
@@ -97,26 +82,25 @@ export function StepConfirm({
         </div>
 
         {removeSongs.length > 0 && (
-          <div className="mt-4 pb-2">
+          <div className="mt-4 pb-4">
             <button
               onClick={() => setShowRemoved((v) => !v)}
               className="flex items-center gap-1 text-xs text-muted-foreground transition hover:text-foreground"
             >
               {showRemoved ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-              AI 建议排除（{removeSongs.length}）
+              AI 建议排除（{removeSongs.length}）· 点按可加回
             </button>
             {showRemoved && (
-              <div className="mt-2 space-y-1 opacity-50">
+              <div className="mt-2 space-y-0.5">
                 {removeSongs.map((c) => (
-                  <div key={c.song.uid} className="flex items-center gap-3 py-1.5">
-                    <CoverImage uid={c.song.uid} className="h-9 w-9 shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-xs">{c.song.name}</div>
-                      <div className="truncate text-[10px] text-muted-foreground">
-                        {c.song.singer} · {c.reason}
-                      </div>
-                    </div>
-                  </div>
+                  <SongCheckRow
+                    key={c.song.uid}
+                    song={c.song}
+                    checked={selectedUids.has(c.song.uid)}
+                    onToggle={() => toggleUid(c.song.uid)}
+                    reason={c.reason}
+                    dimmed
+                  />
                 ))}
               </div>
             )}
@@ -124,29 +108,12 @@ export function StepConfirm({
         )}
       </div>
 
+      {/* 错误提示（按钮在壳导航栏） */}
       {createError && (
-        <div className="mx-5 mb-1 rounded-xl bg-destructive/10 px-3 py-2 text-xs text-destructive">
+        <div className="mx-5 mb-1 shrink-0 rounded-xl bg-destructive/10 px-3 py-2 text-xs text-destructive">
           {createError}
         </div>
       )}
-
-      <div className="flex gap-2 px-5 pb-5 pt-2">
-        <button
-          onClick={onBack}
-          disabled={creating}
-          className="touch-target flex items-center justify-center gap-1 rounded-2xl border border-border px-4 py-3 text-sm text-muted-foreground transition hover:bg-accent disabled:opacity-50"
-        >
-          <ChevronLeft className="h-4 w-4" /> 上一步
-        </button>
-        <button
-          onClick={onCreate}
-          disabled={creating || selectedUids.size === 0}
-          className="touch-target flex flex-1 items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 transition hover:opacity-90 active:scale-[0.99] disabled:opacity-50 disabled:shadow-none"
-        >
-          {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-          {creating ? '创建中…' : `创建歌单(${selectedUids.size})`}
-        </button>
-      </div>
     </div>
   )
 }
@@ -155,16 +122,23 @@ function SongCheckRow({
   song,
   checked,
   onToggle,
+  reason,
+  dimmed,
 }: {
   song: Song
   checked: boolean
   onToggle: () => void
+  reason?: string
+  dimmed?: boolean
 }) {
   return (
     <motion.button
       whileTap={{ scale: 0.98 }}
       onClick={onToggle}
-      className="flex w-full items-center gap-3 rounded-xl px-1.5 py-1.5 text-left transition hover:bg-accent/50"
+      className={cn(
+        'flex w-full items-center gap-3 rounded-xl px-1.5 py-1.5 text-left transition hover:bg-accent/50',
+        dimmed && !checked && 'opacity-50',
+      )}
     >
       <motion.span
         animate={{ scale: checked ? 1 : 0.85 }}
@@ -181,6 +155,11 @@ function SongCheckRow({
         <div className="flex items-center gap-1.5">
           <span className="truncate text-xs text-muted-foreground">{song.singer}</span>
           <SourceBadge source={song.source} />
+          {reason && (
+            <span className="truncate text-[10px] text-muted-foreground/60" title={reason}>
+              · {reason}
+            </span>
+          )}
         </div>
       </div>
     </motion.button>

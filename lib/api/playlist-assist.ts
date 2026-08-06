@@ -32,9 +32,9 @@ export function getSearchSources(): Promise<{ sources: string[] }> {
   return apiGet<{ sources: string[] }>('search-sources')
 }
 
-/** AI 生成歌单候选（自选 mode + 搜索词 + 歌单名），不写库 */
-export function aiPlaylistGenerate(prompt: string): Promise<AiPlaylistGenerateResult> {
-  return apiPost<AiPlaylistGenerateResult>('playlist-assist/generate', { prompt })
+/** AI 生成歌单候选（自选 mode + 搜索词 + 歌单名），不写库。count=目标歌单数量 */
+export function aiPlaylistGenerate(prompt: string, count = 15): Promise<AiPlaylistGenerateResult> {
+  return apiPost<AiPlaylistGenerateResult>('playlist-assist/generate', { prompt, count })
 }
 
 /** AI 过滤候选歌曲（只读建议 keep/remove + 原因），不写库 */

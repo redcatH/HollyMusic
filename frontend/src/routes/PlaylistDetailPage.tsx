@@ -3,7 +3,7 @@ import { usePlaylistDetail } from '@/hooks/usePlaylistDetail'
 import { SongList } from '@/components/shared/SongList'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { Play, Trash2, Music, Share2 } from 'lucide-react'
+import { Play, Trash2, Music, Share2, Sparkles } from 'lucide-react'
 import { usePlayerStore } from '@/lib/store/player-store'
 import { shareContent, buildPlaylistShareUrl } from '@/lib/share'
 import { toTrack, type Track } from '@/lib/types/player'
@@ -54,6 +54,12 @@ export function PlaylistDetailPage() {
                   className="flex items-center gap-1 rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
                 >
                   <Play className="h-4 w-4 fill-current" /> 播放全部
+                </button>
+                <button
+                  onClick={() => navigate(`/playlists/${id}/ai-add`)}
+                  className="flex items-center gap-1 rounded-full bg-primary/15 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/25"
+                >
+                  <Sparkles className="h-4 w-4" /> AI 加歌
                 </button>
                 <button
                   onClick={handleDelete}

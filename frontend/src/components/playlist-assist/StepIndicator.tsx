@@ -1,10 +1,9 @@
 import { motion } from 'framer-motion'
 import { cn } from '@/lib/utils'
-import type { AssistStep } from '@@/hooks/useAiPlaylist'
 
-const LABELS = ['需求', '候选', '处理', '确认']
+const LABELS = ['需求', '候选', '确认']
 
-export function StepIndicator({ current }: { current: AssistStep }) {
+export function StepIndicator({ current }: { current: 0 | 1 | 2 }) {
   return (
     <div className="flex items-center gap-1.5">
       {LABELS.map((label, i) => {

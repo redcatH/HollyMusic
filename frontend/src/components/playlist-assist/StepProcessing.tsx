@@ -1,14 +1,12 @@
 import { motion, AnimatePresence } from 'framer-motion'
-import { Loader2, Search, AlertCircle, RotateCw, CheckCircle2, ChevronLeft } from 'lucide-react'
+import { Loader2, Search, AlertCircle, CheckCircle2 } from 'lucide-react'
 import type { ProcessingState } from '@@/hooks/useAiPlaylist'
 
-interface Props {
-  processing: ProcessingState | null
-  onRetry: () => void
-  onBack: () => void
-}
-
-export function StepProcessing({ processing, onRetry, onBack }: Props) {
+/**
+ * 过渡态覆盖层内容（搜索/过滤中/出错）。
+ * 不含底部按钮——按钮由壳的统一导航栏承载（错误态 right=重试，left=返回）。
+ */
+export function StepProcessing({ processing }: { processing: ProcessingState | null }) {
   if (!processing) return null
   const pct =
     processing.totalKeywords > 0
@@ -17,12 +15,11 @@ export function StepProcessing({ processing, onRetry, onBack }: Props) {
   const isSearch = processing.phase === 'searching'
   const isFilter = processing.phase === 'filtering'
   const isError = processing.phase === 'error'
-  const isDone = processing.phase === 'done'
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center px-5 py-8 text-center">
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-5 py-8 text-center">
       <AnimatePresence mode="wait">
-        {(isSearch || isFilter || isDone) && (
+        {(isSearch || isFilter) && (
           <motion.div
             key={processing.phase}
             initial={{ opacity: 0, y: 8 }}
@@ -33,13 +30,11 @@ export function StepProcessing({ processing, onRetry, onBack }: Props) {
             <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-3xl bg-primary/15">
               {isSearch && <Search className="h-9 w-9 animate-pulse text-primary" />}
               {isFilter && <Loader2 className="h-9 w-9 animate-spin text-primary" />}
-              {isDone && <CheckCircle2 className="h-9 w-9 text-primary" />}
             </div>
             <div className="mb-1 text-lg font-bold">{processing.message}</div>
             <div className="text-sm text-muted-foreground">
               {isSearch && '在多个音源中搜索真实歌曲'}
               {isFilter && `从 ${processing.foundSongs} 首里挑出好版本`}
-              {isDone && '即将进入确认'}
             </div>
           </motion.div>
         )}
@@ -54,13 +49,9 @@ export function StepProcessing({ processing, onRetry, onBack }: Props) {
             <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-3xl bg-destructive/15">
               <AlertCircle className="h-9 w-9 text-destructive" />
             </div>
-            <div className="mb-4 max-w-xs text-sm text-muted-foreground">{processing.message}</div>
-            <button
-              onClick={onRetry}
-              className="touch-target flex items-center gap-1.5 rounded-2xl border border-border px-5 py-2.5 text-sm font-medium transition hover:bg-accent"
-            >
-              <RotateCw className="h-4 w-4" /> 重试
-            </button>
+            <div className="mb-1 text-lg font-bold">处理失败</div>
+            <div className="max-w-xs text-sm text-muted-foreground">{processing.message}</div>
+            <div className="mt-2 text-xs text-muted-foreground">点底部「重试」或「返回修改候选」</div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -81,14 +72,18 @@ export function StepProcessing({ processing, onRetry, onBack }: Props) {
         </div>
       )}
 
-      {/* 处理中/出错时提供返回出口（done 时自动跳 Step3，无需按钮） */}
-      {(isSearch || isFilter || isError) && (
-        <button
-          onClick={onBack}
-          className="touch-target mt-8 flex items-center gap-1 text-xs text-muted-foreground transition hover:text-foreground"
+      {/* done 态短暂显示（正常会立即跳 Step2，此处兜底） */}
+      {processing.phase === 'done' && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="flex flex-col items-center"
         >
-          <ChevronLeft className="h-3.5 w-3.5" /> 返回修改候选
-        </button>
+          <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-3xl bg-primary/15">
+            <CheckCircle2 className="h-9 w-9 text-primary" />
+          </div>
+          <div className="text-lg font-bold">{processing.message}</div>
+        </motion.div>
       )}
     </div>
   )
