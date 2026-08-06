@@ -9,7 +9,7 @@
  * 启动恢复：进程内状态在服务重启时丢失，resetZombiesIfIdle 把残留的 running 任务标记 interrupted
  * （在 listTasks/getTask 入口调，worker 空闲时才清，避免误伤在跑任务）。
  */
-import { prisma } from '@/lib/db'
+import { prisma, setRecommendedBatch } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import type { TaskStatus, TaskType, TaskConfig, TaskProgress, RecommendTaskView } from '@/lib/types/recommend-task'
 import { DEFAULT_PROMPT_SYSTEM, DEFAULT_PROMPT_USER, DEFAULT_PROMPT_USER_FOR_SONGS } from '@/lib/recommend-defaults'
@@ -69,7 +69,7 @@ export function normalizeConfig(c: Partial<TaskConfig> | undefined, taskType: Ta
 }
 
 function emptyProgress(total: number): TaskProgress {
-  return { total, done: 0, currentArtist: null, results: [], selectedTotal: 0, addedTotal: 0, failedTotal: 0 }
+  return { total, done: 0, currentArtist: null, results: [], selectedTotal: 0, addedTotal: 0, failedTotal: 0, rolledBackAt: null }
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -210,6 +210,52 @@ export async function cancelTask(id: string): Promise<RecommendTaskView | null> 
   // running 的：cancelFlag 已设，worker 会在 markDone 时写 cancelled
   const refreshed = await prisma.recommendTask.findUnique({ where: { id } })
   return refreshed ? rowToView(refreshed) : null
+}
+
+/**
+ * 回滚：把该任务实际加入推荐白名单的歌曲（progress.results[].addedUids）撤销为不推荐。
+ *
+ * 前置条件：
+ * - 任务不在 queued/running（必须已结束）
+ * - 未被回滚过（progress.rolledBackAt 为空）
+ * - progress 里记录了 addedUids（旧版本任务无此字段则不可回滚）
+ *
+ * 返回撤销的条数。任务 status 保持不变（done 仍是 done），仅在 progress 标记 rolledBackAt。
+ * 由于 engine 的跨任务去重（existingUids），同一首歌不会被两个任务同时"加入"，
+ * 故按 addedUids 撤销不会误伤其他任务的推荐。
+ */
+export async function rollbackTask(id: string): Promise<{ task: RecommendTaskView | null; removed: number }> {
+  const row = await prisma.recommendTask.findUnique({ where: { id } })
+  if (!row) return { task: null, removed: 0 }
+
+  if (row.status === 'running' || row.status === 'queued') {
+    throw new Error('任务尚未完成，无法回滚')
+  }
+
+  let progress: TaskProgress
+  try {
+    progress = JSON.parse(row.progressJson)
+  } catch {
+    progress = emptyProgress(0)
+  }
+
+  if (progress.rolledBackAt) {
+    throw new Error('该任务已回滚，无需重复操作')
+  }
+
+  const uids = Array.from(new Set((progress.results || []).flatMap((r) => r.addedUids || [])))
+  if (uids.length === 0) {
+    throw new Error('该任务未记录推荐歌曲（可能是旧版本任务），无法回滚')
+  }
+
+  const { updated } = await setRecommendedBatch(uids, false)
+  progress.rolledBackAt = new Date().toISOString()
+  await prisma.recommendTask
+    .update({ where: { id }, data: { progressJson: JSON.stringify(progress) } })
+    .catch((e) => logger.warn('[recommend-worker] rollback progress flush failed', e))
+
+  const refreshed = await prisma.recommendTask.findUnique({ where: { id } })
+  return { task: refreshed ? rowToView(refreshed) : rowToView(row), removed: updated }
 }
 
 export async function deleteTask(id: string): Promise<void> {

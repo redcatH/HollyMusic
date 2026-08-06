@@ -215,7 +215,15 @@ export async function runRecommendTask(
         const { updated } = await setRecommendedBatch(uids, true)
         uids.forEach((u) => existingUids.add(u)) // 标记新加入，避免同任务并发重复加
         done++
-        const r: ArtistResult = { artist, ok: true, selected: selected.length, added: updated, skipped }
+        const r: ArtistResult = {
+          artist,
+          ok: true,
+          selected: selected.length,
+          added: updated,
+          skipped,
+          // 记录本主体写入白名单的 uid，供任务回滚精确撤销
+          addedUids: uids,
+        }
         await onProgress({ done, currentArtist: artist, result: r })
         return r
       } catch (e) {

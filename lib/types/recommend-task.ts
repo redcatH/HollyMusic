@@ -14,6 +14,9 @@ export interface ArtistResult {
   added?: number // 实际加入白名单数
   skipped?: number // 跳过（已在白名单）数
   reason?: string // 失败/跳过原因
+  // 本主体实际写入推荐白名单的 uid 列表（source-songmid）。
+  // 仅在成功加入时填充，回滚时据此精确撤销；旧任务无此字段则不可回滚。
+  addedUids?: string[]
 }
 
 export interface TaskConfig {
@@ -36,6 +39,9 @@ export interface TaskProgress {
   selectedTotal: number
   addedTotal: number
   failedTotal: number
+  // 回滚时间戳（ISO）。非空表示该任务推荐的歌曲已被撤销回滚。
+  // rerun 会重置 progress，此字段随之清空。
+  rolledBackAt?: string | null
 }
 
 export interface RecommendTaskView {
