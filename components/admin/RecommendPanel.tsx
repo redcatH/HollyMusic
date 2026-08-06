@@ -219,10 +219,19 @@ export function RecommendPanel() {
     })
   }
 
+  // 该音源的可选歌曲是否已全部选中（toggle 判断 + 按钮高亮复用）
+  const sourceFullySelected = (src: SourceType) => {
+    const items = selectableResults.filter(s => s.source === src)
+    return items.length > 0 && items.every(s => selected.has(s.uid))
+  }
+
   const selectBySource = (src: SourceType) => {
     setSelected(prev => {
       const next = new Set(prev)
-      selectableResults.filter(s => s.source === src).forEach(s => next.add(s.uid))
+      const items = selectableResults.filter(s => s.source === src)
+      // 已全选 → 取消该源全部；未全选 → 选中该源全部（与「全选」按钮一致的 toggle 语义）
+      if (items.every(s => next.has(s.uid))) items.forEach(s => next.delete(s.uid))
+      else items.forEach(s => next.add(s.uid))
       return next
     })
   }
@@ -474,16 +483,23 @@ export function RecommendPanel() {
                   >
                     反选
                   </button>
-                  {resultSources.map(src => (
-                    <button
-                      key={src}
-                      onClick={() => selectBySource(src)}
-                      className={`rounded px-2 py-0.5 text-[10px] font-medium ${SOURCE_COLORS[src] || 'bg-muted text-muted-foreground'}`}
-                      title={`选中全部 ${SOURCE_SHORT[src]}`}
-                    >
-                      {SOURCE_SHORT[src]}
-                    </button>
-                  ))}
+                  {resultSources.map(src => {
+                    const active = sourceFullySelected(src)
+                    return (
+                      <button
+                        key={src}
+                        onClick={() => selectBySource(src)}
+                        className={`rounded px-2 py-0.5 text-[10px] font-medium ring-1 transition ${
+                          active
+                            ? 'bg-primary text-primary-foreground ring-primary'
+                            : `${SOURCE_COLORS[src] || 'bg-muted text-muted-foreground'} ring-transparent hover:opacity-80`
+                        }`}
+                        title={`${active ? '取消选中' : '选中'}全部 ${SOURCE_SHORT[src]}`}
+                      >
+                        {SOURCE_SHORT[src]}
+                      </button>
+                    )
+                  })}
                   <span className="text-xs text-muted-foreground">已选 {selected.size} 首</span>
                 </div>
                 <button
