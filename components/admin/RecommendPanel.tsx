@@ -14,9 +14,14 @@ import {
   addRecommended,
   removeRecommended,
   removeRecommendedBatch,
+  clearAllRecommended,
+  aiFilterRecommend,
   type AdminRecommendSong,
+  type AISuggestion,
 } from '@/lib/api/admin-recommend'
 import type { Song, SourceType } from '@/lib/types/music'
+import { DEFAULT_PROMPT_AI_ADD, DEFAULT_PROMPT_AI_REMOVE } from '@/lib/recommend-defaults'
+import { loadAICreds, saveAICreds, type AICreds } from '@/lib/ai-creds'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { CoverImage } from '@/components/shared/CoverImage'
@@ -37,6 +42,7 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
+  KeyRound,
 } from 'lucide-react'
 
 const PLATFORMS = ['kw', 'kg', 'tx', 'wy', 'mg'] as const
@@ -97,6 +103,19 @@ export function RecommendPanel() {
 
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
+
+  // ── AI 辅助弹窗（add/list 共用，按 action 区分）──
+  const initialCreds = loadAICreds()
+  const [aiOpen, setAiOpen] = useState(false)
+  const [aiAction, setAiAction] = useState<'add' | 'remove'>('add')
+  const [aiPrompt, setAiPrompt] = useState('')
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
+  const [aiSuggestions, setAiSuggestions] = useState<AISuggestion[]>([])
+  const [aiSelected, setAiSelected] = useState<Set<string>>(new Set())
+  const [aiCreds, setAiCreds] = useState<AICreds>(initialCreds)
+  // 候选快照（开弹窗时锁定，避免搜索结果/列表在弹窗打开期间变化导致 uid 对不上）
+  const [aiCandidates, setAiCandidates] = useState<Array<{ uid: string; name: string | null; singer: string | null; source: string; albumName?: string | null }>>([])
 
   // 已推荐 uid 集合，用于搜索结果标记「已推荐」
   const recommendedUids = useMemo(() => new Set(recommended.map(r => r.uid)), [recommended])
@@ -340,6 +359,112 @@ export function RecommendPanel() {
     }
   }
 
+  const clearAll = async () => {
+    if (total === 0) return
+    if (!confirm(`确定清空全部推荐（共 ${total} 首）？此操作不可撤销。`)) return
+    setBusy(true)
+    setMsg(null)
+    try {
+      const { updated } = await clearAllRecommended()
+      setMsg({ kind: 'success', text: `已清空全部推荐 ${updated} 首` })
+      setSelectedRec(new Set())
+      await reloadRecommended(1, currentListOpts())
+    } catch (e) {
+      setMsg({ kind: 'error', text: e instanceof Error ? e.message : '清空失败' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // ── AI 辅助 ──
+  const openAIAssist = (action: 'add' | 'remove') => {
+    let candidates: Array<{ uid: string; name: string | null; singer: string | null; source: string; albumName?: string | null }>
+    if (action === 'add') {
+      // 优先用选中的；没选中则用全部搜索结果（排除已推荐）
+      const picked = selected.size > 0
+        ? searchResults.filter(s => selected.has(s.uid))
+        : searchResults.filter(s => !recommendedUids.has(s.uid))
+      candidates = picked.map(s => ({ uid: s.uid, name: s.name, singer: s.singer, source: s.source, albumName: s.albumName }))
+    } else {
+      const picked = selectedRec.size > 0
+        ? recommended.filter(r => selectedRec.has(r.uid))
+        : recommended
+      candidates = picked.map(r => ({ uid: r.uid, name: r.name, singer: r.singer, source: r.source, albumName: r.albumName }))
+    }
+    if (candidates.length === 0) {
+      setMsg({ kind: 'error', text: action === 'add' ? '没有可筛选的候选歌曲' : '没有可筛选的推荐歌曲' })
+      return
+    }
+    setAiAction(action)
+    setAiCandidates(candidates)
+    setAiPrompt('')
+    setAiSuggestions([])
+    setAiSelected(new Set())
+    setAiError(null)
+    setAiCreds(loadAICreds())
+    setAiOpen(true)
+  }
+
+  const runAIFilter = async () => {
+    setAiLoading(true)
+    setAiError(null)
+    try {
+      const { suggestions } = await aiFilterRecommend({
+        action: aiAction,
+        songs: aiCandidates,
+        prompt: aiPrompt,
+        apiKey: aiCreds.apiKey.trim(),
+        baseUrl: aiCreds.baseUrl.trim() || undefined,
+        model: aiCreds.model.trim() || undefined,
+      })
+      setAiSuggestions(suggestions)
+      // 默认勾选"建议执行"的项：add 模式勾 keep，remove 模式勾 remove
+      const targetAction = aiAction === 'add' ? 'keep' : 'remove'
+      setAiSelected(new Set(suggestions.filter(s => s.action === targetAction).map(s => s.uid)))
+      saveAICreds(aiCreds)
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : 'AI 筛选失败')
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
+  const confirmAI = async () => {
+    const uids = Array.from(aiSelected)
+    if (uids.length === 0) {
+      setAiOpen(false)
+      return
+    }
+    setBusy(true)
+    setMsg(null)
+    try {
+      if (aiAction === 'add') {
+        const { updated } = await addRecommended(uids)
+        setMsg({ kind: 'success', text: `AI 辅助：已加入推荐 ${updated} 首` })
+        setSelected(new Set())
+      } else {
+        const { updated } = await removeRecommendedBatch(uids)
+        setMsg({ kind: 'success', text: `AI 辅助：已取消推荐 ${updated} 首` })
+        setSelectedRec(new Set())
+      }
+      setAiOpen(false)
+      await reloadRecommended(1, currentListOpts())
+    } catch (e) {
+      setMsg({ kind: 'error', text: e instanceof Error ? e.message : '执行失败' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const toggleAiSelect = (uid: string) => {
+    setAiSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(uid)) next.delete(uid)
+      else next.add(uid)
+      return next
+    })
+  }
+
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
 
   // 手动刷新：行为随当前 Tab 决定
@@ -510,6 +635,15 @@ export function RecommendPanel() {
                   {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
                   加入推荐{selected.size > 0 ? ` (${selected.size})` : ''}
                 </button>
+                <button
+                  onClick={() => openAIAssist('add')}
+                  disabled={busy || searchResults.length === 0}
+                  className="flex items-center gap-1 rounded-full border border-primary/50 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-50"
+                  title="把当前列表/选中项交给 AI 筛选，确认后再加入推荐"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  AI 辅助筛选
+                </button>
               </div>
               <div className="divide-y divide-border">
                 {searchResults.map(s => {
@@ -613,6 +747,22 @@ export function RecommendPanel() {
               取消推荐 ({selectedRec.size})
             </button>
           )}
+          <button
+            onClick={() => openAIAssist('remove')}
+            disabled={busy || recommended.length === 0}
+            className="flex items-center gap-1 rounded-full border border-primary/50 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-50"
+            title="把当前列表/选中项交给 AI 筛选，确认后再取消推荐"
+          >
+            <Sparkles className="h-3.5 w-3.5" /> AI 辅助取消
+          </button>
+          <button
+            onClick={clearAll}
+            disabled={busy || total === 0}
+            className="flex items-center gap-1 rounded-full border border-destructive/50 px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
+            title="清空全部推荐（不可撤销）"
+          >
+            <Trash2 className="h-3.5 w-3.5" /> 清空全部
+          </button>
         </div>
 
         {/* 分页 */}
@@ -722,6 +872,165 @@ export function RecommendPanel() {
           </div>
         )}
       </div>
+
+      {/* ── AI 辅助弹窗 ── */}
+      {aiOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => !busy && !aiLoading && setAiOpen(false)}
+        >
+          <div
+            className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-border bg-background p-5 shadow-lg"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="flex items-center gap-2 text-sm font-bold">
+                <Sparkles className="h-4 w-4 text-primary" />
+                {aiAction === 'add' ? 'AI 辅助推荐' : 'AI 辅助取消'}
+              </h3>
+              <button
+                onClick={() => setAiOpen(false)}
+                disabled={busy || aiLoading}
+                className="text-muted-foreground hover:text-foreground disabled:opacity-50"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="mb-3 text-xs text-muted-foreground">
+              共 {aiCandidates.length} 首候选。AI 只给建议，确认后才真正{aiAction === 'add' ? '加入' : '取消'}推荐。
+            </p>
+
+            {/* 凭证 */}
+            <div className="mb-3 grid gap-2 md:grid-cols-3">
+              <div className="md:col-span-2">
+                <label className="mb-1 block text-[10px] text-muted-foreground">API Base URL</label>
+                <input
+                  value={aiCreds.baseUrl}
+                  onChange={e => setAiCreds({ ...aiCreds, baseUrl: e.target.value })}
+                  className="w-full rounded-md bg-background px-2 py-1.5 text-xs outline-none ring-1 ring-border focus:ring-primary"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[10px] text-muted-foreground">模型</label>
+                <input
+                  value={aiCreds.model}
+                  onChange={e => setAiCreds({ ...aiCreds, model: e.target.value })}
+                  className="w-full rounded-md bg-background px-2 py-1.5 text-xs outline-none ring-1 ring-border focus:ring-primary"
+                />
+              </div>
+              <div className="md:col-span-3">
+                <label className="mb-1 flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <KeyRound className="h-3 w-3" /> API Key（留空用服务端 OPENAI_API_KEY）
+                </label>
+                <input
+                  type="password"
+                  value={aiCreds.apiKey}
+                  onChange={e => setAiCreds({ ...aiCreds, apiKey: e.target.value })}
+                  placeholder="sk-..."
+                  autoComplete="off"
+                  className="w-full rounded-md bg-background px-2 py-1.5 text-xs outline-none ring-1 ring-border focus:ring-primary"
+                />
+              </div>
+            </div>
+
+            {/* 提示词 */}
+            <div className="mb-3">
+              <div className="mb-1 flex items-center justify-between">
+                <label className="text-[10px] text-muted-foreground">补充需求（可空，留空用默认规则）</label>
+                <button
+                  onClick={() => setAiPrompt(aiAction === 'add' ? DEFAULT_PROMPT_AI_ADD : DEFAULT_PROMPT_AI_REMOVE)}
+                  className="text-[10px] text-primary hover:underline"
+                >
+                  查看默认规则
+                </button>
+              </div>
+              <textarea
+                value={aiPrompt}
+                onChange={e => setAiPrompt(e.target.value)}
+                rows={2}
+                placeholder={aiAction === 'add' ? '如：只要华语流行，排除英文歌' : '如：取消所有 live 版和冷门翻唱'}
+                className="w-full rounded-md bg-background px-2 py-1.5 text-xs outline-none ring-1 ring-border focus:ring-primary"
+              />
+            </div>
+
+            <button
+              onClick={runAIFilter}
+              disabled={aiLoading}
+              className="mb-3 flex items-center gap-1 rounded-full bg-primary px-4 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+            >
+              {aiLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+              调用 AI 筛选
+            </button>
+
+            {aiError && (
+              <div className="mb-3 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">{aiError}</div>
+            )}
+
+            {/* 建议结果 */}
+            {aiSuggestions.length > 0 && (
+              <div className="mb-3 max-h-[40vh] overflow-y-auto rounded-md border border-border">
+                {aiSuggestions.map(s => {
+                  const song = aiCandidates.find(c => c.uid === s.uid)
+                  if (!song) return null
+                  const checked = aiSelected.has(s.uid)
+                  const isTarget = (aiAction === 'add' && s.action === 'keep') || (aiAction === 'remove' && s.action === 'remove')
+                  return (
+                    <div key={s.uid} className="flex items-center gap-2 border-b border-border px-3 py-2 text-xs last:border-b-0">
+                      <button onClick={() => toggleAiSelect(s.uid)} className="shrink-0">
+                        {checked ? (
+                          <CheckSquare className="h-4 w-4 text-primary" />
+                        ) : (
+                          <Square className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </button>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate font-medium">{song.name || '未知'}</div>
+                        <div className="truncate text-muted-foreground">{song.singer || '-'}</div>
+                      </div>
+                      <span
+                        className={`shrink-0 rounded px-2 py-0.5 text-[10px] font-medium ${
+                          isTarget
+                            ? aiAction === 'add'
+                              ? 'bg-green-500/15 text-green-600'
+                              : 'bg-destructive/15 text-destructive'
+                            : 'bg-muted text-muted-foreground'
+                        }`}
+                      >
+                        {aiAction === 'add'
+                          ? s.action === 'keep' ? '建议加入' : '不建议'
+                          : s.action === 'remove' ? '建议取消' : '建议保留'}
+                      </span>
+                      {s.reason && (
+                        <span className="max-w-[40%] shrink-0 truncate text-muted-foreground" title={s.reason}>
+                          {s.reason}
+                        </span>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setAiOpen(false)}
+                disabled={busy}
+                className="rounded-full border border-border px-4 py-1.5 text-xs text-muted-foreground hover:bg-accent disabled:opacity-50"
+              >
+                取消
+              </button>
+              <button
+                onClick={confirmAI}
+                disabled={busy || aiSelected.size === 0}
+                className="flex items-center gap-1 rounded-full bg-primary px-4 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+              >
+                {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                确认执行{aiSelected.size > 0 ? ` (${aiSelected.size})` : ''}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

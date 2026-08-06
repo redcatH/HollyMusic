@@ -16,12 +16,14 @@ import {
   rerunRecommendTask,
   cancelRecommendTask,
   deleteRecommendTask,
+  aiGenerateList,
   type RecommendTaskView,
   type TaskStatus,
   type TaskType,
   type TaskConfig,
 } from '@/lib/api/admin-recommend-tasks'
 import { DEFAULT_PROMPT_SYSTEM, DEFAULT_PROMPT_USER, DEFAULT_PROMPT_USER_FOR_SONGS } from '@/lib/recommend-defaults'
+import { loadAICreds, saveAICreds, type AICreds } from '@/lib/ai-creds'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
 import {
@@ -39,6 +41,7 @@ import {
   Settings2,
   X,
   KeyRound,
+  Sparkles,
 } from 'lucide-react'
 
 const PLATFORMS = ['kw', 'kg', 'tx', 'wy', 'mg'] as const
@@ -66,26 +69,6 @@ const STATUS_STYLE: Record<TaskStatus, string> = {
   failed: 'bg-destructive/15 text-destructive',
   interrupted: 'bg-orange-500/15 text-orange-600',
   cancelled: 'bg-muted text-muted-foreground',
-}
-
-// sessionStorage 暂存 key/baseUrl/model（不进 localStorage，符合"临时使用"）
-const STORE_KEY = 'recommend-task-creds'
-type Creds = { apiKey: string; baseUrl: string; model: string }
-function loadCreds(): Creds {
-  try {
-    const raw = sessionStorage.getItem(STORE_KEY)
-    if (raw) return { apiKey: '', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', ...JSON.parse(raw) }
-  } catch {
-    /* ignore */
-  }
-  return { apiKey: '', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' }
-}
-function saveCreds(c: Creds) {
-  try {
-    sessionStorage.setItem(STORE_KEY, JSON.stringify(c))
-  } catch {
-    /* ignore */
-  }
 }
 
 function parseExtraBody(text: string): Record<string, unknown> {
@@ -284,7 +267,7 @@ export function RecommendTaskPanel() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
   // ── 创建表单 ──
-  const initialCreds = loadCreds()
+  const initialCreds = loadAICreds()
   const [taskType, setTaskType] = useState<TaskType>('artists')
   const [name, setName] = useState('')
   const [artistsText, setArtistsText] = useState('')
@@ -309,9 +292,58 @@ export function RecommendTaskPanel() {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
 
+  // ── AI 生成名单弹窗 ──
+  const [genOpen, setGenOpen] = useState(false)
+  const [genPrompt, setGenPrompt] = useState('')
+  const [genLoading, setGenLoading] = useState(false)
+  const [genError, setGenError] = useState<string | null>(null)
+  const [genItems, setGenItems] = useState<string[]>([])
+  const [genCreds, setGenCreds] = useState<AICreds>(initialCreds)
+
   // ── 重跑弹窗（可编辑全部参数后重跑）──
   const [rerun, setRerun] = useState<RerunForm | null>(null)
   const updateRerun = (patch: Partial<RerunForm>) => setRerun((r) => (r ? { ...r, ...patch } : r))
+
+  const openGenerate = () => {
+    setGenPrompt('')
+    setGenItems([])
+    setGenError(null)
+    setGenCreds(loadAICreds())
+    setGenOpen(true)
+  }
+
+  const runGenerate = async () => {
+    if (!genPrompt.trim()) {
+      setGenError('请输入需求描述')
+      return
+    }
+    setGenLoading(true)
+    setGenError(null)
+    try {
+      const { items } = await aiGenerateList({
+        taskType,
+        prompt: genPrompt,
+        apiKey: genCreds.apiKey.trim(),
+        baseUrl: genCreds.baseUrl.trim() || undefined,
+        model: genCreds.model.trim() || undefined,
+      })
+      setGenItems(items)
+      saveAICreds(genCreds)
+    } catch (e) {
+      setGenError(e instanceof Error ? e.message : '生成失败')
+    } finally {
+      setGenLoading(false)
+    }
+  }
+
+  // 把生成结果追加到名单（保留已有内容，去重）
+  const applyGenerate = () => {
+    const existing = artistsText.split('\n').map((s) => s.trim()).filter(Boolean)
+    const merged = Array.from(new Set([...existing, ...genItems]))
+    setArtistsText(merged.join('\n'))
+    setMsg({ kind: 'success', text: `已填入 ${genItems.length} 个${taskType === 'songs' ? '歌曲' : '歌手'}（合并去重后 ${merged.length} 个）` })
+    setGenOpen(false)
+  }
 
   const reload = useCallback(async () => {
     setListError(null)
@@ -363,7 +395,7 @@ export function RecommendTaskPanel() {
         promptUser,
       }
       await createRecommendTask({ name: name.trim(), taskType, artists, config, apiKey: apiKey.trim() })
-      saveCreds({ apiKey: apiKey.trim(), baseUrl, model })
+      saveAICreds({ apiKey: apiKey.trim(), baseUrl, model })
       const unit = taskType === 'songs' ? '首歌' : '位歌手'
       setMsg({ kind: 'success', text: `任务已创建，${artists.length} ${unit}已入队` })
       setName('')
@@ -399,7 +431,7 @@ export function RecommendTaskPanel() {
   const openRerun = (t: RecommendTaskView) => {
     setRerun({
       target: t,
-      key: apiKey || loadCreds().apiKey,
+      key: apiKey || loadAICreds().apiKey,
       sources: t.config.sources,
       concurrency: t.config.concurrency,
       baseUrl: t.config.openaiBaseUrl,
@@ -430,7 +462,7 @@ export function RecommendTaskPanel() {
         promptUser: rerun.promptUser,
       }
       await rerunRecommendTask(rerun.target.id, { apiKey: rerun.key.trim(), config })
-      saveCreds({ apiKey: rerun.key.trim(), baseUrl: rerun.baseUrl, model: rerun.model })
+      saveAICreds({ apiKey: rerun.key.trim(), baseUrl: rerun.baseUrl, model: rerun.model })
       setRerun(null)
       setMsg({ kind: 'success', text: '任务已按新参数重新入队' })
       await reload()
@@ -503,9 +535,18 @@ export function RecommendTaskPanel() {
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs text-muted-foreground">
-            {taskType === 'songs' ? '歌曲名单（每行一首歌）' : '歌手名单（每行一个）'}
-          </label>
+          <div className="mb-1 flex items-center justify-between">
+            <label className="block text-xs text-muted-foreground">
+              {taskType === 'songs' ? '歌曲名单（每行一首歌）' : '歌手名单（每行一个）'}
+            </label>
+            <button
+              onClick={openGenerate}
+              className="flex items-center gap-1 text-[10px] text-primary hover:underline"
+              title="用 AI 根据需求生成名单"
+            >
+              <Sparkles className="h-3 w-3" /> AI 生成
+            </button>
+          </div>
           <textarea
             value={artistsText}
             onChange={(e) => setArtistsText(e.target.value)}
@@ -642,6 +683,116 @@ export function RecommendTaskPanel() {
               >
                 {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
                 按新参数重跑
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI 生成名单弹窗 */}
+      {genOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => !genLoading && setGenOpen(false)}
+        >
+          <div
+            className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-lg border border-border bg-background p-5 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="flex items-center gap-2 text-sm font-bold">
+                <Sparkles className="h-4 w-4 text-primary" />
+                AI 生成{taskType === 'songs' ? '歌曲' : '歌手'}名单
+              </h3>
+              <button onClick={() => setGenOpen(false)} disabled={genLoading} className="text-muted-foreground hover:text-foreground disabled:opacity-50">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* 凭证 */}
+            <div className="mb-3 grid gap-2 md:grid-cols-3">
+              <div className="md:col-span-2">
+                <label className="mb-1 block text-[10px] text-muted-foreground">API Base URL</label>
+                <input
+                  value={genCreds.baseUrl}
+                  onChange={(e) => setGenCreds({ ...genCreds, baseUrl: e.target.value })}
+                  className="w-full rounded-md bg-background px-2 py-1.5 text-xs outline-none ring-1 ring-border focus:ring-primary"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[10px] text-muted-foreground">模型</label>
+                <input
+                  value={genCreds.model}
+                  onChange={(e) => setGenCreds({ ...genCreds, model: e.target.value })}
+                  className="w-full rounded-md bg-background px-2 py-1.5 text-xs outline-none ring-1 ring-border focus:ring-primary"
+                />
+              </div>
+              <div className="md:col-span-3">
+                <label className="mb-1 flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <KeyRound className="h-3 w-3" /> API Key（留空用服务端 OPENAI_API_KEY）
+                </label>
+                <input
+                  type="password"
+                  value={genCreds.apiKey}
+                  onChange={(e) => setGenCreds({ ...genCreds, apiKey: e.target.value })}
+                  placeholder="sk-..."
+                  autoComplete="off"
+                  className="w-full rounded-md bg-background px-2 py-1.5 text-xs outline-none ring-1 ring-border focus:ring-primary"
+                />
+              </div>
+            </div>
+
+            <div className="mb-3">
+              <label className="mb-1 block text-[10px] text-muted-foreground">需求描述</label>
+              <textarea
+                value={genPrompt}
+                onChange={(e) => setGenPrompt(e.target.value)}
+                rows={2}
+                placeholder={taskType === 'songs' ? '如：90 年代经典粤语金曲' : '如：华语流行男歌手，2000 年后活跃'}
+                className="w-full rounded-md bg-background px-2 py-1.5 text-xs outline-none ring-1 ring-border focus:ring-primary"
+              />
+            </div>
+
+            <button
+              onClick={runGenerate}
+              disabled={genLoading}
+              className="mb-3 flex items-center gap-1 rounded-full bg-primary px-4 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+            >
+              {genLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+              生成名单
+            </button>
+
+            {genError && (
+              <div className="mb-3 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">{genError}</div>
+            )}
+
+            {genItems.length > 0 && (
+              <div className="mb-3 max-h-[35vh] overflow-y-auto rounded-md border border-border p-2">
+                <div className="flex flex-wrap gap-1">
+                  {genItems.map((it, i) => (
+                    <span key={i} className="rounded bg-accent px-2 py-0.5 text-xs">
+                      {it}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setGenOpen(false)}
+                disabled={genLoading}
+                className="rounded-full border border-border px-4 py-1.5 text-xs text-muted-foreground hover:bg-accent disabled:opacity-50"
+              >
+                取消
+              </button>
+              <button
+                onClick={applyGenerate}
+                disabled={genLoading || genItems.length === 0}
+                className="flex items-center gap-1 rounded-full bg-primary px-4 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                填入名单{genItems.length > 0 ? ` (${genItems.length})` : ''}
               </button>
             </div>
           </div>
