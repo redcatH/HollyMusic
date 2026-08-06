@@ -182,6 +182,13 @@ npx prisma db push
 npx prisma generate
 ```
 
+> ⚠️ **拉取新代码后，本地启动前务必同步 DB schema**：
+> ```bash
+> npx prisma migrate dev     # 应用未执行的 migration（推荐）
+> # 或 npx prisma db push    # 直接把 schema 推到本地 db（不记 migration 历史）
+> ```
+> 若本地 db 落后于代码 schema（如新增了列），Prisma 全量列查询会抛错并被 service 层 catch，导致 `/api/cover` 等接口**静默回退默认值**（封面全变默认图），且只在服务端日志报错、前端无感知。可用 `npx prisma migrate status` 检查是否有未应用的 migration。
+
 ### 4. 启动开发服务器
 
 同时启动 Next.js API（3000）与 Vite 前端（5173）：

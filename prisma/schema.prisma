@@ -188,3 +188,23 @@ model AudioCache {
 
   @@index([lastAccessAt])
 }
+
+/// AI 推荐任务（管理员后台批量按歌手跑 AI 筛选 → 写推荐白名单）。
+/// 进程内单 worker 串行执行，同一时刻只跑一个，其余 status=queued 排队。
+/// API key 不落库，只在 worker 运行时内存里持有（见 recommend-worker.ts）。
+model RecommendTask {
+  id           String   @id @default(cuid())
+  name         String                    // 任务名
+  artistsJson  String                    // JSON: ["周杰伦","林俊杰"]（去重后）
+  configJson   String                    // JSON: {sources, perSource, maxCandidates, concurrency, openaiBaseUrl, openaiModel, extraBody, promptSystem, promptUser}
+  status       String   @default("queued") // queued|running|done|failed|interrupted|cancelled
+  progressJson String   @default("{}")    // JSON: {total, done, currentArtist, results:[...], selectedTotal, addedTotal, failedTotal}
+  error        String?                   // 整体失败原因
+  createdBy    String?
+  createdAt    DateTime @default(now())
+  startedAt    DateTime?
+  finishedAt   DateTime?
+
+  @@index([status])
+  @@index([createdAt])
+}
