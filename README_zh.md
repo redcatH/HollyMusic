@@ -35,6 +35,9 @@ npm install
 
 ```text
 DATABASE_URL=file:./prisma/data/music.db
+# AI 功能（管理员 AI 推荐任务 + 用户 AI 协助建歌单），详见 .env.example
+OPENAI_API_KEY=sk-xxx
+# 可选：OPENAI_BASE_URL / OPENAI_MODEL（OpenAI 兼容服务均可）
 # 其它可选项：PORT, NODE_ENV 等
 ```
 
@@ -80,6 +83,17 @@ docker-compose up --build -d
 
 - 新增音源脚本：将 JS 脚本放入 `custom-sources/`，并在 `config/music-sources.json` 中注册（参照现有示例）。
 - 音源脚本应遵循项目内 `lx-env-simulator` 的约定（实现 `musicSearch`, `musicInfo`, `lyric`, `pic`, `musicUrl` 等函数），项目通过 `lib/music-source-manager.ts` 动态加载并调用这些方法。
+
+**AI 功能（可选）**
+
+内置两个 AI 辅助功能，均走 OpenAI 兼容接口（`/chat/completions`），由 `OPENAI_API_KEY` 驱动：
+
+- **管理员 AI 推荐任务**（后台 `/admin/recommend`）：批量按歌手/歌曲筛选入库，写入推荐白名单。前端可临时填 key，未填时回退到服务端 `OPENAI_API_KEY`。
+- **AI 协助建歌单**（用户侧 `/playlists` →「AI 建歌单」）：所有登录用户可用。描述需求 → AI 生成候选 → 搜索真实歌曲 → AI 过滤多版本 → 用户确认 → 创建歌单。**强制使用服务端 `OPENAI_API_KEY`，不向用户暴露**；只搜后台已启用的音源。
+
+在 `.env` 配 `OPENAI_API_KEY`（必需）、可选 `OPENAI_BASE_URL`（默认 `https://api.openai.com/v1`，可指向 DeepSeek / 通义 / 本地 LMDeploy 等 OpenAI 兼容服务）、可选 `OPENAI_MODEL`（默认 `gpt-4o-mini`）。未配置时：管理员任务需在前端填 key、用户 AI 建歌单不可用（提示未配置）。
+
+> AI 建歌单面向所有登录用户，调用成本由服务端承担；公网部署建议自行加 per-user 频率限制。
 
 **调试与常见问题**
 - 无法打开 DB：参考上面的迁移步骤与文件权限检查。Windows 下注意文件锁与权限；如果使用 Docker，避免同时由容器与本地进程并发写入同一 sqlite 文件。
