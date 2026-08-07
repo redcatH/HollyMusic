@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Home, Search, Heart, ListMusic, History, Music2, LogIn, LogOut, User, ChevronUp, Settings } from 'lucide-react'
+import { Home, Search, Heart, ListMusic, History, Music2, LogIn, LogOut, User, ChevronUp, Settings, KeyRound } from 'lucide-react'
 import { useAuthStore } from '@/hooks/useAuth'
 
 const nav = [
@@ -89,6 +89,12 @@ function SidebarContent({ onNavigate }: ContentProps) {
     navigate('/admin')
   }
 
+  const goChangePassword = () => {
+    setMenuOpen(false)
+    onNavigate?.()
+    navigate('/change-password')
+  }
+
   return (
     <>
       <div className="flex items-center gap-2 px-3 py-4">
@@ -134,6 +140,13 @@ function SidebarContent({ onNavigate }: ContentProps) {
                     系统管理
                   </button>
                 )}
+                <button
+                  onClick={goChangePassword}
+                  className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                >
+                  <KeyRound className="h-5 w-5" />
+                  修改密码
+                </button>
                 <button
                   onClick={handleLogout}
                   className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
