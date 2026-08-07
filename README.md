@@ -75,10 +75,9 @@ Holly Music 聚合多个音源（QQ / 网易 / 酷我 / 酷狗 / 咪咕等），
 ```
 ├── app/                        # Next.js 后端（仅 API，无页面）
 │   ├── api/                    # REST API（auth/audio/music-url/lyrics/admin...）
-│   │   ├── admin/              # admin 专属（users / sources / cache）
+│   │   ├── admin/              # admin 专属（users / login-locks / sources / cache）
 │   │   ├── audio/              # 音频流 serve（磁盘缓存 + Range）
-│   │   ├── auth/               # 登录/登出/会话
-│   │   ├── cache/clear/        # 清理内存缓存
+│   │   ├── auth/               # 登录/登出/会话/改密
 │   │   ├── cover/[id]/         # 封面代理
 │   │   ├── download/           # 下载代理（需登录）
 │   │   ├── favorites/          # 收藏（含 /check）
@@ -264,9 +263,10 @@ admin 登录后，侧边栏头像下拉 →「音源管理」：
 
 | 路径 | 方法 | 说明 | 鉴权 |
 |------|------|------|------|
-| `/api/auth/login` | POST | 登录 | 公开 |
+| `/api/auth/login` | POST | 登录（含 IP 失败限速） | 公开 |
 | `/api/auth/logout` | POST | 登出 | 公开 |
 | `/api/auth/me` | GET | 当前会话 | 公开 |
+| `/api/auth/change-password` | POST | 自助修改密码 | 需登录 |
 | `/api/search` | GET | 搜索 | 公开 |
 | `/api/music-url` | POST | 获取播放地址 | 公开 |
 | `/api/lyrics` | GET | 获取歌词 | 公开 |
@@ -284,11 +284,11 @@ admin 登录后，侧边栏头像下拉 →「音源管理」：
 | `/api/playlists/[id]/songs` | POST/DELETE | 歌单曲目增删 | 需登录 |
 | `/api/admin/users` | GET/POST | 用户管理 | **仅 admin** |
 | `/api/admin/users/[id]` | GET/PUT/DELETE | 单用户操作 | **仅 admin** |
+| `/api/admin/login-locks` | GET/POST | 登录锁定查看/解锁 | **仅 admin** |
 | `/api/admin/sources` | GET/POST | 音源配置管理 | **仅 admin** |
 | `/api/admin/sources/[id]` | PUT/DELETE | 单音源操作（含关联脚本） | **仅 admin** |
 | `/api/admin/sources/upload` | POST | 上传音源脚本（预校验+自动注册） | **仅 admin** |
 | `/api/admin/cache` | GET/POST | 音频磁盘缓存查询/清理 | **仅 admin** |
-| `/api/cache/clear` | POST | 清理内存缓存（search/url/all） | 公开 |
 | `/rest/[method]` | GET/POST | Subsonic 协议入口（外部客户端访问） | 公开 |
 
 统一响应格式：`{ success: boolean, data?: T, error?: { code, message } }`
@@ -299,21 +299,23 @@ admin 登录后，侧边栏头像下拉 →「音源管理」：
 
 项目有两层缓存：
 
-1. **内存缓存**（`lib/cache-manager.ts`）：搜索结果与播放 URL，默认 TTL 210 分钟（可由 `SEARCH_CACHE_TTL_MS` 调整）。通过 `/api/cache/clear` 清理：
+1. **内存缓存**（`lib/cache-manager.ts`）：搜索结果与播放 URL，默认 TTL 210 分钟（可由 `SEARCH_CACHE_TTL_MS` 调整）。通过 `/api/admin/cache` 清理（需管理员）：
 
    ```bash
    # 清理搜索缓存
-   curl -X POST https://<你的域名>/api/cache/clear \
+   curl -X POST https://<你的域名>/api/admin/cache \
      -H "Content-Type: application/json" \
+     -H "Cookie: holly_user=admin; holly_sig=<你的签名>" \
      -d '{"type":"search"}'
 
-   # 清理全部缓存（搜索 + URL）
-   curl -X POST https://<你的域名>/api/cache/clear \
+   # 清理全部缓存（搜索 + URL + 音频磁盘）
+   curl -X POST https://<你的域名>/api/admin/cache \
      -H "Content-Type: application/json" \
+     -H "Cookie: holly_user=admin; holly_sig=<你的签名>" \
      -d '{"type":"all"}'
    ```
 
-   支持 `search` / `url` / `all` 三种类型。若 nginx 强制 HTTP→HTTPS，请直接用 `https://` 或给 curl 加 `-L`。
+   支持 `search` / `url` / `audio` / `all` / `scan-orphans` / `clean-orphans` 类型。若 nginx 强制 HTTP→HTTPS，请直接用 `https://` 或给 curl 加 `-L`。
 
 2. **音频磁盘缓存**（服务端落盘，`ENABLE_FILE_CACHE=true` 时启用）：LRU 自动清理，admin 可通过 `/api/admin/cache` 查询/清理。
 
@@ -339,6 +341,9 @@ admin 登录后，侧边栏头像下拉 →「音源管理」：
 ## 🛡 安全说明
 
 - **密码存储**：当前为明文（`User.subsonicSecret`），与 Subsonic 协议的 `md5(secret+s)` 校验兼容。DB 文件务必做好权限控制。
+- **初始管理员**：首次启动自动创建 `admin` 账户并生成**随机初始密码**（打印在服务端启动日志，仅显示一次），登录后强制要求修改密码。历史仍使用 `admin/admin` 弱口令的账户会在启动时被重置为随机密码并标记待改密。
+- **登录限速**：按客户端 IP 维度，5 分钟内失败 10 次将锁定该 IP 15 分钟。管理员可在后台「登录锁定」Tab 查看锁定列表并手动解锁。
+- **强制改密**：首次登录或管理员重置密码后，`mustChangePassword` 标记为 true，前端会拦截到改密页直到完成修改。
 - **鉴权**：签名 Cookie（HMAC-SHA256），生产环境必须设置 `AUTH_SECRET`（≥32 位）
 - **用户管理保护**：admin 账户不可删除/改用户名，禁止删除当前登录用户，后端 `requireAdmin()` 强校验
 

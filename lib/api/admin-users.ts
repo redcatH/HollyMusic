@@ -9,6 +9,7 @@ export interface AdminUser {
   username: string
   isAdmin: boolean
   hasPassword: boolean
+  mustChangePassword: boolean
   lastLogin: string | null
   lastSeen: string | null
   lastSeenIp: string | null

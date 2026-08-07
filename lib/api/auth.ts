@@ -5,6 +5,7 @@
 export interface MeResponse {
   authenticated: boolean
   username: string | null
+  mustChangePassword: boolean
 }
 
 /**
@@ -20,7 +21,7 @@ export async function getMe(): Promise<MeResponse> {
   return json.data as MeResponse
 }
 
-export async function login(username: string, password: string): Promise<{ username: string }> {
+export async function login(username: string, password: string): Promise<{ username: string; mustChangePassword: boolean }> {
   const res = await fetch('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -30,7 +31,7 @@ export async function login(username: string, password: string): Promise<{ usern
   if (!res.ok || !json.success) {
     throw new Error(json.error?.message || '登录失败')
   }
-  return json.data.user as { username: string }
+  return json.data.user as { username: string; mustChangePassword: boolean }
 }
 
 export async function logout(): Promise<void> {
@@ -42,4 +43,19 @@ export async function logout(): Promise<void> {
  */
 export async function heartbeat(): Promise<void> {
   await fetch('/api/auth/heartbeat', { method: 'POST' }).catch(() => {})
+}
+
+/**
+ * 自助修改密码。改密成功后 mustChangePassword 会被服务端清除。
+ */
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  const res = await fetch('/api/auth/change-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ currentPassword, newPassword }),
+  })
+  const json = await res.json()
+  if (!res.ok || !json.success) {
+    throw new Error(json.error?.message || '修改密码失败')
+  }
 }

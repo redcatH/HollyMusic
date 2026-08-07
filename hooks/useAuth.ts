@@ -8,7 +8,7 @@
  */
 
 import { create } from 'zustand'
-import { getMe, login as apiLogin, logout as apiLogout, heartbeat } from '@/lib/api/auth'
+import { getMe, login as apiLogin, logout as apiLogout, heartbeat, changePassword as apiChangePassword } from '@/lib/api/auth'
 
 const HEARTBEAT_INTERVAL_MS = 2 * 60 * 1000
 
@@ -31,38 +31,48 @@ function stopHeartbeat() {
 interface AuthStore {
   authenticated: boolean | null
   username: string | null
+  /** 是否需要强制修改密码（首次登录/管理员重置后为 true） */
+  mustChangePassword: boolean
   loading: boolean
   init: () => Promise<void>
   login: (username: string, password: string) => Promise<void>
   logout: () => Promise<void>
+  /** 自助改密，成功后清除 mustChangePassword */
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>
 }
 
 export const useAuthStore = create<AuthStore>((set) => ({
   authenticated: null,
   username: null,
+  mustChangePassword: false,
   loading: false,
 
   init: async () => {
     set({ loading: true })
     try {
       const me = await getMe()
-      set({ authenticated: me.authenticated, username: me.username, loading: false })
+      set({ authenticated: me.authenticated, username: me.username, mustChangePassword: me.mustChangePassword, loading: false })
       if (me.authenticated) startHeartbeat()
     } catch {
-      set({ authenticated: false, username: null, loading: false })
+      set({ authenticated: false, username: null, mustChangePassword: false, loading: false })
     }
   },
 
   login: async (username, password) => {
     const res = await apiLogin(username, password)
-    set({ authenticated: true, username: res.username })
+    set({ authenticated: true, username: res.username, mustChangePassword: res.mustChangePassword })
     startHeartbeat()
   },
 
   logout: async () => {
     stopHeartbeat()
     await apiLogout()
-    set({ authenticated: false, username: null })
+    set({ authenticated: false, username: null, mustChangePassword: false })
+  },
+
+  changePassword: async (currentPassword, newPassword) => {
+    await apiChangePassword(currentPassword, newPassword)
+    set({ mustChangePassword: false })
   },
 }))
 

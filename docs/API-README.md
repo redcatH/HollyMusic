@@ -174,7 +174,7 @@ curl http://localhost:3000/api/health
 
 ### 4. 清理缓存
 
-**端点**: `POST /api/cache/clear`
+**端点**: `POST /api/admin/cache`（仅管理员）
 
 **请求体**:
 ```json
@@ -184,12 +184,13 @@ curl http://localhost:3000/api/health
 ```
 
 **参数**:
-- `type` (可选): 缓存类型，支持 `all` (全部), `search` (搜索), `url` (播放链接)，默认 `all`
+- `type` (可选): 缓存类型，支持 `all` (全部), `search` (搜索), `url` (播放链接), `audio` (音频磁盘), `scan-orphans` (扫描孤儿), `clean-orphans` (清理孤儿)，默认 `all`
 
 **示例请求**:
 ```bash
-curl -X POST http://localhost:3000/api/cache/clear \
+curl -X POST http://localhost:3000/api/admin/cache \
   -H "Content-Type: application/json" \
+  -H "Cookie: holly_user=admin; holly_sig=<你的签名>" \
   -d '{"type": "all"}'
 ```
 

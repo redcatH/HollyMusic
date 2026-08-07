@@ -23,6 +23,8 @@ export interface RequestUser {
 export interface AuthState {
   authenticated: boolean
   user: RequestUser | null
+  /** 是否需要强制修改密码（首次登录/弱口令重置后为 true） */
+  mustChangePassword: boolean
 }
 
 /**
@@ -64,14 +66,14 @@ export function isAdmin(username: string | null | undefined): boolean {
 export async function getAuthState(request: NextRequest): Promise<AuthState> {
   const session = verifySession(request)
   if (!session.authenticated || !session.username) {
-    return { authenticated: false, user: null }
+    return { authenticated: false, user: null, mustChangePassword: false }
   }
   try {
     const u = await getOrCreateUserByName(session.username)
-    return { authenticated: true, user: { id: u.id, username: u.username } }
+    return { authenticated: true, user: { id: u.id, username: u.username }, mustChangePassword: !!u.mustChangePassword }
   } catch (e) {
     logger.error('[user-context] getAuthState: 持久化用户失败', e)
-    return { authenticated: false, user: null }
+    return { authenticated: false, user: null, mustChangePassword: false }
   }
 }
 
