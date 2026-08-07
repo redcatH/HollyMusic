@@ -148,6 +148,11 @@ export function UsersPanel() {
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
                       {u.hasPassword ? '已设置' : '未设置'}
+                      {u.mustChangePassword && (
+                        <span className="ml-2 rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] text-amber-600 dark:text-amber-400">
+                          待改密
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
                       {u.lastLogin ? new Date(u.lastLogin).toLocaleString('zh-CN') : '—'}

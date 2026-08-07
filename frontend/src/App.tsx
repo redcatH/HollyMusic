@@ -27,6 +27,7 @@ import { PlaylistDetailPage } from './routes/PlaylistDetailPage'
 import { AiPlaylistPage } from './routes/AiPlaylistPage'
 import { HistoryPage } from './routes/HistoryPage'
 import { LoginPage } from './routes/LoginPage'
+import { ChangePasswordPage } from './routes/ChangePasswordPage'
 import { AdminPage, AdminUsersPage, AdminSourcesPage, AdminRecommendPage } from './routes/AdminPage'
 
 const PROTECTED_PREFIXES = ['/favorites', '/playlists', '/history', '/admin', '/search']
@@ -36,6 +37,7 @@ export function App() {
   const navigate = useNavigate()
   const initAuth = useAuthStore(s => s.init)
   const authenticated = useAuthStore(s => s.authenticated)
+  const mustChangePassword = useAuthStore(s => s.mustChangePassword)
   const loadFavorites = useFavoritesStore(s => s.load)
   const playByUid = usePlayerStore(s => s.playByUid)
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -93,6 +95,13 @@ export function App() {
     }
   }, [authenticated, location.pathname, navigate])
 
+  // 强制改密守卫：已登录但 mustChangePassword=true 时，除改密页外一律拦截到改密页
+  useEffect(() => {
+    if (authenticated !== true || !mustChangePassword) return
+    if (location.pathname === '/change-password') return
+    navigate('/change-password', { replace: true })
+  }, [authenticated, mustChangePassword, location.pathname, navigate])
+
   // 路由切换 → 关闭抽屉
   useEffect(() => {
     setDrawerOpen(false)
@@ -113,12 +122,13 @@ export function App() {
     }
   }, [drawerOpen])
 
-  // 登录页：独立全屏
-  if (location.pathname === '/login') {
+  // 登录页 / 改密页：独立全屏
+  if (location.pathname === '/login' || location.pathname === '/change-password') {
     return (
       <div className="min-h-screen bg-background text-foreground">
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/change-password" element={<ChangePasswordPage />} />
         </Routes>
       </div>
     )

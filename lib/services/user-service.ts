@@ -22,6 +22,8 @@ export interface AdminUserView {
   isAdmin: boolean
   /** 是否设置了密码（不返回密码本身） */
   hasPassword: boolean
+  /** 是否需要强制修改密码（管理员重置密码后置 true） */
+  mustChangePassword: boolean
   lastLogin: Date | null
   /** 最近一次活跃时间（登录/心跳） */
   lastSeen: Date | null
@@ -40,6 +42,7 @@ function toView(u: {
   id: number
   username: string
   subsonicSecret: string | null
+  mustChangePassword: boolean
   lastLogin: Date | null
   lastSeen: Date | null
   lastSeenIp: string | null
@@ -52,6 +55,7 @@ function toView(u: {
     username: u.username,
     isAdmin: u.username === 'admin',
     hasPassword: !!u.subsonicSecret,
+    mustChangePassword: !!u.mustChangePassword,
     lastLogin: u.lastLogin,
     lastSeen: u.lastSeen,
     lastSeenIp: u.lastSeenIp,
@@ -89,9 +93,11 @@ export async function createUser(username: string, password: string): Promise<Ad
     })
     logger.info(`[user-service] 新建用户: ${name}`)
     return toView(u)
-  } catch (e: any) {
+  } catch (e) {
     // P2002 = unique constraint violation
-    if (e?.code === 'P2002') throw new UserInputError(`用户名 "${name}" 已存在`)
+    if (e && typeof e === 'object' && 'code' in e && (e as { code?: string }).code === 'P2002') {
+      throw new UserInputError(`用户名 "${name}" 已存在`)
+    }
     throw e
   }
 }
@@ -113,7 +119,7 @@ export async function updateUser(
   const existing = await prisma.user.findUnique({ where: { id } })
   if (!existing) throw new NotFoundError('用户不存在')
 
-  const data: { username?: string; subsonicSecret?: string | null } = {}
+  const data: { username?: string; subsonicSecret?: string | null; mustChangePassword?: boolean } = {}
 
   if (opts.username != null) {
     const newName = opts.username.trim()
@@ -130,6 +136,8 @@ export async function updateUser(
   // password === null / '' 表示不改；显式传非空字符串才更新
   if (typeof opts.password === 'string' && opts.password !== '') {
     data.subsonicSecret = opts.password
+    // 管理员重置某用户密码后，强制该用户下次登录改密
+    data.mustChangePassword = true
   }
 
   if (Object.keys(data).length === 0) {
@@ -141,8 +149,10 @@ export async function updateUser(
     const u = await prisma.user.update({ where: { id }, data })
     logger.info(`[user-service] 更新用户 id=${id} keys=${Object.keys(data).join(',')}`)
     return toView(u)
-  } catch (e: any) {
-    if (e?.code === 'P2002') throw new UserInputError(`用户名 "${data.username}" 已存在`)
+  } catch (e) {
+    if (e && typeof e === 'object' && 'code' in e && (e as { code?: string }).code === 'P2002') {
+      throw new UserInputError(`用户名 "${data.username}" 已存在`)
+    }
     throw e
   }
 }

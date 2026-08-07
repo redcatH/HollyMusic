@@ -1,6 +1,6 @@
 /**
  * 当前会话查询 API
- * GET /api/auth/me  → { authenticated, username? }
+ * GET /api/auth/me  → { authenticated, username?, mustChangePassword? }
  */
 
 import { NextRequest } from 'next/server'
@@ -12,5 +12,6 @@ export async function GET(request: NextRequest) {
   return createSuccessResponse({
     authenticated: state.authenticated,
     username: state.user?.username ?? null,
+    mustChangePassword: state.authenticated ? state.mustChangePassword : false,
   })
 }

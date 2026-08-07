@@ -72,6 +72,9 @@ model User {
   lastSeen       DateTime?  // 最近一次活跃（登录/心跳）时间，用于在线状态推断
   lastSeenIp     String?    // 最近一次活跃的客户端 IP
   lastSeenUa     String?    // 最近一次活跃的 User-Agent
+  // 首次登录或使用弱默认密码时置 true，前端据此强制引导修改密码；
+  // 自助改密或管理员重置后清回 false。不影响 Subsonic 协议鉴权。
+  mustChangePassword Boolean @default(false)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

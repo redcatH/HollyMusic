@@ -21,6 +21,7 @@ export function LoginPage() {
     setSubmitting(true)
     try {
       await login(username.trim(), password)
+      // 改密守卫会在 App.tsx 中根据 mustChangePassword 自动跳转
       navigate('/', { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : '登录失败')
