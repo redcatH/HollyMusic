@@ -45,15 +45,15 @@ Holly Music 聚合多个音源（QQ / 网易 / 酷我 / 酷狗 / 咪咕等），
 
 ## 📸 界面预览
 
-| PC 端 | 移动端 |
-|-------|--------|
-| ![PC 端](docs/screenshots/pc.png) | ![移动端](docs/screenshots/mobile.png) |
+<p align="center">
+  <img src="docs/screenshots/pc.png" width="640" alt="PC 端">
+</p>
 
-移动端单曲分享落地页（`/api/share?uid=…`，页内试听 + 引导打开 App）：
+<p align="center">
+  <img src="docs/screenshots/mobile.png" height="440" alt="移动端"> <img src="docs/screenshots/share-mobile.png" height="440" alt="分享落地页">
+</p>
 
-![分享落地页](docs/screenshots/share-mobile.png)
-
-> 播放栏当前曲目旁的分享按钮：移动端调起系统分享面板（微信 / QQ / 微博…），桌面端复制链接；打开链接即进入上方落地页。
+> 播放栏当前曲目旁的分享按钮：移动端调起系统分享面板（微信 / QQ / 微博…），桌面端复制链接；打开链接即进入单曲分享落地页。
 
 ---
 
