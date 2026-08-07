@@ -12,6 +12,7 @@ import { createSuccessResponse, createErrorResponse } from '@/lib/api-response'
 import { requireUser, AuthError } from '@/lib/services/user-context'
 import { callAI, extractJSON } from '@/lib/services/ai-helper'
 import { DEFAULT_PROMPT_SYSTEM, DEFAULT_PROMPT_AI_PLAYLIST_FILTER } from '@/lib/recommend-defaults'
+import { getFilterMaxSongs } from '@/lib/search-config'
 import { logger } from '@/lib/logger'
 
 interface SongIn {
@@ -41,7 +42,7 @@ export async function POST(request: NextRequest) {
               typeof s === 'object' && s !== null && typeof (s as SongIn).uid === 'string',
           )
         : []
-    ).slice(0, 200) // 截断防爆 token
+    ).slice(0, getFilterMaxSongs()) // 安全上限（AI_PLAYLIST_FILTER_MAX_SONGS，默认1500）：覆盖正常流程最大量，防恶意直接调 API
     const userPrompt =
       typeof body?.prompt === 'string' ? body.prompt.trim().slice(0, 500) : ''
     const count = Math.max(1, Math.min(50, Number(body?.count) || 15))

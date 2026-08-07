@@ -9,12 +9,12 @@
 import { NextRequest } from 'next/server'
 import { createSuccessResponse, createErrorResponse } from '@/lib/api-response'
 import { requireUser, AuthError } from '@/lib/services/user-context'
-import { getSearchSources } from '@/lib/search-config'
+import { getSearchSources, getSearchLimit } from '@/lib/search-config'
 
 export async function GET(request: NextRequest) {
   try {
     await requireUser(request)
-    return createSuccessResponse({ sources: getSearchSources() })
+    return createSuccessResponse({ sources: getSearchSources(), searchLimit: getSearchLimit() })
   } catch (err) {
     if (err instanceof AuthError) return createErrorResponse('UNAUTHORIZED', err.message, 401)
     return createErrorResponse('INTERNAL_ERROR', '读取音源配置失败', 500)

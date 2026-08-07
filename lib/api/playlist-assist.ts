@@ -28,8 +28,8 @@ export interface AiPlaylistSuggestion {
 }
 
 /** 获取当前启用的搜索音源平台列表 */
-export function getSearchSources(): Promise<{ sources: string[] }> {
-  return apiGet<{ sources: string[] }>('search-sources')
+export function getSearchSources(): Promise<{ sources: string[]; searchLimit: number }> {
+  return apiGet<{ sources: string[]; searchLimit: number }>('search-sources')
 }
 
 /** AI 生成歌单候选（自选 mode + 搜索词 + 歌单名），不写库。count=目标歌单数量 */
