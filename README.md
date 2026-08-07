@@ -53,8 +53,6 @@ Holly Music 聚合多个音源（QQ / 网易 / 酷我 / 酷狗 / 咪咕等），
   <img src="docs/screenshots/mobile.png" height="440" alt="移动端"> <img src="docs/screenshots/share-mobile.png" height="440" alt="分享落地页">
 </p>
 
-> 播放栏当前曲目旁的分享按钮：移动端调起系统分享面板（微信 / QQ / 微博…），桌面端复制链接；打开链接即进入单曲分享落地页。
-
 ---
 
 ## 🛠 技术栈
