@@ -3,7 +3,7 @@
  *
  * 3 步向导：0 输入需求 / 1 候选勾选 / 2 歌曲确认+创建
  * processing 是 1→2 之间的异步过渡态（搜索+过滤），不占 step 编号
- * 搜索并发池 + 跨源去重抄 lib/services/recommend-engine.ts 的 pool/songKey 模式。
+ * 搜索并发池抄 lib/services/recommend-engine.ts 的 pool 模式；不做代码层去重，版本筛选交 AI。
  * 只搜启用音源（进入时 getSearchSources 拿到）。
  * mode: 'new' 新建歌单 / 'add' 给已有歌单加歌（playlistId）
  */
@@ -43,14 +43,6 @@ export interface UseAiPlaylistOpts {
 
 // ============ 模块级纯函数 ============
 
-function songKey(s: Song): string {
-  const norm = (str: string) =>
-    str
-      .toLowerCase()
-      .replace(/[\s()（）\[\]【】\-_·.,，。!！?？'"`]/g, '')
-  return `${norm(s.name || '')}|${norm(s.singer || '')}`
-}
-
 async function pool<T>(items: T[], concurrency: number, fn: (item: T) => Promise<void>): Promise<void> {
   let i = 0
   const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
@@ -63,9 +55,9 @@ async function pool<T>(items: T[], concurrency: number, fn: (item: T) => Promise
 }
 
 /**
- * 并发搜索多个关键词，控制候选总量。
- * 多源聚合：每个词遍历所有勾选音源全部搜索，跨源去重（歌名+歌手归一化），
- * 同一首歌保留高优先级（优质）音源的版本（sources 按 priority 升序，先入为主）。
+ * 并发搜索多个关键词，全部命中原样收集——不做代码层去重/截断。
+ * 多源聚合：每个词遍历所有勾选音源全部搜索，所有版本都保留，
+ * 版本与重复判定完全交给 AI（filter 规则4：同名只留最经典 1 个）。
  * 进度按「词」计：一个词搜完算完成一个。
  */
 async function searchKeywords(
@@ -74,22 +66,18 @@ async function searchKeywords(
   limit: number,
   onProgress: (doneKeywords: number, hitKeywords: number) => void,
 ): Promise<{ songs: Song[]; hitCount: number }> {
-  const seen = new Set<string>()
   const merged: Song[] = []
   let doneKeywords = 0
   let hitKeywords = 0
 
   await pool(keywords, 3, async (kw) => {
     let kwHit = false
-    // 多源聚合：遍历所有勾选音源，跨源去重保留高优先级（优质）源版本
+    // 多源聚合：遍历所有勾选音源，全部命中保留，版本去重交 AI
     for (const src of sources) {
       try {
         const r = await search(src as SourceType, kw, 1, limit)
         if (r.list.length === 0) continue
         for (const s of r.list) {
-          const key = songKey(s)
-          if (seen.has(key)) continue // 跨源去重，先入为主 = 保留优质源版本
-          seen.add(key)
           merged.push(s)
           kwHit = true
         }
@@ -114,6 +102,8 @@ export function useAiPlaylist(opts: UseAiPlaylistOpts = {}) {
   const [step, setStep] = useState<AssistStep>(0)
   const [direction, setDirection] = useState(1)
   const [sources, setSources] = useState<string[]>([])
+  const [selectedSources, setSelectedSources] = useState<string[]>([])
+  const [searchLimit, setSearchLimit] = useState(3)
   const [sourcesLoading, setSourcesLoading] = useState(true)
 
   const [prompt, setPrompt] = useState('')
@@ -136,8 +126,12 @@ export function useAiPlaylist(opts: UseAiPlaylistOpts = {}) {
     let cancelled = false
     setSourcesLoading(true)
     getSearchSources()
-      .then(({ sources: s }) => {
-        if (!cancelled) setSources(s)
+      .then(({ sources: s, searchLimit: sl }) => {
+        if (!cancelled) {
+          setSources(s)
+          setSelectedSources(s) // 默认全选，用户可在 Step0 取消
+          setSearchLimit(sl)
+        }
       })
       .catch(() => {})
       .finally(() => {
@@ -186,11 +180,19 @@ export function useAiPlaylist(opts: UseAiPlaylistOpts = {}) {
     })
   }, [])
 
+  // 切换某音源是否参与搜索（Step0 可取消，至少保留 1 个由 UI 约束）
+  const toggleSource = useCallback((src: string) => {
+    setSelectedSources((prev) => {
+      if (prev.includes(src)) return prev.filter((s) => s !== src)
+      return [...prev, src]
+    })
+  }, [])
+
   // Step1 → 过渡态 → Step2：并发搜索 + AI 过滤
   const runProcess = useCallback(async () => {
     if (!generateResult) return
     const keywords = generateResult.items.filter((it) => selectedItems.has(it))
-    if (keywords.length === 0 || sources.length === 0) return
+    if (keywords.length === 0 || selectedSources.length === 0) return
 
     setDirection(1)
     setProcessing({
@@ -203,13 +205,11 @@ export function useAiPlaylist(opts: UseAiPlaylistOpts = {}) {
     })
 
     try {
-      // limit 小（一个词不需要太多版本）；截断到 targetCount*5 防 AI token 爆炸
-      const perWordLimit = 10
-      const cap = targetCount * 5
+      // 搜索深度由环境变量 AI_PLAYLIST_SEARCH_LIMIT 控制（默认5）；不做去重/截断，版本筛选全交 AI
       const { songs: rawSongs, hitCount } = await searchKeywords(
         keywords,
-        sources,
-        perWordLimit,
+        selectedSources,
+        searchLimit,
         (done, hit) => {
           setProcessing((prev) =>
             prev
@@ -218,7 +218,7 @@ export function useAiPlaylist(opts: UseAiPlaylistOpts = {}) {
           )
         },
       )
-      const songs = rawSongs.slice(0, cap)
+      const songs = rawSongs
 
       if (songs.length === 0) {
         setProcessing({
@@ -278,7 +278,7 @@ export function useAiPlaylist(opts: UseAiPlaylistOpts = {}) {
       const msg = e instanceof Error ? e.message : '处理失败'
       setProcessing((prev) => (prev ? { ...prev, phase: 'error', message: msg } : prev))
     }
-  }, [generateResult, selectedItems, sources, prompt, targetCount])
+  }, [generateResult, selectedItems, selectedSources, searchLimit, prompt, targetCount])
 
   const toggleUid = useCallback((uid: string) => {
     setSelectedUids((prev) => {
@@ -330,6 +330,8 @@ export function useAiPlaylist(opts: UseAiPlaylistOpts = {}) {
     step,
     direction,
     sources,
+    selectedSources,
+    toggleSource,
     sourcesLoading,
     prompt,
     setPrompt,

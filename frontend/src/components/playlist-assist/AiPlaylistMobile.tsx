@@ -83,6 +83,8 @@ export function AiPlaylistMobile({ ai }: { ai: AiPlaylistController }) {
                 generateError={ai.generateError}
                 sources={ai.sources}
                 sourcesLoading={ai.sourcesLoading}
+                selectedSources={ai.selectedSources}
+                toggleSource={ai.toggleSource}
               />
             )}
             {ai.step === 1 && ai.generateResult && (

@@ -47,8 +47,8 @@ export function AiPlaylistDesktop({ ai }: { ai: AiPlaylistController }) {
   const nav = useWizardNav(ai, onView)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6">
-      <div className="flex max-h-[88vh] min-h-[600px] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="flex max-h-[92vh] min-h-[600px] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
         {/* 顶栏 */}
         <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-5">
           <div className="flex items-center gap-3">
@@ -92,6 +92,8 @@ export function AiPlaylistDesktop({ ai }: { ai: AiPlaylistController }) {
                   generateError={ai.generateError}
                   sources={ai.sources}
                   sourcesLoading={ai.sourcesLoading}
+                  selectedSources={ai.selectedSources}
+                  toggleSource={ai.toggleSource}
                 />
               )}
               {ai.step === 1 && ai.generateResult && (

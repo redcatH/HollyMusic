@@ -38,9 +38,10 @@ export async function POST(request: NextRequest) {
       return createErrorResponse('INVALID_PARAMS', '缺少必填字段: prompt (需求描述)', 400)
     }
 
-    const user = DEFAULT_PROMPT_AI_PLAYLIST_GENERATE.replace(/\{\{userPrompt\}\}/g, userPrompt)
-      .replace(/\{\{count\}\}/g, String(count))
-      .replace(/\{\{artistCount\}\}/g, String(Math.ceil(count / 3)))
+    const user = DEFAULT_PROMPT_AI_PLAYLIST_GENERATE.replace(/\{\{userPrompt\}\}/g, userPrompt).replace(
+      /\{\{count\}\}/g,
+      String(count),
+    )
 
     const raw = await callAI({
       apiKey,
@@ -58,7 +59,7 @@ export async function POST(request: NextRequest) {
       items?: unknown
       playlistName?: unknown
     }
-    const mode = obj.mode === 'artists' ? 'artists' : 'songs'
+    const mode = 'songs' as const // 锁定歌曲模式：只生成歌曲名，不再按歌手选曲
     const items = (Array.isArray(obj.items) ? obj.items : [])
       .map((s: unknown) => (typeof s === 'string' ? s.trim() : ''))
       .filter(Boolean)
