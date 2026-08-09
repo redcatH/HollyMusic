@@ -14,7 +14,7 @@ import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/hooks/useAuth'
 import { toast } from '@/lib/toast'
-import { KeyRound, Loader2, Eye, EyeOff, ArrowLeft, Check } from 'lucide-react'
+import { KeyRound, Loader2, Eye, EyeOff, ArrowLeft, Check, LogOut } from 'lucide-react'
 
 /** 密码强度评估：返回 0~3 分及标签 */
 function getStrength(pwd: string): { score: 0 | 1 | 2 | 3; label: string } {
@@ -43,6 +43,7 @@ const STRENGTH_TEXT = {
 export function ChangePasswordPage() {
   const navigate = useNavigate()
   const changePassword = useAuthStore(s => s.changePassword)
+  const logout = useAuthStore(s => s.logout)
   const username = useAuthStore(s => s.username)
   const forced = useAuthStore(s => s.mustChangePassword)
 
@@ -94,6 +95,11 @@ export function ChangePasswordPage() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const handleLogout = async () => {
+    await logout()
+    navigate('/login', { replace: true })
   }
 
   return (
@@ -197,6 +203,18 @@ export function ChangePasswordPage() {
             {submitting ? '提交中...' : '修改密码'}
           </button>
         </form>
+
+        {forced && (
+          <button
+            type="button"
+            onClick={handleLogout}
+            disabled={submitting}
+            className="mt-3 flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm text-muted-foreground transition hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <LogOut className="h-4 w-4" />
+            退出登录
+          </button>
+        )}
       </div>
     </div>
   )

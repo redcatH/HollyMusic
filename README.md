@@ -207,7 +207,7 @@ pnpm dev:all
 
 > 也可单独启动：`pnpm dev`（仅后端）、`pnpm dev:web`（仅前端，需后端在 3000 端口）
 
-> **默认管理员**：`config/users.json` 默认提供 `admin / admin` 账号（生产请立即修改）。admin 用户名固定为 `admin`，首次登录后可通过 Web UI 修改密码。
+> **默认管理员**：`config/users.json` 默认提供 `admin / admin` 账号。首次启动时若检测到该弱口令，会自动改用随机密码（打印在容器日志中，仅显示一次）并强制首次登录改密；admin 用户名固定为 `admin`。用户通过 Web UI 改密后以数据库为准，重启容器不会回写覆盖。
 
 ---
 

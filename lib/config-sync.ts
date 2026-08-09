@@ -59,7 +59,6 @@ export async function syncUsersFromConfig(configPath?: string) {
     const parsed = JSON.parse(raw)
     const users: UserConfigEntry[] = Array.isArray(parsed) ? parsed : parsed.users || []
     const created: string[] = []
-    const updated: string[] = []
     for (const u of users) {
       if (!u || !u.username) continue
       const username = String(u.username).trim()
@@ -68,22 +67,27 @@ export async function syncUsersFromConfig(configPath?: string) {
 
       const existing = await prisma.user.findUnique({ where: { username } })
       if (!existing) {
-        // 新建用户：admin 账户强制要求首次登录改密（随机初始密码场景）
+        // 首次创建：以 config/users.json 为准。
+        // 但若配置里是弱口令 'admin'（仓库默认值），改用随机密码，避免弱口令进 DB。
+        // admin 账户强制要求首次登录改密（随机初始密码 / 默认 admin/admin 场景）。
+        let effectivePassword = password
+        if (username === 'admin' && password === 'admin') {
+          effectivePassword = generateRandomPassword()
+          console.warn('========================================================')
+          console.warn('[config-sync] config/users.json 中 admin 密码为默认弱口令，已改用随机密码')
+          console.warn(`[config-sync] 随机初始密码: ${effectivePassword}`)
+          console.warn('[config-sync] 请立即登录并修改密码！此密码仅显示一次。')
+          console.warn('========================================================')
+        }
         const mustChange = username === 'admin'
         await prisma.user.create({
-          data: { username, subsonicSecret: password, mustChangePassword: mustChange },
+          data: { username, subsonicSecret: effectivePassword, mustChangePassword: mustChange },
         })
         created.push(username)
-      } else {
-        // 已存在用户：密码变更才更新
-        if ((existing.subsonicSecret ?? '') !== password) {
-          await prisma.user.update({
-            where: { id: existing.id },
-            data: { subsonicSecret: password },
-          })
-          updated.push(username)
-        }
       }
+      // 已存在用户：密码以 DB 为准，不再被配置文件覆盖。
+      // 这样用户通过 Web UI 改密后，重启容器不会把密码回写回 config 里的旧值，
+      // 也就不会反复触发下方的弱口令迁移导致 mustChangePassword 被反复置 true。
     }
 
     // 迁移历史弱口令：仍使用 admin/admin 的账户，重置为随机密码并强制改密
@@ -105,14 +109,13 @@ export async function syncUsersFromConfig(configPath?: string) {
       console.warn('[config-sync] 弱口令迁移失败（非致命）:', e)
     }
 
-    const total = created.length + updated.length
-    console.info('[config-sync] synced users: created=%d updated=%d total=%d', created.length, updated.length, total)
+    const total = created.length
+    console.info('[config-sync] synced users: created=%d total=%d', created.length, total)
     if (created.length) console.info('[config-sync] created:', created.join(', '))
-    if (updated.length) console.info('[config-sync] updated:', updated.join(', '))
-    return { imported: total, created, updated }
+    return { imported: total, created }
   } catch (err) {
     console.error('[config-sync] error', err)
-    return { imported: 0, created: [], updated: [], error: err }
+    return { imported: 0, created: [], error: err }
   }
 }
 
