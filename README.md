@@ -2,6 +2,12 @@
 
 > 多源在线音乐聚合播放器 · 自部署 · PWA · 移动端友好
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Docker](https://img.shields.io/badge/Docker-ghcr.io-blue?logo=docker)](https://github.com/redcatH/HollyMusic/pkgs/container/hollymusic)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![GitHub release](https://img.shields.io/github/v/release/redcatH/HollyMusic?include_prereleases)](https://github.com/redcatH/HollyMusic/releases)
+[![GitHub stars](https://img.shields.io/github/stars/redcatH/HollyMusic?style=social)](https://github.com/redcatH/HollyMusic/stargazers)
+
 我们的宗旨：聚合网络上的一切公开资源，让好音乐触手可及。
 
 Holly Music 聚合多个音源（QQ / 网易 / 酷我 / 酷狗 / 咪咕等），提供统一的搜索、播放、收藏、歌单、歌词、下载体验。支持 PWA 安装到桌面、离线 App Shell、锁屏媒体控制。纯自部署，数据掌握在自己手里。
@@ -129,11 +135,20 @@ Holly Music 聚合多个音源（QQ / 网易 / 酷我 / 酷狗 / 咪咕等），
 │   └── users.json              # 初始用户（默认 admin）
 ├── prisma/                     # Prisma schema 与 migrations
 ├── scripts/                    # 容器启动脚本（start.sh / start-spa.sh）
-├── public/                     # （前端静态资源已迁移至 frontend/public）
 ├── nginx-spa.conf              # Docker 运行时 nginx 配置
 ├── Dockerfile                  # 三阶段构建（frontend-builder / backend-builder / 运行时）
 └── lx-env-simulator/           # 兼容层（慎改）
 ```
+
+---
+
+## 📚 更多文档
+
+| 文档 | 说明 |
+|------|------|
+| [Subsonic 协议实现](docs/SUBSONIC.md) | 本项目实现的 Subsonic API 子集说明，外部客户端对接参考 |
+| [音源配置热重载](docs/CONFIG-HOT-RELOAD.md) | `MusicSourceManager` 的配置监听与热重载机制 |
+| [VS Code 调试指南](docs/DEBUG-GUIDE.md) | 如何在 VS Code 中调试 Next.js API 端点 |
 
 ---
 
@@ -261,37 +276,35 @@ admin 登录后，侧边栏头像下拉 →「音源管理」：
 
 ## 🔌 API 概览
 
-| 路径 | 方法 | 说明 | 鉴权 |
-|------|------|------|------|
-| `/api/auth/login` | POST | 登录（含 IP 失败限速） | 公开 |
-| `/api/auth/logout` | POST | 登出 | 公开 |
-| `/api/auth/me` | GET | 当前会话 | 公开 |
-| `/api/auth/change-password` | POST | 自助修改密码 | 需登录 |
-| `/api/search` | GET | 搜索 | 公开 |
-| `/api/music-url` | POST | 获取播放地址 | 公开 |
-| `/api/lyrics` | GET | 获取歌词 | 公开 |
-| `/api/audio` | GET/HEAD | 音频流 serve（磁盘缓存 + Range + 边下边播） | 公开 |
-| `/api/proxy/[...path]` | GET | 通用流式代理（Subsonic / 下载用） | 公开 |
-| `/api/cover/[id]` | GET | 封面代理 | 公开 |
-| `/api/random` | GET | 随机推荐歌曲 | 公开 |
-| `/api/health` | GET | 健康检查 | 公开 |
-| `/api/download` | GET | 下载代理（含进度） | 需登录 |
-| `/api/history` | GET/POST | 播放历史 | 需登录 |
-| `/api/favorites` | GET/POST | 收藏 | 需登录 |
-| `/api/favorites/check` | GET | 检查是否已收藏 | 需登录 |
-| `/api/playlists` | GET/POST | 歌单列表/创建 | 需登录 |
-| `/api/playlists/[id]` | GET/PUT/DELETE | 单歌单操作 | 需登录 |
-| `/api/playlists/[id]/songs` | POST/DELETE | 歌单曲目增删 | 需登录 |
-| `/api/admin/users` | GET/POST | 用户管理 | **仅 admin** |
-| `/api/admin/users/[id]` | GET/PUT/DELETE | 单用户操作 | **仅 admin** |
-| `/api/admin/login-locks` | GET/POST | 登录锁定查看/解锁 | **仅 admin** |
-| `/api/admin/sources` | GET/POST | 音源配置管理 | **仅 admin** |
-| `/api/admin/sources/[id]` | PUT/DELETE | 单音源操作（含关联脚本） | **仅 admin** |
-| `/api/admin/sources/upload` | POST | 上传音源脚本（预校验+自动注册） | **仅 admin** |
-| `/api/admin/cache` | GET/POST | 音频磁盘缓存查询/清理 | **仅 admin** |
-| `/rest/[method]` | GET/POST | Subsonic 协议入口（外部客户端访问） | 公开 |
+后端为 Next.js App Router，所有接口前缀 `/api`（Subsonic 协议走 `/rest`）。
 
-统一响应格式：`{ success: boolean, data?: T, error?: { code, message } }`
+- **统一响应格式**：`{ success: boolean, data?: T, error?: { code, message } }`
+- **鉴权**：签名 Cookie（`holly_user` + `holly_sig`），分「公开 / 需登录 / 仅 admin」三级
+
+### 对外接口
+
+部署对接、外部客户端、反代探活会直接调用的接口：
+
+| 路径 | 方法 | 说明 |
+|------|------|------|
+| `/rest/[method]` | GET/POST | Subsonic 协议入口，外部客户端（DSub / Ultrasonic 等）接入点 |
+| `/api/share` | GET | 分享落地页（服务端渲染 HTML，`?uid=` 单曲试听，含 og 卡片） |
+| `/api/track` | GET | 曲目元数据反查（`?uid=`，分享链接自动播放用） |
+| `/api/audio` | GET/HEAD | 音频流（磁盘缓存 + Range，可被外部直接 GET） |
+| `/api/cover/[id]` | GET | 封面代理 |
+| `/api/download` | GET | 下载代理（需登录） |
+| `/api/health` | GET | 健康检查（Docker / 反代探活） |
+
+### 内部接口
+
+前端 SPA 自用，路径即语义，参数与返回值以 `app/api/` 下各 `route.ts` 源码为准，统一遵循上述响应格式：
+
+- **鉴权** — `app/api/auth/*`：登录 / 登出 / 会话 / 改密 / 心跳
+- **搜索与播放** — `search` / `music-url` / `lyrics` / `random` / `search-sources`
+- **用户数据** — `favorites` / `history` / `playlists/*`（需登录，按用户隔离）
+- **AI 功能** — `playlist-assist/*`（用户侧 AI 建歌单）、`admin/recommend*`（admin 推荐任务）
+- **管理后台** — `app/api/admin/*`：用户 / 音源 / 缓存 / 登录锁定 / 推荐任务（仅 admin）
+- **通用代理** — `app/api/proxy/[...path]`：流式代理（Subsonic / 下载用）
 
 ---
 
@@ -379,4 +392,14 @@ A：Vite dev server 已配置代理 `/api` → `localhost:3000`，确保后端 `
 
 ## 📄 License
 
-本项目仅供学习交流使用，不得用于商业目的。请遵守当地版权法律法规。
+本项目基于 [MIT License](LICENSE) 开源。
+
+> ⚠️ **版权声明**：本项目聚合的音源来自网络公开资源，音频版权归原始权利人所有。本项目仅供学习交流使用，不得用于商业目的。使用本项目产生的一切法律责任由使用者自行承担，请遵守当地版权法律法规。
+
+## 🤝 贡献
+
+欢迎提交 Issue 和 Pull Request！请阅读 [贡献指南](CONTRIBUTING.md) 与 [行为准则](CODE_OF_CONDUCT.md)。
+
+## 📋 更新日志
+
+详见 [CHANGELOG.md](CHANGELOG.md)。

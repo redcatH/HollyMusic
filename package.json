@@ -1,7 +1,28 @@
 {
-  "name": "my-music",
+  "name": "holly-music",
   "version": "0.1.0",
   "private": true,
+  "description": "多源在线音乐聚合播放器 · 自部署 · PWA · 移动端友好",
+  "license": "MIT",
+  "author": "redcath <30196697+redcatH@users.noreply.github.com>",
+  "homepage": "https://github.com/redcatH/HollyMusic",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/redcatH/HollyMusic.git"
+  },
+  "bugs": {
+    "url": "https://github.com/redcatH/HollyMusic/issues"
+  },
+  "keywords": [
+    "music",
+    "music-player",
+    "self-hosted",
+    "pwa",
+    "subsonic",
+    "nextjs",
+    "react",
+    "aggregate"
+  ],
   "scripts": {
     "dev": "next dev",
     "dev:web": "cd frontend && pnpm dev",
