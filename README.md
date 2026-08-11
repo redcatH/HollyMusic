@@ -228,9 +228,90 @@ pnpm dev:all
 
 ## 🐳 Docker 部署（推荐生产）
 
+提供两种方式：**拉预构建镜像**（推荐，无需源码）或**从源码构建**。
+
+### 方式一：拉取预构建镜像（推荐，最快）
+
+镜像通过 GitHub Actions 自动构建并推送至 ghcr.io，无需 clone 源码，三条命令即可跑起来。
+
+**1. 创建部署目录并进入**
+
+```bash
+mkdir holly-music && cd holly-music
+```
+
+**2. 创建 `docker-compose.yml`**
+
+```yaml
+services:
+  app:
+    image: ghcr.io/redcath/hollymusic:latest
+    container_name: holly-music
+    ports:
+      - "3099:3000"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=file:./prisma/data/music.db
+      - ENABLE_FILE_CACHE=true
+      - AUDIO_CACHE_DIR=/app/.cache/audio-cache
+      - AUDIO_CACHE_QUOTA_GB=10
+    volumes:
+      - ./custom-sources:/app/custom-sources
+      - ./config:/app/config
+      - ./prisma_data:/app/prisma/prisma/data
+      - ./cache_data:/app/.cache
+      - ./app_logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+```
+
+> 想固定版本？把 `image: ghcr.io/redcath/hollymusic:latest` 换成具体 tag，如 `:v0.18.0`（见 [releases](https://github.com/redcatH/HollyMusic/releases)）。
+
+**3. 创建 `.env`**
+
+```env
+# 鉴权密钥（必填！≥32 位随机字符串）
+# 生成：openssl rand -hex 32
+#       或 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+AUTH_SECRET=请替换为至少32位的随机字符串
+
+# 可选：AI 功能（管理员 AI 推荐任务 + 用户 AI 协助建歌单）
+# OPENAI_API_KEY=sk-xxx
+# OPENAI_BASE_URL=https://api.openai.com/v1
+```
+
+**4. 启动**
+
+```bash
+docker compose up -d
+```
+
+启动后访问 http://localhost:3099 即可。默认管理员 `admin`，初始密码打印在容器日志中（仅显示一次，登录后强制改密）：
+
+```bash
+docker compose logs app | grep -i password
+```
+
+> 首次启动会自动在 `./prisma_data` 创建数据库并运行 Prisma 迁移，无需手动操作。
+
+### 方式二：从源码构建
+
+适合需要修改代码或自定义镜像的场景。clone 本仓库后，在根目录执行：
+
 ```bash
 docker-compose up --build -d
 ```
+
+仓库自带的 `docker-compose.yml` 即采用此方式（`build: .`），配置项与方式一一致，区别仅在于镜像来源。
+
+### 运行时架构说明
 
 镜像采用**三阶段构建**（见 `Dockerfile`）：
 1. `frontend-builder` — Vite 构建前端 SPA 产物到 `frontend/dist`
@@ -242,10 +323,26 @@ docker-compose up --build -d
 - nginx 监听 **3000**（对外），托管前端 SPA（`/usr/share/nginx/html`）并反代 `/api`、`/rest` 到 3001
 - 健康检查：`GET /api/health`
 
-持久化挂载（见 `docker-compose.yml`）：
-- `./prisma_data` → `/app/prisma/prisma/data`（数据库）
-- `./cache_data` → `/app/.cache`（音频磁盘缓存）
-- `./config`、`./custom-sources`（便于热更新音源）
+### 持久化与配置
+
+挂载目录（见 `docker-compose.yml`）：
+
+| 宿主目录 | 容器路径 | 用途 |
+|---------|---------|------|
+| `./prisma_data` | `/app/prisma/prisma/data` | 数据库（**重要，勿丢**） |
+| `./cache_data` | `/app/.cache` | 音频磁盘缓存 |
+| `./config` | `/app/config` | 音源注册表 `music-sources.json`、初始用户 `users.json` |
+| `./custom-sources` | `/app/custom-sources` | 自定义音源脚本（便于热更新） |
+| `./app_logs` | `/app/logs` | 日志（可选） |
+
+> 方式一首次启动时 `config/`、`custom-sources/` 等目录会自动创建为空。音源脚本可通过 admin Web UI 上传（见下方「自定义音源」），或手动放入 `./custom-sources/` 并在 `./config/music-sources.json` 注册。
+
+### 升级
+
+```bash
+docker compose pull        # 拉取最新镜像
+docker compose up -d       # 重新创建容器（数据通过 volume 保留）
+```
 
 生产环境务必设置 `AUTH_SECRET` 环境变量（≥32 位随机字符串）。
 
