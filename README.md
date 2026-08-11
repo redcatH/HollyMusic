@@ -32,6 +32,23 @@ Holly Music 是一个纯自部署的在线音乐聚合播放器。内置 `lx-env
 
 > 💡 **架构一瞥**：前端为 **Vite + React Router** 构建的 SPA（`frontend/`），后端为 **Next.js (App Router)** 仅提供 API（`app/api/`、`app/rest/`）。前端通过 `@/*` 别名复用根目录的 `components/`、`hooks/`、`lib/` 中纯前端部分。详见下文[技术栈](#-技术栈)与[目录结构](#-目录结构)。
 
+## 📋 部署条件
+
+不想读长文？先看这张表，对得上就能跑：
+
+| 维度 | 最低要求 | 说明 |
+|------|---------|------|
+| **部署方式** | Docker（推荐） | 拉预构建镜像三条命令起服务；也可从源码构建。无 Docker 环境可用 Node.js 18+ + pnpm 本地开发启动 |
+| **系统** | 任意能跑 Docker 的系统 | Linux / macOS / Windows 均可；NAS、软路由、小盒子都行 |
+| **CPU / 内存** | 1 核 / 512MB 起步 | 纯 Node.js API + nginx，轻量；启用音频磁盘缓存或用户多时建议 1GB+ |
+| **磁盘** | 1GB 可用 | 数据库 + 日志几百 MB；音频缓存按 `AUDIO_CACHE_QUOTA_GB` 配置（默认 10GB，可调小） |
+| **网络** | 能访问音源上游 | 服务端需能访问各音源接口；客户端只需能访问部署地址。PWA / Service Worker 要求 **HTTPS**（或 localhost） |
+| **必填配置** | `AUTH_SECRET` | ≥32 位随机字符串，用于签名登录 Cookie；缺失仅开发环境可用不安全 fallback |
+| **可选配置** | `OPENAI_API_KEY` | 启用 AI 推荐任务 / AI 协助建歌单；不填则这两项功能不可用，其余正常 |
+| **音源** | 至少一个洛雪音源脚本 | 内置兼容层支持 LX Music 自定义源 API 2.0.0；可 admin 后台上传或手动放入 `custom-sources/`。无音源则搜索/播放无结果 |
+
+> ✅ **一句话门槛**：一台能跑 Docker 的机器 + 一个 `AUTH_SECRET` + 一个洛雪音源脚本，就能跑起来。详细步骤见下文[快速开始](#-快速开始)与 [Docker 部署](#-docker-部署推荐生产)。
+
 ---
 
 ## ✨ 主要特性
