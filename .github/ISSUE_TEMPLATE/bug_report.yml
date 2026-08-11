@@ -1,0 +1,74 @@
+name: 🐛 Bug 报告
+description: 报告一个可复现的问题
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈 Bug！提交前请先搜索是否已有相同 Issue。
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug 描述
+      description: 简要说明这个 Bug 是什么
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      description: 详细的可复现步骤
+      placeholder: |
+        1. 进入 '...'
+        2. 点击 '...'
+        3. 看到 '...'
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期行为
+      description: 你期望发生什么
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+      description: 实际发生了什么
+    validations:
+      required: true
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: 截图 / 录屏
+      description: 如有，请附上截图或录屏
+  - type: input
+    id: deploy
+    attributes:
+      label: 部署方式
+      placeholder: Docker / 本地开发 / 其他
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本 / Commit
+      placeholder: 如 v0.1.0 或 commit hash
+  - type: input
+    id: browser
+    attributes:
+      label: 浏览器 / 客户端
+      placeholder: Chrome 120 / iOS Safari / DSub 等
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志
+      description: 服务端日志或浏览器控制台报错（如有）
+      render: shell
+  - type: textarea
+    id: context
+    attributes:
+      label: 补充信息
+      description: 其他有助于排查的信息
