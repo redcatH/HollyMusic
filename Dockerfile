@@ -99,7 +99,11 @@ COPY --from=backend-builder /app/prisma ./prisma
 
 # ---------- 业务配置与音源 ----------
 COPY --from=backend-builder /app/config ./config
-COPY --from=backend-builder /app/custom-sources ./custom-sources
+# custom-sources 是运行时用户数据目录（被 .gitignore 忽略，源码与 CI 中均不存在），
+# 实际数据通过 docker-compose volume（./custom-sources:/app/custom-sources）挂载宿主机目录提供。
+# 此处仅创建空目录作为挂载点：避免 COPY 不存在的路径导致 CI 构建失败，
+# 同时保证未挂载 volume 时程序上传/写入音源脚本不因目录缺失报错。
+RUN mkdir -p /app/custom-sources
 
 # ---------- 前端静态产物给 nginx ----------
 COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
