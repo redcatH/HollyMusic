@@ -1,6 +1,6 @@
 # 🎵 Holly Music
 
-> 多源在线音乐聚合播放器 · 自部署 · PWA · 移动端友好
+> **直接兼容洛雪（LX Music）自定义音源** · 多源聚合 · 自部署 · PWA
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Docker](https://img.shields.io/badge/Docker-ghcr.io-blue?logo=docker)](https://github.com/redcatH/HollyMusic/pkgs/container/hollymusic)
@@ -8,11 +8,20 @@
 [![GitHub release](https://img.shields.io/github/v/release/redcatH/HollyMusic?include_prereleases)](https://github.com/redcatH/HollyMusic/releases)
 [![GitHub stars](https://img.shields.io/github/stars/redcatH/HollyMusic?style=social)](https://github.com/redcatH/HollyMusic/stargazers)
 
-我们的宗旨：聚合网络上的一切公开资源，让好音乐触手可及。
+**聚合网络上的一切公开资源，让好音乐触手可及。**
 
-Holly Music 聚合多个音源（QQ / 网易 / 酷我 / 酷狗 / 咪咕等），提供统一的搜索、播放、收藏、歌单、歌词、下载体验。支持 PWA 安装到桌面、离线 App Shell、锁屏媒体控制。纯自部署，数据掌握在自己手里。
+Holly Music 是一个纯自部署的在线音乐聚合播放器。内置 `lx-env-simulator` 兼容层，**可直接加载洛雪音乐（LX Music Desktop）的自定义音源脚本**——你手头已有的洛雪音源 `.js` 丢进来就能用，无需改造。同时聚合 QQ / 网易 / 酷我 / 酷狗 / 咪咕等平台，一个搜索框同时检索，质量自动回退（`flac24bit → flac → 320k → 128k`），提供搜索、播放、收藏、歌单、歌词、下载的一站式体验。
 
-> 架构说明：前端为 **Vite + React Router** 构建的 SPA（`frontend/`），后端为 **Next.js (App Router)** 仅提供 API（`app/api/`、`app/rest/`）。前端通过 `@/*` 别名复用根目录的 `components/`、`hooks/`、`lib/` 中纯前端部分。
+**为什么选 Holly Music？**
+
+- 🧩 **洛雪音源生态即插即用**——兼容 LX Music 自定义源 API 2.0.0，社区海量音源脚本直接复用，admin 后台拖拽上传、热重载生效
+- 🚀 **服务端磁盘缓存 + 边下边播**——音频落盘支持 HTTP Range，seek / 暂停 / 恢复丝滑，多用户共享缓存，LRU 自动清理
+- 📱 **PWA + 锁屏控制**——安装到主屏像原生 App，断网仍能打开 App Shell，锁屏 / 通知栏 / 耳机线控显示封面与播放控制
+- 🔐 **多用户隔离 + 自托管**——收藏、歌单、播放历史按用户隔离，数据在你自己的服务器，签名 Cookie 鉴权
+- 🤖 **AI 加持**——管理员可批量跑 AI 推荐任务，用户侧可用自然语言描述需求让 AI 协助建歌单
+- 🔌 **Subsonic 协议兼容**——可作为 Subsonic 服务端被 DSub / Ultrasonic 等外部客户端接入
+
+> 💡 **架构一瞥**：前端为 **Vite + React Router** 构建的 SPA（`frontend/`），后端为 **Next.js (App Router)** 仅提供 API（`app/api/`、`app/rest/`）。前端通过 `@/*` 别名复用根目录的 `components/`、`hooks/`、`lib/` 中纯前端部分。详见下文[技术栈](#-技术栈)与[目录结构](#-目录结构)。
 
 ---
 
