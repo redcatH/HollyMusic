@@ -13,7 +13,7 @@
 ## 目标（对 Copilot 的期望）
 
 - 生成与修改代码时遵循现有代码风格（函数式 React、hooks、TypeScript 类型、Tailwind 原子类）。
-- 优先重用 `lib/` 下的工具函数与 `hooks/` 中的 hooks（例如 `useAudio.ts`, `useSearch.ts`）。
+- 优先重用 `lib/` 下的工具函数与 `hooks/` 中的 hooks（例如 `useAudioPlayer.ts`, `useSearch.ts`）。
 - 对涉及网络请求或音源解析的改动，保持对 `lx-env-simulator/` 与 `custom-sources/` 的兼容性。
 
 ## 编码约定（简要）
@@ -30,7 +30,7 @@
 - `app/`：Next.js 的页面与 API 路由（使用 app-router）；新接口放在 `app/api/` 下对应子目录。
 - `components/`：可复用 UI 组件，分子目录按功能组织（`layout/`、`player/`、`search/` 等）。
 - `lib/`：业务核心工具（请求封装、音乐源管理、下载、缓存、日志等）。优先调用已有方法。
-- `hooks/`：常用 hooks（`useAudio.ts`, `useDownload.ts`, `useMusicUrl.ts`, `useSearch.ts`）。
+- `hooks/`：常用 hooks（`useAudioPlayer.ts`, `useDownload.ts`, `useSearch.ts` 等）。
 - `custom-sources/`：第三方或自定义音源脚本（通常为 JS 脚本），新增音源需按现有格式实现并在 `music-sources.json` 中注册。
 - `lx-env-simulator/`：兼容层与测试脚本，慎改。
 
@@ -40,7 +40,7 @@
   - 提示示例："在 `app/` 下创建一个名为 `artist/[id]/page.tsx` 的页面，使用 React + TypeScript，显示歌手名、头像和歌单列表，使用现有 `components/layout/Header.tsx` 作为页面头部，样式使用 Tailwind。"
 
 - 新增可复用组件
-  - 提示示例："在 `components/player/` 中创建 `MiniPlayer.tsx`，接收当前播放信息与控制回调，使用 `useAudio` hook，遵循项目中现有 Player 风格。"
+  - 提示示例："在 `components/player/` 中创建 `MiniPlayer.tsx`，接收当前播放信息与控制回调，使用 `useAudioPlayer` hook，遵循项目中现有 Player 风格。"
 
 - 调用后端 API（Next.js API Route）
   - 提示示例："在 `app/api/music-url/route.ts` 中添加一个 POST 路由，接收 `id` 参数，使用 `lib/music-source-manager.ts` 获取播放地址并返回 JSON，添加必要的类型定义和错误处理。"
@@ -84,4 +84,4 @@ pnpm lint
 
 ## 示例对话模板（可直接粘给 Copilot）
 
-"仓库是一个基于 Next.js + TypeScript 的音乐播放聚合前端，文件结构见 `app/`、`components/`、`lib/`、`hooks/`。请在 `components/player/` 下创建 `MiniPlayer.tsx`，使用 `useAudio` hook，类型安全，Tailwind 样式，包含必要的单元测试样例。不要修改 `lx-env-simulator/`。"
+"仓库是一个基于 Next.js + TypeScript 的音乐播放聚合前端，文件结构见 `app/`、`components/`、`lib/`、`hooks/`。请在 `components/player/` 下创建 `MiniPlayer.tsx`，使用 `useAudioPlayer` hook，类型安全，Tailwind 样式，包含必要的单元测试样例。不要修改 `lx-env-simulator/`。"

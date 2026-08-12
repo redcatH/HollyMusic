@@ -6,9 +6,6 @@
 import { NextRequest } from 'next/server'
 import crypto from 'crypto'
 
-// 硬编码的 API Keys（临时方案，生产环境应使用环境变量或数据库）
-export const HARD_CODED_API_KEYS = ['my-temporary-key']
-
 // Subsonic 协议版本
 export const SUBSONIC_VERSION = '1.16.1'
 
@@ -29,15 +26,6 @@ export interface SubsonicParams {
 }
 
 /**
- * Subsonic 认证结果接口
- */
-export interface SubsonicAuthResult {
-  valid: boolean
-  code?: number
-  message?: string
-}
-
-/**
  * 从请求中解析 Subsonic 通用参数
  * 支持 GET (URL query) 和 POST (body)
  */
@@ -51,66 +39,6 @@ export function parseSubsonicParams(req: NextRequest): SubsonicParams {
   })
 
   return params
-}
-
-/**
- * 验证 Subsonic 认证参数
- * 当前使用硬编码的 API key 列表进行简单验证
- * TODO: 实现完整的 md5(password+salt) 验证机制
- */
-export function validateSubsonicAuth(params: SubsonicParams): SubsonicAuthResult {
-  // 检查必需参数
-  if (!params.u) {
-    return {
-      valid: false,
-      code: 10,
-      message: 'Required parameter is missing: u'
-    }
-  }
-
-  if (!params.t) {
-    return {
-      valid: false,
-      code: 10,
-      message: 'Required parameter is missing: t'
-    }
-  }
-
-  if (!params.s) {
-    return {
-      valid: false,
-      code: 10,
-      message: 'Required parameter is missing: s'
-    }
-  }
-
-  if (!params.v) {
-    return {
-      valid: false,
-      code: 10,
-      message: 'Required parameter is missing: v'
-    }
-  }
-
-if (!params.c) {
-  return {
-    valid: false,
-    code: 10,
-    message: 'Required parameter is missing: c'
-  }
-}
-
-// 验证 API key（临时方案：先确保 t 存在再比对 token）
-// TODO: 实现标准的 md5(password+salt) 验证
-if (!params.t || !HARD_CODED_API_KEYS.includes(params.t)) {
-  return {
-    valid: false,
-    code: 40,
-    message: 'Wrong username or password'
-  }
-}
-
-return { valid: true }
 }
 
 /**

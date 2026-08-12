@@ -181,7 +181,6 @@ Holly Music 是一个纯自部署的在线音乐聚合播放器。内置 `lx-env
 
 | 文档 | 说明 |
 |------|------|
-| [Subsonic 协议实现](docs/SUBSONIC.md) | 本项目实现的 Subsonic API 子集说明，外部客户端对接参考 |
 | [音源配置热重载](docs/CONFIG-HOT-RELOAD.md) | `MusicSourceManager` 的配置监听与热重载机制 |
 | [VS Code 调试指南](docs/DEBUG-GUIDE.md) | 如何在 VS Code 中调试 Next.js API 端点 |
 
