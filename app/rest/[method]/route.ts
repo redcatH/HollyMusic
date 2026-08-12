@@ -46,6 +46,26 @@ function checkAuthError(authRes: AuthResult): Response | null {
   return null
 }
 
+/**
+ * 写操作方法集合：必须通过 Subsonic token 认证（u+t+s，authRes.verified）才能调用。
+ * 读操作（search3 / stream / getSong / getStarred / getPlaylists 等）保持匿名可用。
+ *
+ * 注意：resolveUserFromParams 在仅传 u=<用户名> 不带 token 时也会建用户并填充
+ * authRes.user（verified=false）。若只校验 authRes.user，则任何人传 u=admin 即可以
+ * admin 身份写——因此这里必须校验 verified，才是有效门禁。
+ */
+const WRITE_METHODS = new Set([
+  'star', 'unstar',
+  'createPlaylist', 'deletePlaylist', 'updatePlaylist',
+])
+
+function checkWriteAuth(method: string, authRes: AuthResult): Response | null {
+  if (WRITE_METHODS.has(method) && !authRes.verified) {
+    return auth.authFailedResponse('Authentication required')
+  }
+  return null
+}
+
 async function handleMethod(request: NextRequest, method: string) {
   // 统一入口：进行一次性认证
   const authRes = await auth.resolveUserFromRequest(request)
@@ -57,6 +77,10 @@ async function handleMethod(request: NextRequest, method: string) {
   // 检查 method 是否需要认证
   // const authRequired = checkAuthRequired(method, authRes)
   // if (authRequired) return authRequired
+
+  // 写操作必须通过 token 认证（u+t+s），阻断"仅传用户名冒名写"
+  const writeAuthError = checkWriteAuth(method, authRes)
+  if (writeAuthError) return writeAuthError
 
   // 分发到各个 handler，传递 authRes 避免重复查询
   switch (method) {

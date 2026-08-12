@@ -28,22 +28,33 @@ export interface CookieOption {
 // fallback secret：仅用于本地开发，生产必须配置 AUTH_SECRET
 const FALLBACK_SECRET = 'holly-dev-only-secret-do-not-use-in-production-0000'
 
-function getAuthSecret(): string {
+/**
+ * 解析 AUTH_SECRET：模块加载时一次性求值并缓存（替代每次请求重算）。
+ * - 生产环境（NODE_ENV=production）缺失或长度 < 32 → 抛错，拒绝不安全启动。
+ *   本模块被 user-context 等路由间接导入，首个触及鉴权的请求即触发抛错，
+ *   等效"不可用即拒绝"，杜绝用硬编码 fallback 签发可伪造 cookie。
+ * - 开发环境保留 fallback + 告警，不影响本地体验。
+ */
+function resolveAuthSecret(): string {
   const secret = process.env.AUTH_SECRET
   if (secret && secret.length >= 32) return secret
-  if (!secret) {
-    console.warn('[auth] AUTH_SECRET 未配置，使用不安全的 fallback（仅限开发环境）')
-  } else {
-    console.warn('[auth] AUTH_SECRET 长度不足 32，建议使用更长的随机值')
+  const reason = !secret ? '未配置' : '长度不足 32'
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      `[auth] AUTH_SECRET ${reason}，生产环境拒绝启动。请设置 AUTH_SECRET 环境变量（≥32 位随机字符串）。`,
+    )
   }
+  console.warn(`[auth] AUTH_SECRET ${reason}，使用不安全的 fallback（仅限开发环境）`)
   return FALLBACK_SECRET
 }
+
+const AUTH_SECRET = resolveAuthSecret()
 
 /**
  * 对用户名生成 HMAC-SHA256 签名（十六进制）。
  */
 export function sign(username: string): string {
-  return crypto.createHmac('sha256', getAuthSecret()).update(username).digest('hex')
+  return crypto.createHmac('sha256', AUTH_SECRET).update(username).digest('hex')
 }
 
 /**

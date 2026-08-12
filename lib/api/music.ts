@@ -12,11 +12,6 @@ export function getMusicUrl(
   return apiPost<{ url: string }>('music-url', { musicInfo, quality })
 }
 
-/** 构建代理后的播放 URL（解决 CORS） */
-export function buildStreamUrl(upstreamUrl: string): string {
-  return `/api/proxy/${encodeURIComponent(upstreamUrl)}`
-}
-
 /**
  * 构建音频缓存 serve URL。
  * 走 /api/audio，由服务端磁盘缓存 + Range 支持，

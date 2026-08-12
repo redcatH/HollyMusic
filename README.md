@@ -436,7 +436,6 @@ admin 登录后，侧边栏头像下拉 →「音源管理」：
 - **用户数据** — `favorites` / `history` / `playlists/*`（需登录，按用户隔离）
 - **AI 功能** — `playlist-assist/*`（用户侧 AI 建歌单）、`admin/recommend*`（admin 推荐任务）
 - **管理后台** — `app/api/admin/*`：用户 / 音源 / 缓存 / 登录锁定 / 推荐任务（仅 admin）
-- **通用代理** — `app/api/proxy/[...path]`：流式代理（Subsonic / 下载用）
 
 ---
 
