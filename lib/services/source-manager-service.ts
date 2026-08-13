@@ -51,9 +51,20 @@ async function getSimulatorCtor(): Promise<SimulatorConstructor> {
   return LXEnvironmentSimulatorCtor
 }
 
-/** 读取配置（带缓存校验） */
+/** 读取配置（带缓存校验）。文件不存在时自动初始化空配置并落盘，避免首次部署报 ENOENT。 */
 export async function readConfig(): Promise<MusicSourcesConfig> {
-  const raw = await fsp.readFile(CONFIG_PATH, 'utf-8')
+  let raw: string
+  try {
+    raw = await fsp.readFile(CONFIG_PATH, 'utf-8')
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') {
+      logger.warn(`[source-manager-service] ${CONFIG_PATH} 不存在，初始化空配置`)
+      const empty: MusicSourcesConfig = { sources: [] }
+      await writeConfig(empty)
+      return empty
+    }
+    throw e
+  }
   const parsed = JSON.parse(raw) as MusicSourcesConfig
   if (!Array.isArray(parsed.sources)) {
     throw new Error('配置文件格式无效：sources 必须是数组')

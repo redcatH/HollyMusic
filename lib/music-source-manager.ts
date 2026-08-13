@@ -149,8 +149,16 @@ class MusicSourceManager {
       config = ConfigValidator.loadConfig(configPath)
       logger.info(`加载配置文件成功，找到 ${config.sources.length} 个音源`)
     } catch (error) {
-      logger.error('加载配置文件失败:', error)
-      throw error
+      // 配置文件缺失（首次部署/空 config 目录）按空配置处理，不阻断启动；
+      // 其余错误（JSON 解析失败等）仍抛出
+      const errMsg = error instanceof Error ? error.message : String(error)
+      if ((error as NodeJS.ErrnoException)?.code === 'ENOENT' || /配置文件不存在/.test(errMsg)) {
+        logger.warn(`配置文件不存在（${configPath}），按空配置启动`)
+        config = { sources: [] }
+      } else {
+        logger.error('加载配置文件失败:', error)
+        throw error
+      }
     }
 
     // 过滤已启用的音源并按优先级排序
