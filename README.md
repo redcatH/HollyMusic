@@ -8,6 +8,16 @@
 [![GitHub release](https://img.shields.io/github/v/release/redcatH/HollyMusic?include_prereleases)](https://github.com/redcatH/HollyMusic/releases)
 [![GitHub stars](https://img.shields.io/github/stars/redcatH/HollyMusic?style=social)](https://github.com/redcatH/HollyMusic/stargazers)
 
+## 💬 交流群
+
+<p align="center">
+  <img src="docs/img/530bce6d-fb5f-41b7-9ddb-46cc1f644814.png" width="240" alt="QQ 交流群二维码">
+</p>
+
+<p align="center">扫码加入 QQ 交流群 · 使用答疑 · 音源分享 · 版本更新通知</p>
+
+---
+
 **聚合网络上的一切公开资源，让好音乐触手可及。**
 
 Holly Music 是一个纯自部署的在线音乐聚合播放器。内置 `lx-env-simulator` 兼容层，**可直接加载洛雪音乐（LX Music Desktop）的自定义音源脚本**——你手头已有的洛雪音源 `.js` 丢进来就能用，无需改造。同时聚合 QQ / 网易 / 酷我 / 酷狗 / 咪咕等平台，一个搜索框同时检索，质量自动回退（`flac24bit → flac → 320k → 128k`），提供搜索、播放、收藏、歌单、歌词、下载的一站式体验。
@@ -334,6 +344,34 @@ docker compose logs app | grep -i password
 ```
 
 > 首次启动会自动在 `./prisma_data` 创建数据库并运行 Prisma 迁移，无需手动操作。
+
+**或：使用 `docker run` 单命令启动（无需 compose / `.env` 文件）**
+
+不想创建 `docker-compose.yml` 和 `.env`？也可以用一条 `docker run` 直接启动，所有参数通过 `-e` / `-v` 传入：
+
+```bash
+docker run -d \
+  --name holly-music \
+  -p 3099:3000 \
+  -e NODE_ENV=production \
+  -e DATABASE_URL=file:./prisma/data/music.db \
+  -e ENABLE_FILE_CACHE=true \
+  -e AUDIO_CACHE_DIR=/app/.cache/audio-cache \
+  -e AUDIO_CACHE_QUOTA_GB=10 \
+  -e AUTH_SECRET=$(openssl rand -hex 32) \
+  -v "$(pwd)/custom-sources:/app/custom-sources" \
+  -v "$(pwd)/config:/app/config" \
+  -v "$(pwd)/prisma_data:/app/prisma/prisma/data" \
+  -v "$(pwd)/cache_data:/app/.cache" \
+  -v "$(pwd)/app_logs:/app/logs" \
+  --health-cmd "wget --quiet --tries=1 --spider http://localhost:3000/api/health || exit 1" \
+  --health-interval 30s --health-timeout 10s --health-retries 3 --health-start-period 15s \
+  ghcr.io/redcath/hollymusic:latest
+```
+
+> - `AUTH_SECRET` 用 `$(openssl rand -hex 32)` 现场生成随机密钥（也可替换为自己固定的 ≥32 位字符串）。**注意：密钥一旦确定就不要再改**，否则已登录用户的 cookie 会全部失效。
+> - 端口 `3099:3000` 左边是宿主机端口，按需修改；初始密码在容器日志中：`docker logs holly-music | grep -i password`。
+> - 升级：`docker pull ghcr.io/redcath/hollymusic:latest && docker rm -f holly-music` 后重新执行上面的 `docker run`（数据通过 volume 保留）。
 
 **HTTPS 部署（可选）**
 
