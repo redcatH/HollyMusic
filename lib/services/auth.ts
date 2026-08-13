@@ -28,16 +28,25 @@ export interface CookieOption {
 // fallback secret：仅用于本地开发，生产必须配置 AUTH_SECRET
 const FALLBACK_SECRET = 'holly-dev-only-secret-do-not-use-in-production-0000'
 
+// 惰性缓存：首次调用 getAuthSecret() 时求值一次并缓存。
+// 不用模块顶层求值——next build 的 collecting page data 阶段会加载所有路由模块，
+// 若顶层抛错会导致构建失败（AUTH_SECRET 是运行时配置，构建阶段不应强制要求）。
+let cachedSecret: string | null = null
+
 /**
- * 解析 AUTH_SECRET：模块加载时一次性求值并缓存（替代每次请求重算）。
+ * 解析 AUTH_SECRET：首次使用时惰性求值并缓存（替代每次请求重算）。
  * - 生产环境（NODE_ENV=production）缺失或长度 < 32 → 抛错，拒绝不安全启动。
- *   本模块被 user-context 等路由间接导入，首个触及鉴权的请求即触发抛错，
- *   等效"不可用即拒绝"，杜绝用硬编码 fallback 签发可伪造 cookie。
+ *   首个触及鉴权的请求即触发抛错，等效"不可用即拒绝"，
+ *   杜绝用硬编码 fallback 签发可伪造 cookie。
  * - 开发环境保留 fallback + 告警，不影响本地体验。
  */
-function resolveAuthSecret(): string {
+function getAuthSecret(): string {
+  if (cachedSecret) return cachedSecret
   const secret = process.env.AUTH_SECRET
-  if (secret && secret.length >= 32) return secret
+  if (secret && secret.length >= 32) {
+    cachedSecret = secret
+    return secret
+  }
   const reason = !secret ? '未配置' : '长度不足 32'
   if (process.env.NODE_ENV === 'production') {
     throw new Error(
@@ -45,16 +54,15 @@ function resolveAuthSecret(): string {
     )
   }
   console.warn(`[auth] AUTH_SECRET ${reason}，使用不安全的 fallback（仅限开发环境）`)
+  cachedSecret = FALLBACK_SECRET
   return FALLBACK_SECRET
 }
-
-const AUTH_SECRET = resolveAuthSecret()
 
 /**
  * 对用户名生成 HMAC-SHA256 签名（十六进制）。
  */
 export function sign(username: string): string {
-  return crypto.createHmac('sha256', AUTH_SECRET).update(username).digest('hex')
+  return crypto.createHmac('sha256', getAuthSecret()).update(username).digest('hex')
 }
 
 /**

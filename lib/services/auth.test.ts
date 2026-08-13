@@ -2,24 +2,30 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 /**
  * Fix 3 回归守卫：AUTH_SECRET 解析逻辑。
- * 模块加载时一次性求值，生产环境缺失/过短必须抛错，杜绝用硬编码 fallback 签 cookie。
+ * 惰性求值：模块加载不抛错（保证 next build 的 collecting page data 阶段可通过），
+ * 首次调用 sign()/verify() 时检查，生产环境缺失/过短必须抛错，杜绝用硬编码 fallback 签 cookie。
  */
 describe('AUTH_SECRET resolution (lib/services/auth.ts)', () => {
   beforeEach(() => {
-    // 每个用例前清空模块缓存，确保动态 import 重新执行模块顶层 resolveAuthSecret()
+    // 每个用例前清空模块缓存，确保动态 import 重新执行模块顶层（惰性求值需重置缓存）
     vi.resetModules()
   })
 
-  it('生产环境缺失 AUTH_SECRET → 模块加载抛错', async () => {
+  it('生产环境缺失 AUTH_SECRET → 模块可加载，首次 sign() 抛错', async () => {
     vi.stubEnv('NODE_ENV', 'production')
     vi.stubEnv('AUTH_SECRET', '')
-    await expect(import('@/lib/services/auth')).rejects.toThrow(/AUTH_SECRET/)
+    const mod = await import('@/lib/services/auth')
+    // 模块加载不抛错（构建阶段可通过）
+    expect(typeof mod.sign).toBe('function')
+    // 首次使用才抛错
+    expect(() => mod.sign('admin')).toThrow(/AUTH_SECRET/)
   })
 
-  it('生产环境 AUTH_SECRET 长度不足 32 → 抛错', async () => {
+  it('生产环境 AUTH_SECRET 长度不足 32 → 首次 sign() 抛错', async () => {
     vi.stubEnv('NODE_ENV', 'production')
     vi.stubEnv('AUTH_SECRET', 'short')
-    await expect(import('@/lib/services/auth')).rejects.toThrow(/长度不足 32/)
+    const mod = await import('@/lib/services/auth')
+    expect(() => mod.sign('admin')).toThrow(/长度不足 32/)
   })
 
   it('开发环境缺失 AUTH_SECRET → 回退 fallback，sign() 仍可用', async () => {
