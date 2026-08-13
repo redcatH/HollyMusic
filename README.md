@@ -335,6 +335,18 @@ docker compose logs app | grep -i password
 
 > 首次启动会自动在 `./prisma_data` 创建数据库并运行 Prisma 迁移，无需手动操作。
 
+**HTTPS 部署（可选）**
+
+- **HTTP 直连**（`http://IP:3099`）：无需额外配置，默认即可。
+- **HTTPS 反代**（nginx/CDN 终止 TLS）：在 `.env` 中设置 `COOKIE_SECURE=true`，否则浏览器会因 cookie 缺少 `Secure` 标志而在 HTTPS 下拒绝保存，导致登录后所有请求"未登录"。
+
+```env
+# HTTPS 反代部署时取消注释
+COOKIE_SECURE=true
+```
+
+> 注意：`COOKIE_SECURE` 默认 `false`，与 `NODE_ENV` 无关。HTTP 直连时**不要**设为 `true`，否则浏览器拒绝保存 `Secure` cookie，同样会导致"未登录"。
+
 ### 方式二：从源码构建
 
 适合需要修改代码或自定义镜像的场景。clone 本仓库后，在根目录执行：

@@ -73,11 +73,17 @@ export function verify(username: string, sig: string): boolean {
   }
 }
 
+// Cookie Secure 标志：默认 false（HTTP 直连部署可用）。
+// HTTPS 反代部署时显式设 COOKIE_SECURE=true，cookie 仅经 HTTPS 传输。
+// 不随 NODE_ENV 自动开启：Docker 部署 NODE_ENV=production 但常以 HTTP 直连，
+// 若强制 Secure 会导致浏览器拒绝保存 cookie，登录后所有请求"未登录"。
+const COOKIE_SECURE = process.env.COOKIE_SECURE === 'true'
+
 const baseCookieOptions: Omit<CookieOption, 'name' | 'value'> = {
   httpOnly: true,
   path: '/',
   sameSite: 'lax',
-  secure: process.env.NODE_ENV === 'production',
+  secure: COOKIE_SECURE,
   maxAge: MAX_AGE,
 }
 

@@ -37,3 +37,48 @@ describe('AUTH_SECRET resolution (lib/services/auth.ts)', () => {
     expect(mod.sign('admin')).toMatch(/^[0-9a-f]+$/)
   })
 })
+
+/**
+ * COOKIE_SECURE 回归守卫：Docker 部署（NODE_ENV=production）下 HTTP 直连必须可用。
+ * 修复前 secure 硬编码为 NODE_ENV==='production'，导致 HTTP 下浏览器拒绝保存 cookie，
+ * 登录后所有请求"未登录"（admin 强制改密流程直接卡死）。
+ */
+describe('COOKIE_SECURE resolution (lib/services/auth.ts)', () => {
+  beforeEach(() => {
+    vi.resetModules()
+  })
+
+  it('生产环境未设置 COOKIE_SECURE → secure=false（HTTP 直连可用）', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('AUTH_SECRET', 'a'.repeat(32))
+    vi.stubEnv('COOKIE_SECURE', '')
+    const mod = await import('@/lib/services/auth')
+    const cookies = mod.createSessionCookies('admin')
+    expect(cookies).toHaveLength(2)
+    for (const c of cookies) {
+      expect(c.secure).toBe(false)
+    }
+  })
+
+  it('生产环境 COOKIE_SECURE=true → secure=true（HTTPS 反代）', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('AUTH_SECRET', 'a'.repeat(32))
+    vi.stubEnv('COOKIE_SECURE', 'true')
+    const mod = await import('@/lib/services/auth')
+    const cookies = mod.createSessionCookies('admin')
+    for (const c of cookies) {
+      expect(c.secure).toBe(true)
+    }
+  })
+
+  it('生产环境 COOKIE_SECURE=false 显式值 → secure=false', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('AUTH_SECRET', 'a'.repeat(32))
+    vi.stubEnv('COOKIE_SECURE', 'false')
+    const mod = await import('@/lib/services/auth')
+    const cookies = mod.createSessionCookies('admin')
+    for (const c of cookies) {
+      expect(c.secure).toBe(false)
+    }
+  })
+})
