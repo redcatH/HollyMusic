@@ -7,16 +7,7 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![GitHub release](https://img.shields.io/github/v/release/redcatH/HollyMusic?include_prereleases)](https://github.com/redcatH/HollyMusic/releases)
 [![GitHub stars](https://img.shields.io/github/stars/redcatH/HollyMusic?style=social)](https://github.com/redcatH/HollyMusic/stargazers)
-
-## 💬 交流群
-
-<p align="center">
-  <img src="docs/img/530bce6d-fb5f-41b7-9ddb-46cc1f644814.png" width="240" alt="QQ 交流群二维码">
-</p>
-
-<p align="center">扫码加入 QQ 交流群 · 使用答疑 · 音源分享 · 版本更新通知</p>
-
----
+[![QQ 群](https://img.shields.io/badge/QQ%E7%BE%A4-645630511-12B7F5?logo=QQ)](#-交流群)
 
 **聚合网络上的一切公开资源，让好音乐触手可及。**
 
@@ -569,6 +560,16 @@ A：已改为服务端磁盘缓存 + Range 代理方案，seek / 暂停 / 恢复
 
 **Q：开发模式下前端 5173 访问 API 报 401/CORS？**
 A：Vite dev server 已配置代理 `/api` → `localhost:3000`，确保后端 `pnpm dev` 正在运行；若用 `pnpm dev:web` 单独启动前端，需先启动后端。
+
+---
+
+## 💬 交流群
+
+<p align="center">
+  <img src="docs/img/530bce6d-fb5f-41b7-9ddb-46cc1f644814.png" width="240" alt="QQ 交流群二维码">
+</p>
+
+<p align="center">QQ 群 <strong>645630511</strong> · 扫码或搜索群号加入 · 使用答疑 · 音源分享 · 版本更新通知</p>
 
 ---
 
