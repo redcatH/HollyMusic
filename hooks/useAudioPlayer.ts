@@ -248,6 +248,10 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
         try {
           await audio.play()
         } catch (e) {
+          // AbortError：play() 被 pause()/load() 打断（快速切歌），浏览器标准行为，忽略
+          // gen 校验：过期 load（快速连切）的 play 结果不影响当前歌曲状态，避免状态闪变
+          const name = e instanceof Error ? e.name : ''
+          if (name === 'AbortError' || gen !== loadGenRef.current) return
           console.warn('[useAudioPlayer] autoplay blocked', e)
           // autoplay 被浏览器拦截——同步 UI 状态，避免显示"播放中"但实际没声音
           optsRef.current.onPlayState?.(false)
@@ -264,6 +268,9 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
     if (!audio.paused) return
     console.log('[diag] audio play, readyState=', audio.readyState)
     audio.play().catch(e => {
+      // AbortError：play() promise 未决期间被 pause()/load()/切歌打断，
+      // 是浏览器标准行为，不算播放失败——否则会触发自动跳歌甚至停播
+      if (e instanceof Error && e.name === 'AbortError') return
       console.error('[useAudioPlayer] play() failed', e)
       optsRef.current.onError?.('播放失败：' + (e instanceof Error ? e.message : String(e)))
     })
