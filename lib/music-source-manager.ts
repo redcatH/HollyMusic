@@ -75,6 +75,25 @@ class MusicSourceManager {
   private lyricCache: Map<string, { value: { lyric: string; tlyric: string | null }; expires: number }> = new Map()
   private picCache: Map<string, { value: Buffer | string; expires: number }> = new Map()
   private defaultCacheTtl = 60 * 60 * 1000 // 1 hour
+  /** 单次 getMusicUrl 调用超时（仿照 getLyric 已有的 Promise.race 超时模式） */
+  private readonly musicUrlTimeoutMs = 15_000
+  /** 全音源×音质尝试总预算，超时直接放弃（避免上游全挂时客户端等待数分钟） */
+  private readonly musicUrlTotalTimeoutMs = 45_000
+
+  /** 给 Promise 加超时的通用辅助（超时后 reject，定时器清理） */
+  private async withTimeout<T>(p: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+    let timer: NodeJS.Timeout | null = null
+    try {
+      return await Promise.race([
+        p,
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => reject(new Error(`${label}（${Math.round(timeoutMs / 1000)}s）`)), timeoutMs)
+        }),
+      ])
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
+  }
 
   /**
    * 检测配置文件是否改变
@@ -255,8 +274,11 @@ class MusicSourceManager {
     logger.debug(`获取音乐URL: ${musicInfo.name} - ${musicInfo.singer}`)
     logger.debug(`音源: ${musicInfo.source}, 请求音质: ${requestedQuality}`)
 
+    // 总预算：全音源×音质尝试不无限串行（上游全挂时限制客户端等待时间）
+    const deadline = Date.now() + this.musicUrlTotalTimeoutMs
+
     // 尝试所有音源和音质组合
-    for (const instance of availableInstances) {
+    outer: for (const instance of availableInstances) {
       // pt 优先：用户配置的 pt 未包含该平台则跳过（即使脚本声明支持）
       if (!this.isAllowedByPt(instance, musicInfo.source)) {
         continue
@@ -277,6 +299,9 @@ class MusicSourceManager {
 
       // 尝试不同音质
       for (const quality of qualitiesToTry) {
+        // 总超时：超出预算立即放弃整个尝试
+        if (Date.now() > deadline) break outer
+
         // 检查音源是否支持该音质
         if (!sourceConfig.qualitys.includes(quality)) {
           continue
@@ -292,10 +317,11 @@ class MusicSourceManager {
             `尝试: ${instance.config.name} - ${musicInfo.source} - ${quality}`
           )
 
-          const url = await instance.simulator.getMusicUrl(
-            musicInfo.source,
-            musicInfo,
-            quality
+          // 单次调用加超时（洛雪脚本挂起时不阻塞整个请求）
+          const url = await this.withTimeout(
+            instance.simulator.getMusicUrl(musicInfo.source, musicInfo, quality),
+            this.musicUrlTimeoutMs,
+            `获取音乐URL超时: ${instance.config.name} - ${quality}`,
           )
 
           if (url && typeof url === 'string' && url.trim()) {
@@ -314,6 +340,9 @@ class MusicSourceManager {
     }
 
     // 所有音源都失败
+    if (Date.now() > deadline) {
+      throw new Error('无法获取播放链接: 所有音源均失败（总超时）')
+    }
     throw new Error(`无法获取播放链接: 所有音源均失败 (歌曲: ${musicInfo.name})`)
   }
 

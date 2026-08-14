@@ -155,8 +155,12 @@ class AudioServe {
   private readonly seekTimeoutMs = 15_000
   /** 503 后建议的重试间隔 */
   private readonly retryAfterSec = 3
-  /** fetch 上游超时 */
+  /** 上游 stall 超时（覆盖 fetch header + body 全程，无进展即 abort；默认 30s） */
   private readonly fetchTimeoutMs = 30_000
+  /** 上游 URL 解析超时（AUDIO_CACHE_READINESS_TIMEOUT_MS，默认 20s） */
+  private readonly resolveTimeoutMs = readInt('AUDIO_CACHE_READINESS_TIMEOUT_MS', 20_000, 1_000)
+  /** waitForReadiness 兜底超时（防御纵深；正常情况 resolver/fetch 超时先触发并清理 entry） */
+  private readonly readinessFallbackMs = 60_000
   /** 初始化幂等 */
   private initPromise: Promise<void> | null = null
 
@@ -363,11 +367,19 @@ class AudioServe {
     entry: InflightEntry,
     upstreamUrlResolver: () => Promise<string>
   ): Promise<void> {
+    let stallTimer: NodeJS.Timeout | null = null
     try {
-      const url = await upstreamUrlResolver()
+      // ① URL 解析：洛雪脚本挂起时不再永久卡死（inflight entry 也不残留）
+      const url = await this.withTimeout(
+        upstreamUrlResolver(),
+        this.resolveTimeoutMs,
+        '解析上游 URL 超时',
+      )
       const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), this.fetchTimeoutMs)
-      if (timer.unref) timer.unref()
+      stallTimer = setTimeout(() => controller.abort(), this.fetchTimeoutMs)
+      if (stallTimer.unref) stallTimer.unref()
+      // stall 超时覆盖 fetch header + body 全程：每次有新数据进展就续期
+      const refreshTimer = () => stallTimer?.refresh()
 
       let resp: Response
       try {
@@ -375,9 +387,11 @@ class AudioServe {
           signal: controller.signal,
           headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
         })
-      } finally {
-        clearTimeout(timer)
+      } catch (e) {
+        throw e
       }
+      // fetch 返回后 stallTimer 保留，继续覆盖 body 读取阶段
+      refreshTimer()
 
       if (!resp.ok) {
         throw new Error(`upstream ${resp.status} ${resp.statusText}`)
@@ -414,6 +428,8 @@ class AudioServe {
         for (;;) {
           const { done, value } = await reader.read()
           if (done) break
+          // 每收到一块数据就续期 stall 定时器（慢速但持续的下载不误杀）
+          refreshTimer()
           await new Promise<void>((resolve, reject) => {
             writeStream.write(value, err => (err ? reject(err) : resolve()))
           })
@@ -464,6 +480,7 @@ class AudioServe {
       entry.emitter.emit('error', entry.error)
       logger.warn(`[AudioServe] failed ${cacheKey}: ${entry.error.message}`)
     } finally {
+      if (stallTimer) clearTimeout(stallTimer)
       // 完成（成功或失败）后从 Map 移除
       // - 成功 → DB 已是事实来源，新请求查 DB 命中
       // - 失败 → 下次请求重新 startDownload
@@ -476,10 +493,11 @@ class AudioServe {
   // 等待机制
   // --------------------------------------------------------------------------
 
-  /** 等 size 已知（fetch header 返回）。无超时——靠 fetch 自身的 timeout 兜底 */
+  /** 等 size 已知（fetch header 返回）。带兜底超时（正常由 resolver/fetch 超时先触发并清理 entry） */
   private waitForReadiness(entry: InflightEntry): Promise<boolean> {
     if (entry.size !== null || entry.error) return Promise.resolve(true)
     return new Promise(resolve => {
+      let timer: NodeJS.Timeout | null = null
       const onReady = () => {
         cleanup()
         resolve(true)
@@ -489,10 +507,16 @@ class AudioServe {
         resolve(true) // error 也算 ready，让调用方走 error 分支
       }
       const cleanup = () => {
+        if (timer) clearTimeout(timer)
         entry.emitter.off('progress', onReady)
         entry.emitter.off('complete', onError)
         entry.emitter.off('error', onError)
       }
+      // 兜底：resolver(20s) + fetch(30s) + 余量；正常情况 runDownload 侧超时先触发
+      timer = setTimeout(() => {
+        cleanup()
+        resolve(false)
+      }, this.readinessFallbackMs)
       // progress 首次触发即表示 size 已知
       entry.emitter.once('progress', onReady)
       entry.emitter.once('error', onError)
@@ -528,6 +552,21 @@ class AudioServe {
     })
   }
 
+  /** 给 Promise 加超时的通用辅助（超时后 reject，定时器清理） */
+  private async withTimeout<T>(p: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+    let timer: NodeJS.Timeout | null = null
+    try {
+      return await Promise.race([
+        p,
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => reject(new Error(`${label}（${Math.round(timeoutMs / 1000)}s）`)), timeoutMs)
+        }),
+      ])
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
+  }
+
   // --------------------------------------------------------------------------
   // passthrough（ENABLE_FILE_CACHE=false）
   // --------------------------------------------------------------------------
@@ -536,12 +575,22 @@ class AudioServe {
     upstreamUrl: string,
     rangeHeader: string | null
   ): Promise<Response> {
-    const resp = await fetch(upstreamUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        ...(rangeHeader ? { Range: rangeHeader } : {}),
-      },
-    })
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), this.fetchTimeoutMs)
+    if (timer.unref) timer.unref()
+    let resp: Response
+    try {
+      resp = await fetch(upstreamUrl, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          ...(rangeHeader ? { Range: rangeHeader } : {}),
+        },
+      })
+    } finally {
+      // 仅覆盖 header 阶段；body 交给运行时流转（与透传语义一致）
+      clearTimeout(timer)
+    }
     const headers: Record<string, string> = { 'Cache-Control': 'no-store' }
     const ct = resp.headers.get('content-type')
     if (ct) headers['Content-Type'] = ct
