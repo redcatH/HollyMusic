@@ -22,22 +22,25 @@ function normalizeMethod(raw: string | undefined) {
 }
 
 /**
- * 认证检查：如果 method 需要认证但用户未登录，返回认证失败响应
+ * 认证开关（REQUIRE_AUTH 环境变量）：
+ * - 未设置 → 全部方法（除 AUTH_EXEMPT_METHODS）要求 Subsonic token 认证
+ * - false | off | none → 关闭强制认证（仅 WRITE_METHODS 仍要求 token）
+ * - 其它非空值 → 方法名列表，仅列表内方法要求认证（向后兼容精细控制）
  */
-function checkAuthRequired(method: string, authRes: AuthResult): Response | null {
-  const envList = parseListParam(process.env.REQUIRE_AUTH ?? null)
-  const defaultList = ['star', 'unstar', 'stream', 'getSong', 'getStarred']
-  const requireList = envList.length ? envList : defaultList
-  const requireAuthSet = new Set(requireList)
-
-  if (requireAuthSet.has(method) && !authRes.user) {
-    return auth.authFailedResponse('Authentication required')
-  }
-  return null
+function isMethodAuthRequired(method: string): boolean {
+  const raw = (process.env.REQUIRE_AUTH ?? '').trim().toLowerCase()
+  if (raw === 'false' || raw === 'off' || raw === 'none') return false
+  if (raw === '') return true
+  return parseListParam(process.env.REQUIRE_AUTH ?? null).includes(method)
 }
 
+/** 无用户数据、始终匿名可用的方法 */
+const AUTH_EXEMPT_METHODS = new Set(['ping', 'getOpenSubsonicExtensions', 'getScanStatus'])
+
 /**
- * 如果认证失败（token 无效），返回认证失败响应
+ * 如果认证失败（token 无效），返回认证失败响应。
+ * 注意：auth_required（强制认证开启但未带 token）不在此拦截——
+ * 由下方豁免集之后的强制认证检查统一处理，保证豁免方法即使带 u 参数也能匿名访问。
  */
 function checkAuthError(authRes: AuthResult): Response | null {
   if (authRes.error === 'invalid_t') {
@@ -69,18 +72,20 @@ function checkWriteAuth(method: string, authRes: AuthResult): Response | null {
 async function handleMethod(request: NextRequest, method: string) {
   // 统一入口：进行一次性认证
   const authRes = await auth.resolveUserFromRequest(request)
-  
+
   // 检查认证错误（token 无效）
   const authError = checkAuthError(authRes)
   if (authError) return authError
-  
-  // 检查 method 是否需要认证
-  // const authRequired = checkAuthRequired(method, authRes)
-  // if (authRequired) return authRequired
 
   // 写操作必须通过 token 认证（u+t+s），阻断"仅传用户名冒名写"
   const writeAuthError = checkWriteAuth(method, authRes)
   if (writeAuthError) return writeAuthError
+
+  // 强制认证：默认所有方法（除豁免集）要求已认证用户；
+  // REQUIRE_AUTH 为方法列表时仅列表内方法要求（向后兼容）
+  if (isMethodAuthRequired(method) && !AUTH_EXEMPT_METHODS.has(method) && !authRes.verified) {
+    return auth.authFailedResponse('Authentication required')
+  }
 
   // 分发到各个 handler，传递 authRes 避免重复查询
   switch (method) {
@@ -115,14 +120,6 @@ async function handleMethod(request: NextRequest, method: string) {
       return handleGetPlaylists(request, authRes)
     case 'getPlaylist':
       return handleGetPlaylist(request, authRes)
-      const children = `
-<playlist id="2" name="dj" comment="" owner="admin" public="false" songCount="2" duration="0" created="2025-12-02 05:54:13" coverArt="pl-2">
-<allowedUser>admin</allowedUser>
-<entry id="" parent="" title="" album="" artist="" isDir="false" coverArt="" created="2025-12-02T05:54:19.179Z" duration="undefined" bitRate="320" track="0" year="" genre="" size="undefined" suffix="" contentType="" isVideo="false" path="" albumId="" artistId="" type="music"/>
-<entry id="338638" parent="1737790" title="夜曲" album="第六届全球华语歌曲排行榜颁奖典礼" artist="周杰伦" isDir="false" coverArt="pl-2" created="2025-12-02T07:05:31.716Z" duration="0" bitRate="320" track="0" year="" genre="" size="0" suffix="mp3" contentType="audio/mpeg" isVideo="false" path="周杰伦/第六届全球华语歌曲排行榜颁奖典礼/夜曲.mp3" albumId="1737790" artistId="" type="music"/>
-</playlist>`;
-      const xml = formatSubsonicXML({ status: 'ok', children })
-      return createSubsonicResponse(xml)
     case 'createPlaylist':
       return handleCreatePlaylist(request, authRes)
     case 'deletePlaylist':

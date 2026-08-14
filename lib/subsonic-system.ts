@@ -27,29 +27,19 @@ export async function handleGetOpenSubsonicExtensions(request: NextRequest, auth
 }
 
 /**
- * 返回用户信息（优先使用已解析的 authRes.user，否则根据 query param 查找）
+ * 返回用户信息（强制使用认证结果，不接受 query 参数指定他人身份，防越权）
  *
  * 注意：根据项目的 Prisma `User` 模型字段命名，部分字段（如 email、isAdmin、nickName）
  * 可能需调整。函数会尽量使用可用字段并提供安全的默认值。
  */
 export async function handleGetUser(request: NextRequest, authRes: AuthResult): Promise<Response> {
   try {
-    const url = new URL(request.url)
-    const qUsername = url.searchParams.get('u') || url.searchParams.get('username')
-
-    // 优先使用 authRes.user
-    let user = authRes.user ?? null
+    // 认证开启时 authRes.user 必有值（route 层已拦截未认证请求）
+    const user = authRes.user
 
     if (!user) {
-      if (!qUsername) {
-        const xml = formatSubsonicXML({ status: 'failed', error: { code: 10, message: 'Missing required parameter: username' } })
-        return createSubsonicResponse(xml)
-      }
-      user = await prisma.user.findUnique({ where: { username: qUsername } })
-      if (!user) {
-        const xml = formatSubsonicXML({ status: 'failed', error: { code: 70, message: 'User not found' } })
-        return createSubsonicResponse(xml)
-      }
+      const xml = formatSubsonicXML({ status: 'failed', error: { code: 10, message: 'Missing required parameter: username' } })
+      return createSubsonicResponse(xml)
     }
 
     // 构建用户的 XML 节点。字段名称依赖于你的 Prisma `User` 模型；这里使用了可用字段并提供回退值。

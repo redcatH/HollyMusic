@@ -23,8 +23,8 @@ function escapeXml(text: string | number | null | undefined): string {
  */
 export async function handleGetPlaylists(request: NextRequest, authRes: AuthResult): Promise<Response> {
     try {
-        const url = new URL(request.url)
-        const username = url.searchParams.get('username') || authRes.user?.username
+        // 用户名强制取自认证结果，不接受 query 参数指定他人身份（防越权读取他人歌单）
+        const username = authRes.user?.username
 
         if (!username) {
             const xml = formatSubsonicXML({
