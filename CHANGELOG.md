@@ -6,6 +6,12 @@
 
 ## [Unreleased]
 
+### 安全修复
+- **Subsonic /rest/* 默认强制认证**：所有接口（除 `ping`/`getScanStatus`/`getOpenSubsonicExtensions` 等豁免方法）要求 Subsonic token（`u+t+s`）认证，杜绝"传 `u=admin` 冒名读取他人收藏/私有歌单"的越权；`getPlaylists`/`getUser` 不再接受 query 参数指定他人身份。可通过 `REQUIRE_AUTH=false` 显式关闭（不推荐公网部署）
+- **登录限速改双维度**：新增 `user:<用户名>` 维度，爆破必然针对特定用户名，不受伪造 `X-Forwarded-For` 绕过；新增 `TRUST_PROXY` 环境变量（默认 false），直连部署不再信任客户端可伪造的转发头，反代部署取 XFF 最后一段
+- **音频链路补齐超时**：上游 URL 解析（洛雪脚本挂起）20s 超时、下载 stall 30s 超时（覆盖 header+body，慢速不误杀）、`waitForReadiness` 60s 兜底、透传模式 header 30s 超时；`getMusicUrl` 单次尝试 15s、全音源总预算 45s——音源脚本挂起不再导致请求永久卡死
+- **前端 AbortError 误判修复**：缓冲中点暂停/快速切歌触发的 `play()` AbortError 不再被当作播放失败上报，修复"点暂停却跳歌/停播"；快速连切歌曲不再产生播放状态闪变
+
 ### 变更
 - 项目开源化治理：新增 `LICENSE`（MIT）、`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、PR / Issue 模板、`CHANGELOG.md`
 - 精简 README 的 API 文档，区分对外接口与内部接口
