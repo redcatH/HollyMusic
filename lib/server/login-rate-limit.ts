@@ -21,6 +21,18 @@ const LOCK_MS = 15 * 60 * 1000     // 触发后锁定 15 分钟
 
 const store = new Map<string, FailureRecord>()
 
+/**
+ * 构造限速双维度 key。
+ * - ip 维度仅 TRUST_PROXY=true 时有意义（直连时 IP 头不可信，跳过）
+ * - user 维度始终存在（爆破必然针对特定用户名，不受 IP 伪造影响）
+ */
+export function buildRateLimitKeys(clientIp: string | null, username: string): string[] {
+  const keys: string[] = []
+  if (clientIp) keys.push(`ip:${clientIp}`)
+  if (username) keys.push(`user:${username}`)
+  return keys
+}
+
 /** 定期清理过期条目，避免内存无限增长 */
 const CLEANUP_INTERVAL_MS = 10 * 60 * 1000
 let lastCleanup = 0

@@ -7,13 +7,26 @@ const prisma = new PrismaClient()
 export const ONLINE_TTL_MS = 5 * 60 * 1000
 
 /**
+ * 是否信任反向代理转发头（X-Forwarded-For / X-Real-IP）。
+ * 直连部署（默认 false）：这些头完全由客户端控制，若被信任可伪造 XFF 绕过登录限速。
+ * 反代部署（true）：取 XFF 最后一段（nginx proxy_add_x_forwarded_for 追加的真实
+ * remote_addr；首段是客户端可伪造的）。
+ */
+function trustProxy(): boolean {
+  return (process.env.TRUST_PROXY ?? '').trim().toLowerCase() === 'true'
+}
+
+/**
  * 从请求头解析客户端 IP。
- * 优先取 X-Forwarded-For 首段（nginx 已设置 proxy_add_x_forwarded_for），回退 X-Real-IP。
+ * TRUST_PROXY=false（默认，直连）：忽略 XFF/X-Real-IP，返回 null。
+ * TRUST_PROXY=true（反代）：优先 XFF 最后一段，回退 X-Real-IP。
  */
 export function getClientIp(request: NextRequest): string | null {
+  if (!trustProxy()) return null
   const xff = request.headers.get('x-forwarded-for')
   if (xff) {
-    const ip = xff.split(',')[0]?.trim()
+    const parts = xff.split(',').map(s => s.trim()).filter(Boolean)
+    const ip = parts[parts.length - 1]
     if (ip) return ip
   }
   return request.headers.get('x-real-ip')?.trim() || null

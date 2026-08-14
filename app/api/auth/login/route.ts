@@ -18,7 +18,7 @@ import { createSessionCookies } from '@/lib/services/auth'
 import { logger } from '@/lib/logger'
 import { PrismaClient } from '@/lib/generated/prisma'
 import { updateLastLoginByUsername, updateLastSeenByUsername, getClientIp, getUa } from '@/lib/user'
-import { checkLoginRate, recordLoginFailure, resetLoginRate } from '@/lib/server/login-rate-limit'
+import { checkLoginRate, recordLoginFailure, resetLoginRate, buildRateLimitKeys } from '@/lib/server/login-rate-limit'
 
 const prisma = new PrismaClient()
 
@@ -36,24 +36,30 @@ function safeEqual(a: string, b: string): boolean {
 
 export async function POST(request: NextRequest) {
   try {
-    const clientIp = getClientIp(request) || 'unknown'
-
-    // 1. 限速检查：锁定中的 IP 直接拒绝
-    const rateCheck = checkLoginRate(clientIp)
-    if (!rateCheck.allowed) {
-      return createErrorResponse(
-        ErrorCodes.INVALID_PARAMS,
-        `登录尝试过于频繁，请 ${rateCheck.retryAfterSec} 秒后再试`,
-        429,
-      )
-    }
-
+    const clientIp = getClientIp(request) || null
     const body = await request.json().catch(() => ({}))
     const username = typeof body?.username === 'string' ? body.username.trim() : ''
     const password = typeof body?.password === 'string' ? body.password : ''
 
     if (!username || !password) {
       return createErrorResponse(ErrorCodes.INVALID_PARAMS, '用户名和密码不能为空', 400)
+    }
+
+    // 限速双维度 key：
+    // - ip:<ip>：仅 TRUST_PROXY=true 时有意义（直连时 IP 头不可信则跳过该维度）
+    // - user:<username>：爆破必然针对特定用户名，不受 IP 伪造影响
+    const keys = buildRateLimitKeys(clientIp, username)
+
+    // 1. 限速检查：任一维度锁定中 → 拒绝
+    for (const key of keys) {
+      const rateCheck = checkLoginRate(key)
+      if (!rateCheck.allowed) {
+        return createErrorResponse(
+          ErrorCodes.INVALID_PARAMS,
+          `登录尝试过于频繁，请 ${rateCheck.retryAfterSec} 秒后再试`,
+          429,
+        )
+      }
     }
 
     const user = await prisma.user.findUnique({ where: { username } })
@@ -66,20 +72,23 @@ export async function POST(request: NextRequest) {
       : safeEqual('x'.repeat(32), 'y'.repeat(32))
 
     if (!user || !storedSecret || !ok) {
-      // 记录失败，达阈值则锁定
-      const failCheck = recordLoginFailure(clientIp)
-      if (!failCheck.allowed) {
+      // 记录失败，达阈值则锁定对应维度
+      let locked = false
+      for (const key of keys) {
+        if (!recordLoginFailure(key).allowed) locked = true
+      }
+      if (locked) {
         return createErrorResponse(
           ErrorCodes.INVALID_PARAMS,
-          `登录失败次数过多，IP 已锁定 ${failCheck.retryAfterSec} 秒`,
+          '登录失败次数过多，账号已锁定，请稍后再试',
           429,
         )
       }
       return createErrorResponse(ErrorCodes.INVALID_PARAMS, '用户名或密码错误', 401)
     }
 
-    // 2. 登录成功：清空该 IP 的失败计数
-    resetLoginRate(clientIp)
+    // 2. 登录成功：清空所有维度的失败计数
+    for (const key of keys) resetLoginRate(key)
 
     // 3. 签发签名 cookie
     const cookies = createSessionCookies(username)
