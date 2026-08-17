@@ -74,7 +74,7 @@
     "@types/react-dom": "^19",
     "@types/react-window": "^1.8.8",
     "concurrently": "^10.0.4",
-    "eslint": "^9.39.2",
+    "eslint": "^9.39.5",
     "eslint-config-next": "16.1.1",
     "prisma": "^5.22.0",
     "tailwindcss": "^4.1.18",
