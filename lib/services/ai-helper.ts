@@ -6,8 +6,44 @@
  * - 思考模型（extraBody 含 reasoning_effort / thinking）不强制 temperature:0
  * - 网络错误 / 429 / 5xx 重试最多 3 次（指数退避 1s/2s/3s）；4xx 直接抛
  * - apiKey 仅内存传入，不持久化
+ *
+ * 安全不变式：服务端环境变量里的 OPENAI_API_KEY 永远只发往 OPENAI_BASE_URL
+ * 配置的地址。自定义 baseUrl 必须搭配用户自己的 key（resolveAICreds 入口校验
+ * + callAI 兜底断言双层保证，防止新增调用点漏写校验导致密钥外发）。
  */
 import { setTimeout as sleep } from 'node:timers/promises'
+
+/** 服务端环境变量配置的 AI 地址（与 playlist-assist 等处保持一致） */
+function envBaseUrl(): string {
+  return process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'
+}
+
+/** URL 规范化（比较用）：去首尾空白与尾部斜杠，规避 v1 与 v1/ 被视为不同地址 */
+function normUrl(u: string): string {
+  return u.trim().replace(/\/+$/, '')
+}
+
+/**
+ * 统一凭证解析（各 AI 入口必须经此组合，禁止自行拼接）：
+ * - 用户 key + 自定义 baseUrl → 用户自己的 key 发自己指定的地址（允许）
+ * - 用户 key + env baseUrl → 允许（用户 key 不是服务端秘密）
+ * - env key + env baseUrl → 允许（开箱即用路径）
+ * - env key + 自定义 baseUrl → 返回 null（服务端密钥不允许发往自定义地址）
+ *   baseUrl 与 env 相同（含尾斜杠差异）视为"未自定义"，按 env 路径处理。
+ */
+export function resolveAICreds(
+  userKey: string,
+  userBaseUrl: string,
+): { apiKey: string; baseUrl: string } | null {
+  const envBase = envBaseUrl()
+  const custom =
+    userBaseUrl.trim() && normUrl(userBaseUrl) !== normUrl(envBase) ? userBaseUrl.trim() : ''
+  if (!userKey.trim() && custom) return null
+  return {
+    apiKey: userKey.trim() || process.env.OPENAI_API_KEY || '',
+    baseUrl: custom || envBase,
+  }
+}
 
 export interface CallAIOpts {
   apiKey: string
@@ -19,6 +55,11 @@ export interface CallAIOpts {
 
 export async function callAI(opts: CallAIOpts): Promise<string> {
   if (!opts.apiKey) throw new Error('缺少 API key（未填写，且服务端未配置 OPENAI_API_KEY）')
+  // 兜底断言：即使调用方绕过 resolveAICreds 拼错凭证组合，也在此强制拦截，
+  // 保证"服务端密钥只发服务端配置的地址"不可被任何调用点破坏
+  if (opts.apiKey === (process.env.OPENAI_API_KEY || '') && normUrl(opts.baseUrl) !== normUrl(envBaseUrl())) {
+    throw new Error('安全限制：服务端 API key 不允许发往自定义 baseUrl，自定义地址必须使用你自己的 API key')
+  }
   const wantsThinking = 'reasoning_effort' in opts.extraBody || 'thinking' in opts.extraBody
   for (let i = 0; i < 3; i++) {
     let res: Response

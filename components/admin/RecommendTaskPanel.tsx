@@ -155,7 +155,7 @@ function ConfigFields(p: ConfigFieldsProps) {
           <input
             value={p.baseUrl}
             onChange={(e) => p.onBaseUrl(e.target.value)}
-            placeholder="https://api.openai.com/v1"
+            placeholder="留空使用服务端配置；自定义需配自己的 Key"
             className="w-full rounded-md bg-background px-3 py-2 text-sm outline-none ring-1 ring-border focus:ring-primary"
           />
         </div>
@@ -405,7 +405,7 @@ export function RecommendTaskPanel() {
       const config: Partial<TaskConfig> = {
         sources,
         concurrency,
-        openaiBaseUrl: baseUrl.trim() || 'https://api.openai.com/v1',
+        openaiBaseUrl: baseUrl.trim() || undefined, // 留空 = 跟随服务端配置（env key 只发 env 地址）
         openaiModel: model.trim() || 'gpt-4o-mini',
         extraBody: parseExtraBody(extraBodyText),
         promptSystem,
@@ -484,7 +484,7 @@ export function RecommendTaskPanel() {
       const config: Partial<TaskConfig> = {
         sources: rerun.sources,
         concurrency: rerun.concurrency,
-        openaiBaseUrl: rerun.baseUrl.trim() || 'https://api.openai.com/v1',
+        openaiBaseUrl: rerun.baseUrl.trim() || undefined, // 留空 = 跟随服务端配置
         openaiModel: rerun.model.trim() || 'gpt-4o-mini',
         extraBody: parseExtraBody(rerun.extraBody),
         promptSystem: rerun.promptSystem,

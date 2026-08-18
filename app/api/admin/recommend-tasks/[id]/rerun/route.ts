@@ -10,6 +10,7 @@ import { NextRequest } from 'next/server'
 import { createSuccessResponse, createErrorResponse } from '@/lib/api-response'
 import { requireAdmin, AuthError, ForbiddenError } from '@/lib/services/user-context'
 import { rerunTask } from '@/lib/services/recommend-worker'
+import { resolveAICreds } from '@/lib/services/ai-helper'
 import { logger } from '@/lib/logger'
 
 function guard(err: unknown) {
@@ -28,6 +29,19 @@ export async function POST(
     const body = await request.json().catch(() => ({}))
     const apiKey = typeof body?.apiKey === 'string' ? body.apiKey.trim() : ''
     const config = body?.config && typeof body.config === 'object' ? body.config : undefined
+    // 安全不变式：本次覆盖配置里的自定义 openaiBaseUrl 必须搭配用户自己的 API key。
+    // 不传 config 复用原 config 的场景由 worker 运行时兜底（无用户 key 强制回落 env 地址）
+    if (
+      config &&
+      typeof config.openaiBaseUrl === 'string' &&
+      !resolveAICreds(apiKey, config.openaiBaseUrl)
+    ) {
+      return createErrorResponse(
+        'INVALID_PARAMS',
+        '使用自定义 AI baseUrl 时必须同时填写你自己的 API key（服务端密钥不允许发往自定义地址），或清空 baseUrl 使用服务端配置',
+        400,
+      )
+    }
     const task = await rerunTask(id, apiKey, config)
     if (!task) return createErrorResponse('NOT_FOUND', '任务不存在', 404)
     return createSuccessResponse(task)

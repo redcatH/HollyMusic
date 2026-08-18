@@ -299,7 +299,7 @@ async function runLoop() {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function runOne(task: any) {
   currentTaskId = task.id
-  const apiKey = runtimeKeys.get(task.id) || process.env.OPENAI_API_KEY || ''
+  const userKey = runtimeKeys.get(task.id) || ''
 
   let config: TaskConfig
   let artists: string[]
@@ -310,6 +310,14 @@ async function runOne(task: any) {
     await markFailed(task.id, '任务配置解析失败')
     return
   }
+
+  // 安全不变式：服务端 env key 只发 env baseUrl。服务重启后 runtimeKeys（用户 key）
+  // 丢失，DB 里残留的自定义 openaiBaseUrl 不得再配 env key —— 无用户 key 时
+  // 强制回落 env 地址（callAI 兜底断言同样保证此组合不可达）
+  const apiKey = userKey || process.env.OPENAI_API_KEY || ''
+  const effectiveConfig: TaskConfig = userKey
+    ? config
+    : { ...config, openaiBaseUrl: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1' }
 
   const progress = emptyProgress(artists.length)
   await prisma.recommendTask
@@ -323,7 +331,7 @@ async function runOne(task: any) {
 
   try {
     const { interrupted } = await runRecommendTask(
-      { artists, config: { ...config, apiKey } },
+      { artists, config: { ...effectiveConfig, apiKey } },
       async (p) => {
         // 内存 progress 是唯一真相源（单 worker 串行回调），覆盖写 DB 无竞态
         progress.results.push(p.result)

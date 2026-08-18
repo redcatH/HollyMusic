@@ -10,6 +10,7 @@ import { NextRequest } from 'next/server'
 import { createSuccessResponse, createErrorResponse } from '@/lib/api-response'
 import { requireAdmin, AuthError, ForbiddenError } from '@/lib/services/user-context'
 import { listTasks, createTask } from '@/lib/services/recommend-worker'
+import { resolveAICreds } from '@/lib/services/ai-helper'
 import { logger } from '@/lib/logger'
 
 function guard(err: unknown) {
@@ -48,6 +49,15 @@ export async function POST(request: NextRequest) {
     if (artists.length === 0) {
       const msg = taskType === 'songs' ? '歌曲列表不能为空（每行一首歌）' : '歌手列表不能为空（每行一个歌手）'
       return createErrorResponse('INVALID_PARAMS', msg, 400)
+    }
+
+    // 安全不变式：自定义 openaiBaseUrl 必须搭配用户自己的 API key（env key 只发 env 地址）
+    if (!resolveAICreds(apiKey, typeof config?.openaiBaseUrl === 'string' ? config.openaiBaseUrl : '')) {
+      return createErrorResponse(
+        'INVALID_PARAMS',
+        '使用自定义 AI baseUrl 时必须同时填写你自己的 API key（服务端密钥不允许发往自定义地址），或清空 baseUrl 使用服务端配置',
+        400,
+      )
     }
 
     const task = await createTask({ name, taskType, artists, config, apiKey, createdBy: user.username })

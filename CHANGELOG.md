@@ -7,6 +7,7 @@
 ## [Unreleased]
 
 ### 安全修复
+- **AI 密钥外发防护**（安全不变式：服务端 `OPENAI_API_KEY` 永远只发往 `OPENAI_BASE_URL` 配置的地址）：admin 侧 AI 接口（AI 生成名单 / AI 辅助筛选 / 推荐任务创建与重跑）接受用户自定义 `baseUrl`，此前若不填自己的 key 会回落服务端 env key，组合起来可将服务端密钥以 `Authorization` 头发往任意地址（密钥泄漏 + SSRF）。现新增统一凭证解析 `resolveAICreds` 入口校验（自定义 baseUrl 必须搭配用户自己的 key，否则 400）+ `callAI` 兜底断言（任何调用点拼错组合在发请求前强制拦截）；推荐任务 worker 运行时绑定，服务重启后用户 key 丢失时 baseUrl 强制回落 env 地址，杜绝 DB 残留自定义地址复活链路。前端任务表单 baseUrl 留空即跟随服务端配置
 - **改密码后旧会话全部失效**：会话签名加入会话纪元 `sessionVersion`（`HMAC(username:sessionVersion)`，新增 `holly_sv` cookie 参与签名不可伪造）；用户自助改密或管理员重置密码时版本 +1，该用户所有旧会话 cookie 立即失效，当前设备自动重发新版本 cookie 不掉线。改密前签发的旧格式 cookie（无 `holly_sv`）按版本 0 兼容，升级部署不强制全员重新登录。同时修复"已删除用户的残留 cookie 自动重建无密码用户行"的问题（会话校验改为只读不建，删除用户后其 cookie 即失效）；前端心跳检测到 401（会话被服务端失效）时自动下线并跳转登录
 - **Subsonic /rest/* 默认强制认证**：所有接口（除 `ping`/`getScanStatus`/`getOpenSubsonicExtensions` 等豁免方法）要求 Subsonic token（`u+t+s`）认证，杜绝"传 `u=admin` 冒名读取他人收藏/私有歌单"的越权；`getPlaylists`/`getUser` 不再接受 query 参数指定他人身份。可通过 `REQUIRE_AUTH=false` 显式关闭（不推荐公网部署）
 - **登录限速改双维度**：新增 `user:<用户名>` 维度，爆破必然针对特定用户名，不受伪造 `X-Forwarded-For` 绕过；新增 `TRUST_PROXY` 环境变量（默认 false），直连部署不再信任客户端可伪造的转发头，反代部署取 XFF 最后一段

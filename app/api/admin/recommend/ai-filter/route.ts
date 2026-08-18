@@ -9,7 +9,7 @@
 import { NextRequest } from 'next/server'
 import { createSuccessResponse, createErrorResponse } from '@/lib/api-response'
 import { requireAdmin, AuthError, ForbiddenError } from '@/lib/services/user-context'
-import { callAI, extractJSON } from '@/lib/services/ai-helper'
+import { callAI, extractJSON, resolveAICreds } from '@/lib/services/ai-helper'
 import { DEFAULT_PROMPT_SYSTEM, DEFAULT_PROMPT_AI_ADD, DEFAULT_PROMPT_AI_REMOVE } from '@/lib/recommend-defaults'
 import { logger } from '@/lib/logger'
 
@@ -37,12 +37,22 @@ export async function POST(request: NextRequest) {
       : []
     const userPrompt = typeof body?.prompt === 'string' ? body.prompt.trim() : ''
     const apiKey = typeof body?.apiKey === 'string' ? body.apiKey.trim() : ''
-    const baseUrl = typeof body?.baseUrl === 'string' && body.baseUrl.trim() ? body.baseUrl.trim() : process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'
+    const userBaseUrl = typeof body?.baseUrl === 'string' ? body.baseUrl.trim() : ''
     const model = typeof body?.model === 'string' && body.model.trim() ? body.model.trim() : process.env.OPENAI_MODEL || 'gpt-4o-mini'
     const extraBody = body?.extraBody && typeof body.extraBody === 'object' && !Array.isArray(body.extraBody) ? body.extraBody : {}
 
     if (songs.length === 0) {
       return createErrorResponse('INVALID_PARAMS', '缺少必填字段: songs (非空数组)', 400)
+    }
+
+    // 安全不变式：env key 只发 env baseUrl，自定义 baseUrl 必须搭配用户自己的 key
+    const creds = resolveAICreds(apiKey, userBaseUrl)
+    if (!creds) {
+      return createErrorResponse(
+        'INVALID_PARAMS',
+        '使用自定义 baseUrl 时必须同时填写你自己的 API key（服务端密钥不允许发往自定义地址），或清空 baseUrl 使用服务端配置',
+        400,
+      )
     }
 
     const lines = songs
@@ -52,8 +62,8 @@ export async function POST(request: NextRequest) {
     const user = tpl.replace(/\{\{candidates\}\}/g, lines).replace(/\{\{userPrompt\}\}/g, userPrompt || '（无）')
 
     const raw = await callAI({
-      apiKey: apiKey || process.env.OPENAI_API_KEY || '',
-      baseUrl,
+      apiKey: creds.apiKey,
+      baseUrl: creds.baseUrl,
       model,
       extraBody,
       messages: [
