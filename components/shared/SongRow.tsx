@@ -91,7 +91,7 @@ export function SongRow({ track, queue, index }: SongRowProps) {
         className={`shrink-0 p-1 transition ${
           isFav
             ? 'text-primary'
-            : 'text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100'
+            : 'text-muted-foreground opacity-70 hover:text-foreground focus-visible:opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100'
         }`}
         aria-label="收藏"
       >
@@ -110,7 +110,7 @@ export function SongRow({ track, queue, index }: SongRowProps) {
           className={`hidden shrink-0 p-1 transition md:block ${
             downloading
               ? 'text-primary opacity-100'
-              : 'text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100'
+              : 'text-muted-foreground opacity-70 hover:text-foreground focus-visible:opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100'
           } disabled:opacity-100`}
           aria-label="下载"
           title={downloading ? '下载中…' : (error ?? '下载')}
@@ -128,7 +128,7 @@ export function SongRow({ track, queue, index }: SongRowProps) {
           const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
           openMenu(track, rect.right, rect.bottom)
         }}
-        className="hidden shrink-0 p-1 text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100 md:block"
+        className="hidden shrink-0 p-1 text-muted-foreground opacity-70 hover:text-foreground focus-visible:opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 md:block"
         aria-label="更多操作"
         title="更多操作"
       >

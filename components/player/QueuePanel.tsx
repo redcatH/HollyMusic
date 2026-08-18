@@ -84,7 +84,7 @@ export function QueuePanel() {
                 </button>
                 <button
                   onClick={() => removeFromQueue(i)}
-                  className="text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100"
+                  className="touch-target flex items-center justify-center rounded-full text-muted-foreground opacity-70 hover:text-foreground focus-visible:opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100"
                   aria-label="移除"
                 >
                   <X className="h-4 w-4" />
