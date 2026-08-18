@@ -22,6 +22,19 @@ export function LyricsPanel() {
   const activeRef = useRef<HTMLDivElement>(null)
   const buffering = bufferProgress !== null
 
+  // WAI-ARIA 对话框模式：Esc 关闭（歌词面板为全屏页，键盘用户需要退出路径）
+  useEffect(() => {
+    if (!isOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      const t = e.target
+      if (t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+      setLyricsOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [isOpen, setLyricsOpen])
+
   // 当前行变化 → 平滑滚动到中央
   useEffect(() => {
     if (activeRef.current) {
@@ -32,7 +45,12 @@ export function LyricsPanel() {
   if (!isOpen || !track) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background">
+    <div
+      className="fixed inset-0 z-50 flex flex-col bg-background"
+      role="dialog"
+      aria-modal="true"
+      aria-label="歌词面板"
+    >
       {/* 顶部：极简返回箭头（safe-area 保护，避开状态栏/刘海） */}
       <div className="safe-area-top flex h-14 shrink-0 items-center px-2">
         <button

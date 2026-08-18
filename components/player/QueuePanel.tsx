@@ -1,4 +1,5 @@
 
+import { useEffect } from 'react'
 import { usePlayerStore } from '@/lib/store/player-store'
 import { CoverImage } from '@/components/shared/CoverImage'
 import { X, Trash2 } from 'lucide-react'
@@ -12,12 +13,28 @@ export function QueuePanel() {
   const removeFromQueue = usePlayerStore(s => s.removeFromQueue)
   const clearQueue = usePlayerStore(s => s.clearQueue)
 
+  // WAI-ARIA 对话框模式：Esc 关闭（输入框聚焦时除外，避免打断输入）
+  useEffect(() => {
+    if (!isOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      const t = e.target
+      if (t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+      setQueueOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [isOpen, setQueueOpen])
+
   if (!isOpen) return null
 
   return (
     <div
       className="fixed inset-0 z-40 flex justify-end bg-black/50"
       onClick={() => setQueueOpen(false)}
+      role="dialog"
+      aria-modal="true"
+      aria-label="播放队列"
     >
       <div
         className="safe-area-top flex h-full w-full max-w-md flex-col bg-card"
