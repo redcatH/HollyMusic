@@ -71,9 +71,14 @@ RUN pnpm build --webpack
 # bullseye 只有 2.31 会导致 vite build 时 dlopen 失败
 FROM node:20-bookworm-slim
 
-# 切换 apt 为清华源，加速 nginx/wget 安装（默认 deb.debian.org 国内极慢）
+# apt 源：默认官方 deb.debian.org（Fastly 全球 CDN，GitHub Actions 海外 runner 访问快；
+# 清华 TUNA 对海外 IP 返回 403，CI 构建不可用，不能再无条件下换）。
+# 国内本地构建加速：docker build --build-arg APT_MIRROR=mirrors.tuna.tsinghua.edu.cn
 # bookworm-slim 用新格式 debian.sources（非老的 sources.list）
-RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g; s|security.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/debian.sources \
+ARG APT_MIRROR=""
+RUN if [ -n "${APT_MIRROR}" ]; then \
+      sed -i "s|deb.debian.org|${APT_MIRROR}|g; s|security.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources; \
+    fi \
  && apt-get update \
  && apt-get install -y --no-install-recommends nginx wget \
  && rm -rf /var/lib/apt/lists/*
