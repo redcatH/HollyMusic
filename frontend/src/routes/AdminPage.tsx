@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams, Navigate } from 'react-router-dom'
 import { useAuthStore } from '@/hooks/useAuth'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { UsersPanel } from '@/components/admin/UsersPanel'
@@ -92,14 +92,16 @@ export function AdminPage() {
   )
 }
 
+// 历史路径（Next.js app-router 时代入口）→ 重定向到对应 tab。
+// 直接渲染 <AdminPage /> 会落到默认 tab（用户管理），URL 与内容不符。
 export function AdminUsersPage() {
-  return <AdminPage />
+  return <Navigate to="/admin?tab=users" replace />
 }
 
 export function AdminSourcesPage() {
-  return <AdminPage />
+  return <Navigate to="/admin?tab=sources" replace />
 }
 
 export function AdminRecommendPage() {
-  return <AdminPage />
+  return <Navigate to="/admin?tab=recommend" replace />
 }
