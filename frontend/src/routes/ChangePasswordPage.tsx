@@ -72,10 +72,8 @@ export function ChangePasswordPage() {
       setError('新密码长度至少 6 位')
       return
     }
-    if (confirmMismatch) {
-      setError('两次输入的新密码不一致')
-      return
-    }
+    // 一致性错误已由确认框下方的内联提示就近展示，这里只拦截提交，避免同文案重复出现两遍
+    if (confirmMismatch) return
     if (newPassword === currentPassword) {
       setError('新密码不能与当前密码相同')
       return
