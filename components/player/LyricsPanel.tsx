@@ -68,20 +68,26 @@ export function LyricsPanel() {
           <div className="text-center text-muted-foreground">加载歌词...</div>
         ) : hasLyric ? (
           <div className="mx-auto max-w-2xl space-y-5">
-            {lines.map((line, i) => (
-              <div
-                key={i}
-                ref={i === activeIndex ? activeRef : undefined}
-                onClick={() => seek(line.time)}
-                className={`cursor-pointer text-center text-xl transition-all ${
-                  i === activeIndex
-                    ? 'scale-105 font-bold text-foreground'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                {line.text}
-              </div>
-            ))}
+            {lines.map((line, i) => {
+              // 纯文本回退行 time 为 NaN：不可点击跳转，样式退化为普通文本
+              const seekable = Number.isFinite(line.time)
+              return (
+                <div
+                  key={i}
+                  ref={i === activeIndex ? activeRef : undefined}
+                  onClick={seekable ? () => seek(line.time) : undefined}
+                  className={`text-center text-xl transition-all ${
+                    seekable ? 'cursor-pointer ' : ''
+                  }${
+                    i === activeIndex
+                      ? 'scale-105 font-bold text-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {line.text}
+                </div>
+              )
+            })}
           </div>
         ) : (
           <div className="text-center text-muted-foreground">暂无歌词</div>

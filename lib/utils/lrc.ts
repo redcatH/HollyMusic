@@ -50,6 +50,21 @@ export function parseLrc(lrcText: string | null | undefined): LrcLine[] {
 }
 
 /**
+ * 纯文本歌词回退：tx/kw/mg 等音源常返回无时间轴文本（[!text] 前缀整体纯文本），
+ * parseLrc 会全部丢弃导致「暂无歌词」。这里按行展示，time 置 NaN——
+ * findActiveLineIndex 的比较对 NaN 恒为 false，永不高亮/滚动跟随。
+ */
+export function parsePlainText(lrcText: string | null | undefined): LrcLine[] {
+  if (!lrcText) return []
+  const lines: LrcLine[] = []
+  for (const raw of lrcText.split(/\r\n|\r|\n/)) {
+    const line = raw.trim().replace(/^\[!text\]/i, '').trim()
+    if (line) lines.push({ time: Number.NaN, text: line })
+  }
+  return lines
+}
+
+/**
  * 二分查找当前时间对应的歌词行索引（time <= currentTime 的最后一行）。
  */
 export function findActiveLineIndex(lines: LrcLine[], currentTime: number): number {
