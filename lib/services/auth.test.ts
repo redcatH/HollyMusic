@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { NextRequest } from 'next/server'
 
 /**
  * Fix 3 回归守卫：AUTH_SECRET 解析逻辑。
@@ -60,7 +61,7 @@ describe('COOKIE_SECURE resolution (lib/services/auth.ts)', () => {
     vi.stubEnv('COOKIE_SECURE', '')
     const mod = await import('@/lib/services/auth')
     const cookies = mod.createSessionCookies('admin')
-    expect(cookies).toHaveLength(2)
+    expect(cookies).toHaveLength(3)
     for (const c of cookies) {
       expect(c.secure).toBe(false)
     }
@@ -88,3 +89,88 @@ describe('COOKIE_SECURE resolution (lib/services/auth.ts)', () => {
     }
   })
 })
+
+/**
+ * 会话版本（sessionVersion）回归守卫：
+ * 签名 = HMAC(username:sessionVersion)，改密码后版本递增 → 旧 cookie 签名即失效。
+ * holly_sv 缺失按 0 兼容（升级前签发的旧格式 cookie 不强制重登）；非数字视为伪造拒绝。
+ */
+describe('sessionVersion signing (lib/services/auth.ts)', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('AUTH_SECRET', 'a'.repeat(32))
+  })
+
+  async function loadAuth() {
+    return import('@/lib/services/auth')
+  }
+
+  it('sign/verify 按 version 往返；不同 version 签名互不通用', async () => {
+    const mod = await loadAuth()
+    const sig = mod.sign('admin', 3)
+    expect(mod.verify('admin', sig, 3)).toBe(true)
+    // 旧版本（改密码前）的 cookie 签名不再匹配新版本
+    expect(mod.verify('admin', sig, 2)).toBe(false)
+    // 反之亦然
+    const oldSig = mod.sign('admin', 2)
+    expect(mod.verify('admin', oldSig, 3)).toBe(false)
+  })
+
+  it('createSessionCookies 携带 holly_sv 且 sig 基于同版本计算', async () => {
+    const mod = await loadAuth()
+    const cookies = mod.createSessionCookies('admin', 3)
+    const byName = Object.fromEntries(cookies.map((c) => [c.name, c.value]))
+    expect(byName['holly_sv']).toBe('3')
+    expect(byName['holly_sig']).toBe(mod.sign('admin', 3))
+    // clearSessionCookies 同步清除三个 cookie
+    const cleared = mod.clearSessionCookies()
+    expect(cleared.map((c) => c.name).sort()).toEqual(['holly_sig', 'holly_sv', 'holly_user'])
+    expect(cleared.every((c) => c.maxAge === 0)).toBe(true)
+  })
+
+  it('verifySession：holly_sv=3 + 匹配签名 → 通过并回传版本', async () => {
+    const mod = await loadAuth()
+    const sig = mod.sign('admin', 3)
+    const req = makeReqWithCookies(`holly_user=admin; holly_sv=3; holly_sig=${sig}`)
+    const state = mod.verifySession(req)
+    expect(state).toEqual({ authenticated: true, username: 'admin', sessionVersion: 3 })
+  })
+
+  it('verifySession：缺失 holly_sv（升级前旧格式 cookie）→ 按 version=0 兼容', async () => {
+    const mod = await loadAuth()
+    // 旧逻辑签的 cookie 等价于 version=0 签名
+    const sig = mod.sign('admin', 0)
+    const req = makeReqWithCookies(`holly_user=admin; holly_sig=${sig}`)
+    const state = mod.verifySession(req)
+    expect(state).toEqual({ authenticated: true, username: 'admin', sessionVersion: 0 })
+  })
+
+  it('verifySession：holly_sv 非数字 → 拒绝（按伪造处理）', async () => {
+    const mod = await loadAuth()
+    const req = makeReqWithCookies(`holly_user=admin; holly_sv=abc; holly_sig=${mod.sign('admin', 0)}`)
+    const state = mod.verifySession(req)
+    expect(state.authenticated).toBe(false)
+  })
+
+  it('verifySession：伪造 holly_sv 无法通过（version 参与签名）', async () => {
+    const mod = await loadAuth()
+    // 攻击者持有 version=0 的有效签名，篡改 holly_sv 冒充更高版本 → 签名校验失败
+    const sig = mod.sign('admin', 0)
+    const req = makeReqWithCookies(`holly_user=admin; holly_sv=5; holly_sig=${sig}`)
+    expect(mod.verifySession(req).authenticated).toBe(false)
+  })
+
+  it('verifySession：无 cookie → 未登录', async () => {
+    const mod = await loadAuth()
+    const state = mod.verifySession(makeReqWithCookies(''))
+    expect(state.authenticated).toBe(false)
+  })
+})
+
+/** 用 Cookie 头构造带会话 cookie 的 NextRequest（verifySession 只读 request.cookies） */
+function makeReqWithCookies(cookieHeader: string): NextRequest {
+  return new NextRequest('http://localhost:3000/api/auth/me', {
+    headers: cookieHeader ? { cookie: cookieHeader } : {},
+  })
+}

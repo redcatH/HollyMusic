@@ -6,7 +6,8 @@
  * - 校验当前密码（恒定时间比较）
  * - 新密码长度 ≥ 6，且与当前密码不同
  * - 改密成功后清除 mustChangePassword 标记
- * - 不轮换会话 cookie（保持登录态），但会更新 DB 密码
+ * - 改密成功后 sessionVersion +1：其它设备的旧会话立即失效；
+ *   当前设备重发新版本 cookie 保持登录态
  *
  * 注：本项目密码仍以明文存于 User.subsonicSecret（与 Subsonic t 校验兼容），
  * 此处仅做"改密"语义，不引入哈希以避免破坏 Subsonic 协议鉴权。
@@ -16,6 +17,7 @@ import { NextRequest } from 'next/server'
 import crypto from 'crypto'
 import { createSuccessResponse, createErrorResponse, ErrorCodes } from '@/lib/api-response'
 import { requireUser } from '@/lib/services/user-context'
+import { createSessionCookies } from '@/lib/services/auth'
 import { logger } from '@/lib/logger'
 import { PrismaClient } from '@/lib/generated/prisma'
 
@@ -55,13 +57,19 @@ export async function POST(request: NextRequest) {
       return createErrorResponse(ErrorCodes.INVALID_PARAMS, '新密码不能与当前密码相同', 400)
     }
 
-    await prisma.user.update({
+    const updated = await prisma.user.update({
       where: { id: me.id },
-      data: { subsonicSecret: newPassword, mustChangePassword: false },
+      data: { subsonicSecret: newPassword, mustChangePassword: false, sessionVersion: { increment: 1 } },
     })
 
-    logger.info(`[auth/change-password] 用户修改密码成功: ${me.username}`)
-    return createSuccessResponse({ ok: true })
+    logger.info(`[auth/change-password] 用户修改密码成功: ${me.username} (sessionVersion → ${updated.sessionVersion})`)
+
+    // 重发当前设备会话 cookie（携带新版本）：本设备不掉线，其它设备旧 cookie 因版本不匹配全部失效
+    const res = createSuccessResponse({ ok: true })
+    for (const c of createSessionCookies(me.username, updated.sessionVersion)) {
+      res.cookies.set(c.name, c.value, c)
+    }
+    return res
   } catch (err) {
     const e = err as { statusCode?: number; message?: string }
     if (e?.statusCode === 401) {

@@ -97,7 +97,7 @@ export async function syncUsersFromConfig(configPath?: string) {
         const newPwd = generateRandomPassword()
         await prisma.user.update({
           where: { id: wu.id },
-          data: { subsonicSecret: newPwd, mustChangePassword: true },
+          data: { subsonicSecret: newPwd, mustChangePassword: true, sessionVersion: { increment: 1 } },
         })
         console.warn('========================================================')
         console.warn(`[config-sync] 检测到弱口令账户 "${wu.username}"（原密码为 admin），已重置为随机密码`)

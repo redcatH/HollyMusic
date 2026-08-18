@@ -9,9 +9,12 @@
  */
 
 import { NextRequest } from 'next/server'
+import { PrismaClient } from '../generated/prisma'
 import { getOrCreateUserByName } from '../favorites'
 import { verifySession } from './auth'
 import { logger } from '../logger'
+
+const prisma = new PrismaClient()
 
 const DEFAULT_USERNAME = process.env.DEFAULT_USERNAME || 'admin'
 
@@ -62,6 +65,12 @@ export function isAdmin(username: string | null | undefined): boolean {
 /**
  * 解析请求的鉴权状态（基于签名 cookie）。
  * 已登录时保证返回持久化的 user；未登录返回 { authenticated:false, user:null }。
+ *
+ * 两道失效防线（均零额外查询，User 行本就按需加载）：
+ * 1. cookie 中的 sessionVersion 必须与 User.sessionVersion 一致 —— 改密码/管理员重置后
+ *    版本递增，该用户所有旧会话立即失效；
+ * 2. 用户行只读不建 —— 用户被管理员删除后，残留 cookie 判定未登录，
+ *    不再像旧逻辑那样经 getOrCreateUserByName 自动重建无密码行。
  */
 export async function getAuthState(request: NextRequest): Promise<AuthState> {
   const session = verifySession(request)
@@ -69,10 +78,18 @@ export async function getAuthState(request: NextRequest): Promise<AuthState> {
     return { authenticated: false, user: null, mustChangePassword: false }
   }
   try {
-    const u = await getOrCreateUserByName(session.username)
+    const u = await prisma.user.findUnique({ where: { username: session.username } })
+    if (!u) {
+      logger.warn(`[user-context] 会话用户已不存在，判定未登录: ${session.username}`)
+      return { authenticated: false, user: null, mustChangePassword: false }
+    }
+    if (session.sessionVersion !== u.sessionVersion) {
+      logger.info(`[user-context] 会话版本不匹配（cookie=${session.sessionVersion} db=${u.sessionVersion}），旧会话已失效: ${u.username}`)
+      return { authenticated: false, user: null, mustChangePassword: false }
+    }
     return { authenticated: true, user: { id: u.id, username: u.username }, mustChangePassword: !!u.mustChangePassword }
   } catch (e) {
-    logger.error('[user-context] getAuthState: 持久化用户失败', e)
+    logger.error('[user-context] getAuthState: 查询用户失败', e)
     return { authenticated: false, user: null, mustChangePassword: false }
   }
 }

@@ -119,7 +119,12 @@ export async function updateUser(
   const existing = await prisma.user.findUnique({ where: { id } })
   if (!existing) throw new NotFoundError('用户不存在')
 
-  const data: { username?: string; subsonicSecret?: string | null; mustChangePassword?: boolean } = {}
+  const data: {
+    username?: string
+    subsonicSecret?: string | null
+    mustChangePassword?: boolean
+    sessionVersion?: { increment: number }
+  } = {}
 
   if (opts.username != null) {
     const newName = opts.username.trim()
@@ -129,6 +134,7 @@ export async function updateUser(
       if (existing.username === 'admin') {
         throw new UserInputError('管理员账户不可更改用户名')
       }
+      // 改名本身即令旧 cookie 失效（签名含用户名），无需递增版本
       data.username = newName
     }
   }
@@ -138,6 +144,8 @@ export async function updateUser(
     data.subsonicSecret = opts.password
     // 管理员重置某用户密码后，强制该用户下次登录改密
     data.mustChangePassword = true
+    // 会话版本 +1：该用户所有已登录设备的旧会话立即失效
+    data.sessionVersion = { increment: 1 }
   }
 
   if (Object.keys(data).length === 0) {

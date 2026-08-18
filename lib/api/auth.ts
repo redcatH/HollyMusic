@@ -39,10 +39,17 @@ export async function logout(): Promise<void> {
 }
 
 /**
- * 心跳上报（在线状态）。失败静默，不影响用户。
+ * 心跳上报（在线状态）。网络失败静默，不影响用户。
+ * 返回 'unauthorized' 表示服务端会话已失效（401，如他处改密码后被踢下线），
+ * 调用方应据此强制登出本地状态。
  */
-export async function heartbeat(): Promise<void> {
-  await fetch('/api/auth/heartbeat', { method: 'POST' }).catch(() => {})
+export async function heartbeat(): Promise<'ok' | 'unauthorized'> {
+  try {
+    const res = await fetch('/api/auth/heartbeat', { method: 'POST' })
+    return res.status === 401 ? 'unauthorized' : 'ok'
+  } catch {
+    return 'ok'
+  }
 }
 
 /**

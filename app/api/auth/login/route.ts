@@ -90,8 +90,9 @@ export async function POST(request: NextRequest) {
     // 2. 登录成功：清空所有维度的失败计数
     for (const key of keys) resetLoginRate(key)
 
-    // 3. 签发签名 cookie
-    const cookies = createSessionCookies(username)
+    // 3. 签发签名 cookie（版本取 DB 当前 sessionVersion；若该用户曾被改密/重置，
+    //    其旧 cookie 已因版本不匹配失效，此处新签的即为唯一有效版本）
+    const cookies = createSessionCookies(username, user.sessionVersion)
     const res = createSuccessResponse({
       user: { username, mustChangePassword: !!user.mustChangePassword },
     })

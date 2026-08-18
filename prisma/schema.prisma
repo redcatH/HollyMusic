@@ -75,6 +75,9 @@ model User {
   // 首次登录或使用弱默认密码时置 true，前端据此强制引导修改密码；
   // 自助改密或管理员重置后清回 false。不影响 Subsonic 协议鉴权。
   mustChangePassword Boolean @default(false)
+  // 会话纪元：参与会话 cookie 签名（HMAC(username:sessionVersion)）。
+  // 改密码/管理员重置密码时 +1，该用户所有旧会话立即失效；缺失 holly_sv 的旧 cookie 按 0 兼容。
+  sessionVersion Int      @default(0)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

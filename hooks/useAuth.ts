@@ -4,6 +4,7 @@
  * authenticated 为 null 表示尚未加载完成（用于路由守卫区分"加载中"与"未登录"）。
  *
  * 已登录时启动心跳定时器（每 2 分钟上报一次，用于在线状态推断），登出/未登录时停止。
+ * 心跳若返回 401（会话被服务端失效，如他处改密码），自动清空本地登录态强制下线。
  * // ponytail: 后台 tab 会节流 setInterval（~1分钟），TTL 5 分钟有容错。如需更精准可加 visibilitychange 即时上报。
  */
 
@@ -17,7 +18,15 @@ let heartbeatTimer: ReturnType<typeof setInterval> | null = null
 function startHeartbeat() {
   stopHeartbeat()
   heartbeatTimer = setInterval(() => {
-    heartbeat().catch(() => {})
+    heartbeat()
+      .then((result) => {
+        if (result === 'unauthorized') {
+          // 服务端会话已失效（如该账号在别处改了密码），本地强制下线并停止心跳
+          stopHeartbeat()
+          useAuthStore.setState({ authenticated: false, username: null, mustChangePassword: false })
+        }
+      })
+      .catch(() => {})
   }, HEARTBEAT_INTERVAL_MS)
 }
 

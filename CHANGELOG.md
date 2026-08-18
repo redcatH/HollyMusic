@@ -7,6 +7,7 @@
 ## [Unreleased]
 
 ### 安全修复
+- **改密码后旧会话全部失效**：会话签名加入会话纪元 `sessionVersion`（`HMAC(username:sessionVersion)`，新增 `holly_sv` cookie 参与签名不可伪造）；用户自助改密或管理员重置密码时版本 +1，该用户所有旧会话 cookie 立即失效，当前设备自动重发新版本 cookie 不掉线。改密前签发的旧格式 cookie（无 `holly_sv`）按版本 0 兼容，升级部署不强制全员重新登录。同时修复"已删除用户的残留 cookie 自动重建无密码用户行"的问题（会话校验改为只读不建，删除用户后其 cookie 即失效）；前端心跳检测到 401（会话被服务端失效）时自动下线并跳转登录
 - **Subsonic /rest/* 默认强制认证**：所有接口（除 `ping`/`getScanStatus`/`getOpenSubsonicExtensions` 等豁免方法）要求 Subsonic token（`u+t+s`）认证，杜绝"传 `u=admin` 冒名读取他人收藏/私有歌单"的越权；`getPlaylists`/`getUser` 不再接受 query 参数指定他人身份。可通过 `REQUIRE_AUTH=false` 显式关闭（不推荐公网部署）
 - **登录限速改双维度**：新增 `user:<用户名>` 维度，爆破必然针对特定用户名，不受伪造 `X-Forwarded-For` 绕过；新增 `TRUST_PROXY` 环境变量（默认 false），直连部署不再信任客户端可伪造的转发头，反代部署取 XFF 最后一段
 - **音频链路补齐超时**：上游 URL 解析（洛雪脚本挂起）20s 超时、下载 stall 30s 超时（覆盖 header+body，慢速不误杀）、`waitForReadiness` 60s 兜底、透传模式 header 30s 超时；`getMusicUrl` 单次尝试 15s、全音源总预算 45s——音源脚本挂起不再导致请求永久卡死
