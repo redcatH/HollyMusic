@@ -28,7 +28,7 @@ import {
  *    - 后端用 buildFilenameFromMusicInfo 组装文件名（不接收前端 filename，安全）
  *    - audioServe.serve({ cacheKey, upstreamUrlResolver, ... })
  *      · 缓存命中（播放过）→ 磁盘读，0 回源
- *      · 缓存 miss → 回源一次 + 边下边落盘（下次命中）
+ *      · 缓存 miss → 回源一次 + 边下边落盘 + 跟随交付完整文件（下次命中）
  *    - 注入 Content-Disposition: attachment
  *
  * 2. url 模式（兼容直链下载，不缓存）：
@@ -63,6 +63,7 @@ function getAllowedDownloadDomains(): string[] {
 // ============================================================================
 
 async function handleDownloadByUid(
+  request: NextRequest,
   uid: string,
   quality: QualityType,
   clientIP: string
@@ -91,9 +92,10 @@ async function handleDownloadByUid(
   // 4. 确保 audioServe 已初始化（创建缓存目录等）
   await audioServe.ensureInitialized()
 
-  // 5. 委托 audioServe（缓存命中 → 磁盘读；miss → 回源 + 边下边落盘）
-  //    下载场景不发 Range（浏览器 window.location.href 默认无 Range），audioServe 返回完整文件
-  const rangeHeader = null
+  // 5. 委托 audioServe（缓存命中 → 磁盘读；miss → 回源 + 边下边落盘 + 跟随交付）
+  //    透传客户端 Range 头：普通下载（window.location.href）无 Range，audioServe
+  //    返回 200 完整文件；浏览器断点续传携带 Range，返回 206 完整区间
+  const rangeHeader = request.headers.get('range')
   const audioResp = await audioServe.serve({
     cacheKey,
     upstreamUrlResolver,
@@ -150,13 +152,20 @@ async function handleDownloadByUrl(
   }
 
   const upstreamHeaders = buildUpstreamHeaders(url)
+  // header 阶段限时 UPSTREAM_TIMEOUT_MS；header 返回后转为 body 阶段的
+  // stall 续期（每收到一块数据续期），慢速但持续的传输不误杀，真 stall 才中止
+  const controller = new AbortController()
+  const stallTimer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS)
+  if (stallTimer.unref) stallTimer.unref()
+
   let remoteResponse: Response
   try {
     remoteResponse = await fetch(url, {
       headers: upstreamHeaders,
-      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+      signal: controller.signal,
     })
   } catch (e) {
+    clearTimeout(stallTimer)
     const err = e as Error
     const isTimeout =
       err.name === 'TimeoutError' ||
@@ -169,8 +178,12 @@ async function handleDownloadByUrl(
     logger.error(`[download] 回源网络错误 url=${url} ip=${clientIP}:`, err.message)
     return NextResponse.json({ error: '下载源不可用' }, { status: 502 })
   }
+  // header 已返回：计时重置，转入 body 阶段的 stall 续期
+  stallTimer.refresh()
 
   if (!remoteResponse.ok) {
+    clearTimeout(stallTimer)
+    await remoteResponse.body?.cancel().catch(() => {})
     logger.warn(`[download] 远端返回 ${remoteResponse.status} url=${url} ip=${clientIP}`)
     return NextResponse.json(
       { error: `远端服务器错误: ${remoteResponse.status}` },
@@ -180,6 +193,8 @@ async function handleDownloadByUrl(
 
   const contentLength = remoteResponse.headers.get('content-length')
   if (contentLength && parseInt(contentLength, 10) > MAX_FILE_SIZE_BYTES) {
+    clearTimeout(stallTimer)
+    await remoteResponse.body?.cancel().catch(() => {})
     logger.warn(
       `[download] 文件超限 ${contentLength} bytes > ${MAX_FILE_SIZE_BYTES} url=${url} ip=${clientIP}`
     )
@@ -197,9 +212,51 @@ async function handleDownloadByUrl(
     `[download] ok(url) url=${url} ip=${clientIP} status=${remoteResponse.status} type=${contentType}`
   )
 
-  return new NextResponse(remoteResponse.body, {
+  return new NextResponse(pumpBodyWithStallTimeout(remoteResponse.body, stallTimer), {
     status: remoteResponse.status,
     headers,
+  })
+}
+
+/**
+ * 把上游 body 包装成带 stall 续期的流：每收到一块数据就续期计时器，
+ * 慢速但持续的传输不触发超时；流结束/出错/客户端取消时清理计时器。
+ * （直接把 body 交给 NextResponse 时，AbortSignal.timeout 这类全程计时
+ * 会把传输超过 30s 的下载拦腰掐断。）
+ */
+function pumpBodyWithStallTimeout(
+  body: ReadableStream<Uint8Array> | null,
+  stallTimer: NodeJS.Timeout
+): ReadableStream<Uint8Array> | null {
+  if (!body) {
+    clearTimeout(stallTimer)
+    return null
+  }
+  const reader = body.getReader()
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read()
+        if (done) {
+          clearTimeout(stallTimer)
+          controller.close()
+          return
+        }
+        stallTimer.refresh()
+        controller.enqueue(value)
+      } catch (e) {
+        clearTimeout(stallTimer)
+        try {
+          controller.error(e)
+        } catch {
+          // 客户端已取消（流已 closed），忽略
+        }
+      }
+    },
+    cancel() {
+      clearTimeout(stallTimer)
+      reader.cancel().catch(() => {})
+    },
   })
 }
 
@@ -238,7 +295,7 @@ export async function GET(request: NextRequest) {
           { status: 400 }
         )
       }
-      return await handleDownloadByUid(uid, quality, clientIP)
+      return await handleDownloadByUid(request, uid, quality, clientIP)
     }
 
     // url 模式（兼容）：filename 必须由前端提供

@@ -6,8 +6,12 @@
  * 2. 多用户并发同一首歌 → 内存 Map 去重，上游只打 1 次
  * 3. 所有客户端从磁盘文件读，互不干扰；支持 Range seek
  * 4. seek 超出已下载部分 → 等待下载推进（最长 15 秒）→ 超时返回 503 + Retry-After
- * 5. 下载失败 → 删文件 + 删 Map entry（不留半成品，下次重下）
- * 6. 磁盘超配额 → LRU 清理 lastAccessAt 最老的
+ * 5. 完整交付语义：请求区间的字节全部交付——miss 时 body 跟随磁盘写入进度
+ *    流式发送（无 Range → 200 完整文件；Range → 206 完整区间），不按当前
+ *    已下载字节数截断（截断会让下载类客户端把开头片段当完整文件保存）
+ * 6. 下载失败 → 删文件 + 删 Map entry（不留半成品，下次重下）；已建立的
+ *    跟随流随之 error，客户端可感知失败并重试
+ * 7. 磁盘超配额 → LRU 清理 lastAccessAt 最老的
  *
  * 环境变量（仅 3 个）：
  * - ENABLE_FILE_CACHE       总开关，false 时流式透传上游（不缓存、不支持 seek）
@@ -273,13 +277,7 @@ class AudioServe {
       return this.build502(failureErr.message)
     }
 
-    // 8. 截断 end 到已下载部分，从磁盘读
-    const actualEnd = Math.min(serveRange.end, entry.downloadedBytes - 1)
-    if (serveRange.start > actualEnd) {
-      return buildUnsatisfiable(size)
-    }
-
-    // 9. 找到实际可读文件路径（entry done 后可能 rename 过）
+    // 8. 找到实际可读文件路径（entry done 后可能 rename 过）
     const filePath = entry.paths!.filePath
     if (!(await fileExists(filePath))) {
       // 文件丢失（极端情况：entry 刚 close + LRU 删了）
@@ -289,11 +287,16 @@ class AudioServe {
     // 刷新 lastAccessAt（DB）
     void this.touchAccess(opts.cacheKey)
 
-    return buildPartialResponse(
+    // 9. 跟随交付请求区间的全部字节（见设计原则 5）：
+    //    无 Range → 200 完整文件；Range → 206 完整区间。
+    //    body 从磁盘增量读取，跟随 downloadedBytes 推进；上游失败时流 error。
+    return buildFollowResponse(
       filePath,
+      entry,
       size,
       entry.contentType || 'audio/mpeg',
-      { start: serveRange.start, end: actualEnd },
+      serveRange,
+      range !== null,
       opts.isHead
     )
   }
@@ -354,7 +357,12 @@ class AudioServe {
     this.inflight.set(cacheKey, entry)
 
     // 后台异步执行（不阻塞调用方）
-    void this.runDownload(cacheKey, entry, upstreamUrlResolver)
+    void this.runDownload(cacheKey, entry, upstreamUrlResolver).catch(e => {
+      // 防御纵深：runDownload 内部已 catch，正常不会到这里；
+      // 但 emit('error') 在无监听者时会同步抛出（EventEmitter 语义），
+      // 避免演变为 unhandled rejection 崩溃进程
+      logger.error(`[AudioServe] runDownload 未捕获错误 ${cacheKey}:`, e)
+    })
 
     // 后台触发 LRU 检查（新增一条下载，可能需要清理）
     void this.maybeCollect()
@@ -819,6 +827,124 @@ function buildPartialResponse(
   if (isHead) return new Response(null, { status: 206, headers })
   const stream = fs.createReadStream(filePath, { start: range.start, end: range.end })
   return new Response(wrapFileStream(stream), { status: 206, headers })
+}
+
+/** 跟随流：轮询后台写入进度的间隔 */
+const FOLLOW_POLL_INTERVAL_MS = 100
+
+/** 跟随流：单次读取块大小 */
+const FOLLOW_CHUNK_SIZE = 256 * 1024
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+/**
+ * 构造「跟随后台下载进度」的响应（serve() 缓存 miss 时使用）。
+ *
+ * 交付请求区间 [serveRange.start, serveRange.end] 的全部字节：
+ * - 无 Range（isRangeRequest=false）→ 200 + Content-Length=完整大小
+ * - 有 Range → 206 + Content-Range（完整区间，不截断）
+ *
+ * body 从磁盘增量读取，跟随 entry.downloadedBytes 推进：后台成功时读完区间
+ * 并 close；失败时 error（客户端可感知失败并重试，而非保存残缺文件）。
+ *
+ * 并发要点：
+ * - 每个响应持有独立 FileHandle 与各自 offset，多客户端读同一文件互不干扰；
+ *   客户端断开（cancel）只关自己的句柄，不影响后台写入与缓存落盘
+ * - downloadedBytes 仅在 writeStream.write 回调成功后递增（见 runDownload），
+ *   读到的必是已落盘字节，无脏读
+ * - 用轮询读 entry 属性而非 emitter 事件等待：runDownload 结束时会
+ *   removeAllListeners()，事件监听被清掉会让跟随流永久悬挂
+ */
+function buildFollowResponse(
+  filePath: string,
+  entry: InflightEntry,
+  size: number,
+  contentType: string,
+  serveRange: RangeSpec,
+  isRangeRequest: boolean,
+  isHead: boolean
+): Response {
+  const contentLength = serveRange.end - serveRange.start + 1
+  const status = isRangeRequest ? 206 : 200
+  const headers: Record<string, string> = {
+    'Content-Type': contentType,
+    'Content-Length': String(contentLength),
+    'Accept-Ranges': 'bytes',
+    'Cache-Control': 'public, max-age=3600',
+  }
+  if (isRangeRequest) {
+    headers['Content-Range'] = `bytes ${serveRange.start}-${serveRange.end}/${size}`
+  }
+  if (isHead) return new Response(null, { status, headers })
+
+  // 已发送字节数（相对 serveRange.start）
+  let sentBytes = 0
+  // 惰性打开：无消费者时（HEAD / 响应被直接丢弃）不占文件句柄
+  let openPromise: Promise<fsp.FileHandle> | null = null
+  let handleClosed = false
+  const getHandle = (): Promise<fsp.FileHandle> => {
+    if (!openPromise) openPromise = fsp.open(filePath, 'r')
+    return openPromise
+  }
+  const closeHandle = (): void => {
+    handleClosed = true
+    openPromise
+      ?.then(fh => fh.close())
+      .catch(() => {})
+  }
+
+  const stream = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      let fh: fsp.FileHandle
+      try {
+        fh = await getHandle()
+        for (;;) {
+          const available = Math.min(entry.downloadedBytes, serveRange.end + 1)
+          const readStart = serveRange.start + sentBytes
+          if (readStart < available) {
+            const len = Math.min(FOLLOW_CHUNK_SIZE, available - readStart)
+            const buf = Buffer.alloc(len)
+            const { bytesRead } = await fh.read(buf, 0, len, readStart)
+            if (bytesRead > 0) {
+              controller.enqueue(buf.subarray(0, bytesRead))
+              sentBytes += bytesRead
+              return // 交还控制权，由流策略形成背压
+            }
+            // available 声称有数据但 read 返回 0（极端竞态）→ 落到下面轮询
+          }
+          if (sentBytes >= contentLength) {
+            closeHandle()
+            controller.close()
+            return
+          }
+          if (entry.done) {
+            closeHandle()
+            // done 且无 error 时 downloadedBytes 必等于 size（runDownload 已校验），
+            // 走到这里说明未收满，防御性按失败处理
+            const reason =
+              entry.error ?? new Error(`缓存数据不完整: ${entry.downloadedBytes}/${size}`)
+            throw reason
+          }
+          if (handleClosed) return // 客户端已取消
+          await sleep(FOLLOW_POLL_INTERVAL_MS)
+        }
+      } catch (e) {
+        closeHandle()
+        try {
+          controller.error(e)
+        } catch {
+          // 流已被客户端取消（enqueue/close 抛 Invalid state）→ 静默退出
+        }
+      }
+    },
+    cancel() {
+      closeHandle()
+    },
+  })
+
+  return new Response(stream, { status, headers })
 }
 
 function buildFullResponse(

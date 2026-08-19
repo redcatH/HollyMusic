@@ -62,8 +62,8 @@ vi.mock('@/lib/audio-serve', () => ({
 
 // --- 辅助 ------------------------------------------------------------------
 
-function makeGetRequest(url: string): NextRequest {
-  return new NextRequest(new URL(url, 'http://localhost:3000'))
+function makeGetRequest(url: string, headers?: Record<string, string>): NextRequest {
+  return new NextRequest(new URL(url, 'http://localhost:3000'), { headers })
 }
 
 // 延迟导入，确保 vi.mock 先生效
@@ -164,12 +164,22 @@ describe('GET /api/download (uid 模式)', () => {
     expect(arg.cacheKey).toBe('kw:196030664:320k')
   })
 
-  it('rangeHeader 为 null（下载不发 Range）', async () => {
+  it('无 Range 请求 → serve 收到 rangeHeader=null（普通下载，交付完整 200）', async () => {
     const serveSpy = vi.mocked(audioServe.serve)
     const req = makeGetRequest('/api/download?uid=kw-196030664&quality=320k')
     await GET(req)
     const arg = serveSpy.mock.calls[0][0]
     expect(arg.rangeHeader).toBeNull()
+  })
+
+  it('请求带 Range → 透传给 audioServe（浏览器断点续传）', async () => {
+    const serveSpy = vi.mocked(audioServe.serve)
+    const req = makeGetRequest('/api/download?uid=kw-196030664&quality=320k', {
+      range: 'bytes=100-',
+    })
+    await GET(req)
+    const arg = serveSpy.mock.calls[0][0]
+    expect(arg.rangeHeader).toBe('bytes=100-')
   })
 })
 

@@ -76,6 +76,7 @@ next-env.d.ts
 /test/
 
 # AI / 编辑器工具产物 (本地, 不提交)
+.zcode/
 .playwright-mcp/
 .sisyphus/
 .cursor/
