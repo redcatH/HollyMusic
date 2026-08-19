@@ -16,6 +16,7 @@ import { usePlayerStore } from '@/lib/store/player-store'
 import { useFavoritesStore } from '@/lib/store/favorites-store'
 import { useAuthStore } from '@/hooks/useAuth'
 import { useDownload } from '@/hooks/useDownload'
+import { resolveQuality } from '@/lib/quality-options'
 import { toast } from '@/lib/toast'
 import { shareContent, buildSongShareUrl } from '@/lib/share'
 import { AddToPlaylistDialog } from '../../frontend/src/components/playlists/AddToPlaylistDialog'
@@ -87,7 +88,17 @@ export function SongContextMenu() {
         />
         <MenuItem icon={ListMusic} label="加入歌单" onClick={() => { setPlaylistUid(track.uid); close() }} />
         {authenticated && (
-          <MenuItem icon={Download} label="下载" onClick={() => { download({ uid: track.uid }); close() }} />
+          <MenuItem
+            icon={Download}
+            label="下载"
+            onClick={() => {
+              download({
+                uid: track.uid,
+                quality: resolveQuality(usePlayerStore.getState().quality, track.musicInfo.types),
+              })
+              close()
+            }}
+          />
         )}
         <MenuItem icon={Share2} label="分享" onClick={handleShare} />
       </div>

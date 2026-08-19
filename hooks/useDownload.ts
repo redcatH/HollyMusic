@@ -67,7 +67,8 @@ export { mapDownloadError }
 export interface DownloadArgs {
   /** 歌曲 uid（source-songmid），与 /api/audio 一致，后端据此解析 MusicInfo + 命中缓存 + 组装文件名 */
   uid: string
-  /** 音质，默认 320k；决定后端请求的音质与文件扩展名 */
+  /** 音质；调用方应传 resolveQuality(播放偏好, 歌曲types) 解析后的值，与播放 URL 音质一致。
+   *  不传时后端默认 320k。刻意不套 codecCap：那是浏览器解码上限，下载存文件不受限。 */
   quality?: QualityType
 }
 

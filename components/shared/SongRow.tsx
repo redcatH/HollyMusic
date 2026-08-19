@@ -9,6 +9,7 @@ import { SourceBadge } from './SourceBadge'
 import { QualityBadge } from './QualityBadge'
 import { Play, Pause, Heart, MoreHorizontal, Download, Loader2 } from 'lucide-react'
 import { formatTime } from '@/lib/utils/format'
+import { resolveQuality } from '@/lib/quality-options'
 import type { Track } from '@/lib/types/player'
 
 interface SongRowProps {
@@ -99,7 +100,12 @@ export function SongRow({ track, queue, index }: SongRowProps) {
 
       {authenticated && (
         <button
-          onClick={() => download({ uid: track.uid })}
+          onClick={() =>
+            download({
+              uid: track.uid,
+              quality: resolveQuality(usePlayerStore.getState().quality, track.musicInfo.types),
+            })
+          }
           disabled={downloading}
           className={`hidden shrink-0 p-1 transition md:block ${
             downloading
