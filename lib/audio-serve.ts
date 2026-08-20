@@ -26,6 +26,7 @@ import path from 'path'
 import { EventEmitter } from 'events'
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
+import { checkTrialAudio } from '@/lib/server/audio-integrity'
 
 // ============================================================================
 // 配置
@@ -165,6 +166,10 @@ class AudioServe {
   private readonly resolveTimeoutMs = readInt('AUDIO_CACHE_READINESS_TIMEOUT_MS', 20_000, 1_000)
   /** waitForReadiness 兜底超时（防御纵深；正常情况 resolver/fetch 超时先触发并清理 entry） */
   private readonly readinessFallbackMs = 60_000
+  /** 已通过试听校验的 cacheKey（避免每次缓存命中都重复解析文件时长） */
+  private readonly verifiedKeys = new Set<string>()
+  /** verifiedKeys 上限：超过后整体清空（粗粒度防泄漏，重新校验一遍代价可接受） */
+  private static readonly VERIFIED_KEYS_LIMIT = 10_000
   /** 初始化幂等 */
   private initPromise: Promise<void> | null = null
 
@@ -207,12 +212,16 @@ class AudioServe {
    * @param opts.upstreamUrlResolver  惰性解析上游 URL 的函数（仅在 miss 时调用）
    * @param opts.rangeHeader  请求的 Range 头（null 表示无 Range）
    * @param opts.isHead       HEAD 请求只返回头
+   * @param opts.intervalSec  期望时长（秒，来自歌曲元数据 interval）。用于试听
+   *                          片段判定：下载完成后实际时长相差太远则不落库
+   *                          （详见 lib/server/audio-integrity.ts）
    */
   async serve(opts: {
     cacheKey: string
     upstreamUrlResolver: () => Promise<string>
     rangeHeader: string | null
     isHead: boolean
+    intervalSec: number
   }): Promise<Response> {
     const cfg = getAudioServeConfig()
 
@@ -223,14 +232,19 @@ class AudioServe {
     }
 
     // 1. 已完整缓存 → 本地 Range（任意 seek）
-    const complete = await this.tryServeFromDisk(opts.cacheKey, opts.rangeHeader, opts.isHead)
+    const complete = await this.tryServeFromDisk(
+      opts.cacheKey,
+      opts.rangeHeader,
+      opts.isHead,
+      opts.intervalSec
+    )
     if (complete) return complete
 
     // 2. 进行中 → attach 到现有 entry
     // 3. miss    → 创建 entry 并启动后台下载
     let entry = this.inflight.get(opts.cacheKey)
     if (!entry) {
-      entry = await this.startDownload(opts.cacheKey, opts.upstreamUrlResolver)
+      entry = await this.startDownload(opts.cacheKey, opts.upstreamUrlResolver, opts.intervalSec)
     }
 
     // 4. 等待 size 已知（fetch header 返回）—— 上游 hang 时这里有上限
@@ -308,7 +322,8 @@ class AudioServe {
   private async tryServeFromDisk(
     cacheKey: string,
     rangeHeader: string | null,
-    isHead: boolean
+    isHead: boolean,
+    intervalSec: number
   ): Promise<Response | null> {
     try {
       const record = await prisma.audioCache.findUnique({ where: { cacheKey } })
@@ -320,6 +335,24 @@ class AudioServe {
         logger.warn(`[AudioServe] complete 文件丢失，删除记录: ${cacheKey}`)
         await prisma.audioCache.delete({ where: { cacheKey } }).catch(() => {})
         return null
+      }
+
+      // 存量自愈：历史版本可能已把试听片段落库（试听能正常播放，不会触发
+      // 前端错误处理）。命中时校验真实时长，发现不完整 → 删记录删文件 →
+      // 回 miss 重新解析（后台换可用源后即拉到完整版并重新入库）
+      if (!this.verifiedKeys.has(cacheKey)) {
+        const trialCheck = await checkTrialAudio(filePath, intervalSec)
+        if (trialCheck.trial) {
+          logger.warn(
+            `[AudioServe] 缓存命中试听片段，删除缓存: ${cacheKey} ` +
+              `实际=${trialCheck.actualSec?.toFixed(0)}s 期望=${intervalSec}s`
+          )
+          await prisma.audioCache.delete({ where: { cacheKey } }).catch(() => {})
+          // Windows 下文件被并发读者占用时删除失败 → 成为孤儿，由孤儿扫描回收
+          await fsp.unlink(filePath).catch(() => {})
+          return null
+        }
+        this.rememberVerifiedKey(cacheKey)
       }
 
       void this.touchAccess(cacheKey)
@@ -336,13 +369,22 @@ class AudioServe {
     }
   }
 
+  /** 记录已通过试听校验的 cacheKey；超上限整体清空（重新校验代价可接受） */
+  private rememberVerifiedKey(cacheKey: string): void {
+    if (this.verifiedKeys.size >= AudioServe.VERIFIED_KEYS_LIMIT) {
+      this.verifiedKeys.clear()
+    }
+    this.verifiedKeys.add(cacheKey)
+  }
+
   // --------------------------------------------------------------------------
   // 下载启动（fetch header 后才知道 size 和 contentType）
   // --------------------------------------------------------------------------
 
   private async startDownload(
     cacheKey: string,
-    upstreamUrlResolver: () => Promise<string>
+    upstreamUrlResolver: () => Promise<string>,
+    intervalSec: number
   ): Promise<InflightEntry> {
     // 同步占位，保证并发请求只创建一个 entry（多用户去重核心）
     const entry: InflightEntry = {
@@ -357,7 +399,7 @@ class AudioServe {
     this.inflight.set(cacheKey, entry)
 
     // 后台异步执行（不阻塞调用方）
-    void this.runDownload(cacheKey, entry, upstreamUrlResolver).catch(e => {
+    void this.runDownload(cacheKey, entry, upstreamUrlResolver, intervalSec).catch(e => {
       // 防御纵深：runDownload 内部已 catch，正常不会到这里；
       // 但 emit('error') 在无监听者时会同步抛出（EventEmitter 语义），
       // 避免演变为 unhandled rejection 崩溃进程
@@ -373,7 +415,8 @@ class AudioServe {
   private async runDownload(
     cacheKey: string,
     entry: InflightEntry,
-    upstreamUrlResolver: () => Promise<string>
+    upstreamUrlResolver: () => Promise<string>,
+    intervalSec: number
   ): Promise<void> {
     let stallTimer: NodeJS.Timeout | null = null
     try {
@@ -462,22 +505,34 @@ class AudioServe {
         throw new Error(`下载不完整：${entry.downloadedBytes}/${entry.size}`)
       }
 
-      // 写入 DB（complete）
-      await prisma.audioCache.upsert({
-        where: { cacheKey },
-        create: {
-          cacheKey,
-          filePath: entry.paths.relativeFilePath,
-          size,
-          contentType: entry.contentType,
-        },
-        update: {
-          filePath: entry.paths.relativeFilePath,
-          size,
-          contentType: entry.contentType,
-          lastAccessAt: new Date(),
-        },
-      })
+      // 试听片段不落库：解析实际时长与期望时长对比，相差太远仅跳过缓存
+      // 写入，交付不受影响（用户可正常试听）。文件不主动删除（避免与并发
+      // 读者冲突），自然成为孤儿交由孤儿扫描回收；下次播放 miss 重新拉取，
+      // 后台换可用源后拿到完整版才会入库。
+      const trialCheck = await checkTrialAudio(entry.paths.filePath, intervalSec)
+      if (trialCheck.trial) {
+        logger.warn(
+          `[AudioServe] 试听片段不落库: ${cacheKey} ` +
+            `实际=${trialCheck.actualSec?.toFixed(0)}s 期望=${intervalSec}s`
+        )
+      } else {
+        // 写入 DB（complete）
+        await prisma.audioCache.upsert({
+          where: { cacheKey },
+          create: {
+            cacheKey,
+            filePath: entry.paths.relativeFilePath,
+            size,
+            contentType: entry.contentType,
+          },
+          update: {
+            filePath: entry.paths.relativeFilePath,
+            size,
+            contentType: entry.contentType,
+            lastAccessAt: new Date(),
+          },
+        })
+      }
 
       entry.done = true
       entry.emitter.emit('complete', entry.downloadedBytes)

@@ -20,6 +20,7 @@ import { logger } from '@/lib/logger'
 import { resolveMusicInfoById } from '@/lib/db'
 import { musicSourceManager } from '@/lib/music-source-manager'
 import type { QualityType } from '@/lib/types/music'
+import { parseIntervalToSeconds } from '@/lib/types/player'
 import { audioServe } from '@/lib/audio-serve'
 
 function buildErrorResponse(status: number, code: string, message: string): Response {
@@ -70,6 +71,7 @@ async function handleAudio(request: NextRequest, isHead: boolean): Promise<Respo
       upstreamUrlResolver,
       rangeHeader,
       isHead,
+      intervalSec: parseIntervalToSeconds(musicInfo.interval),
     })
   } catch (error) {
     logger.error('[/api/audio] 失败:', error)

@@ -5,6 +5,7 @@ import { musicSourceManager } from '@/lib/music-source-manager'
 import { audioServe } from '@/lib/audio-serve'
 import { logger } from '@/lib/logger'
 import type { MusicInfo, QualityType } from '@/lib/types/music'
+import { parseIntervalToSeconds } from '@/lib/types/player'
 
 // ============================================================================
 // QUALITY SELECTION
@@ -125,6 +126,7 @@ export async function handleStream(request: NextRequest): Promise<Response> {
       upstreamUrlResolver,
       rangeHeader,
       isHead: request.method === 'HEAD',
+      intervalSec: parseIntervalToSeconds((musicInfo as MusicInfo).interval),
     })
 
     // Subsonic 客户端期望失败时返回 XML 错误。

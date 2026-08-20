@@ -4,6 +4,7 @@ import { logger } from '@/lib/logger'
 import { resolveMusicInfoById } from '@/lib/db'
 import { musicSourceManager } from '@/lib/music-source-manager'
 import { audioServe } from '@/lib/audio-serve'
+import { parseIntervalToSeconds } from '@/lib/types/player'
 import type { QualityType } from '@/lib/types/music'
 import {
   isValidUrl,
@@ -101,6 +102,7 @@ async function handleDownloadByUid(
     upstreamUrlResolver,
     rangeHeader,
     isHead: false,
+    intervalSec: parseIntervalToSeconds(musicInfo.interval),
   })
 
   // 6. audioServe 错误响应（502/503）直接透传
