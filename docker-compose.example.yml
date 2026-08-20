@@ -1,0 +1,53 @@
+# ============================================================================
+# HollyMusic Docker 部署示例（直接使用 ghcr.io 预构建镜像）
+#
+# 用法：
+#   1. mkdir holly-music && cd holly-music
+#   2. 将本文件复制为 docker-compose.yml（或在部署目录直接下载：
+#      curl -o docker-compose.yml \
+#        https://raw.githubusercontent.com/redcatH/HollyMusic/main/docker-compose.example.yml）
+#   3. 创建 .env（最小配置只需 AUTH_SECRET，生成：openssl rand -hex 32）
+#   4. docker compose up -d，访问 http://localhost:3099
+#
+# 想固定版本？把 image 的 :latest 换成具体 tag（如 :v0.20.1），
+# 见 https://github.com/redcatH/HollyMusic/releases
+#
+# 注：仓库根目录的 docker-compose.yml 是本地源码构建版（build: .），
+#     适合开发调试；本文件面向直接使用镜像部署的用户。
+# ============================================================================
+
+services:
+  app:
+    image: ghcr.io/redcath/hollymusic:latest
+    container_name: holly-music
+    ports:
+      - "3099:3000"
+    # 鉴权密钥等敏感配置放 .env（AUTH_SECRET 必填，≥32 位随机字符串）
+    # environment 中的同名变量优先级更高，会覆盖 env_file
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=file:./prisma/data/music.db
+      # 音频磁盘缓存：指向已挂载的 ./cache_data，多用户共享 + Range/seek 支持
+      - ENABLE_FILE_CACHE=true
+      - AUDIO_CACHE_DIR=/app/.cache/audio-cache
+      - AUDIO_CACHE_QUOTA_GB=10
+    volumes:
+      # 音源脚本（运行时数据：后台上传/管理的音源脚本，热重载生效）
+      - ./custom-sources:/app/custom-sources
+      # music-sources.json 等运行时配置
+      - ./config:/app/config
+      # SQLite 数据库持久化（重要！首次启动自动建库并运行迁移）
+      - ./prisma_data:/app/prisma/prisma/data
+      # 音频磁盘缓存目录（对应 AUDIO_CACHE_DIR）
+      - ./cache_data:/app/.cache
+      # 日志（可选）
+      - ./app_logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s

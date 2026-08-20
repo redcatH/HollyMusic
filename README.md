@@ -279,37 +279,14 @@ mkdir holly-music && cd holly-music
 
 **2. 创建 `docker-compose.yml`**
 
-```yaml
-services:
-  app:
-    image: ghcr.io/redcath/hollymusic:latest
-    container_name: holly-music
-    ports:
-      - "3099:3000"
-    env_file:
-      - .env
-    environment:
-      - NODE_ENV=production
-      - DATABASE_URL=file:./prisma/data/music.db
-      - ENABLE_FILE_CACHE=true
-      - AUDIO_CACHE_DIR=/app/.cache/audio-cache
-      - AUDIO_CACHE_QUOTA_GB=10
-    volumes:
-      - ./custom-sources:/app/custom-sources
-      - ./config:/app/config
-      - ./prisma_data:/app/prisma/prisma/data
-      - ./cache_data:/app/.cache
-      - ./app_logs:/app/logs
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
+直接下载仓库自带的示例文件（使用 ghcr.io 预构建镜像，各配置项说明见文件内注释）：
+
+```bash
+curl -o docker-compose.yml \
+  https://raw.githubusercontent.com/redcatH/HollyMusic/main/docker-compose.example.yml
 ```
 
-> 想固定版本？把 `image: ghcr.io/redcath/hollymusic:latest` 换成具体 tag，如 `:v0.18.0`（见 [releases](https://github.com/redcatH/HollyMusic/releases)）。
+> 想固定版本？把 `image: ghcr.io/redcath/hollymusic:latest` 换成具体 tag，如 `:v0.20.1`（见 [releases](https://github.com/redcatH/HollyMusic/releases)）。
 
 **3. 创建 `.env`**
 
@@ -386,7 +363,7 @@ COOKIE_SECURE=true
 docker-compose up --build -d
 ```
 
-仓库自带的 `docker-compose.yml` 即采用此方式（`build: .`），配置项与方式一一致，区别仅在于镜像来源。
+仓库自带的 `docker-compose.yml` 即采用此方式（`build: .`），配置项与方式一一致，区别仅在于镜像来源（根目录另有一份 `docker-compose.example.yml`，是直接使用 ghcr.io 镜像的部署示例）。
 
 ### 运行时架构说明
 
