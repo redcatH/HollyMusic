@@ -32,8 +32,6 @@ services:
       - ./cache_data:/app/.cache
       # 日志目录（可选）
       - ./app_logs:/app/logs
-    networks:
-      - redcat-network
     # depends_on:
     #   - redis
     restart: unless-stopped
@@ -53,8 +51,6 @@ services:
   #   volumes:
   #     - redis_data:/data
   #   command: redis-server --appendonly yes --requirepass redis_password
-  #   networks:
-  #     - music_network
   #   restart: unless-stopped
   #   healthcheck:
   #     test: ["CMD", "redis-cli", "ping"]
@@ -74,15 +70,9 @@ services:
   #     - "5432:5432"
   #   volumes:
   #     - postgres_data:/var/lib/postgresql/data
-  #   networks:
-  #     - music_network
   #   restart: unless-stopped
   #   healthcheck:
   #     test: ["CMD-SHELL", "pg_isready -U music_user -d music_db"]
   #     interval: 30s
   #     timeout: 10s
   #     retries: 3
-
-networks:
-  redcat-network:
-    external: true
