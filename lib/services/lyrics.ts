@@ -7,6 +7,7 @@
 
 import { musicSourceManager } from '../music-source-manager'
 import { logger } from '../logger'
+import { decodeLyricEntities } from '../server/lyric-decode'
 import type { MusicInfo } from '../types/music'
 
 export interface ParsedLyricLine {
@@ -59,7 +60,8 @@ async function fetchLyricsFromAPI(title: string, album: string, artist: string):
 
     const text = await response.text()
     if (!text || text.trim().length === 0) return null
-    return text
+    // 回退源同样可能返回实体编码歌词（不经过 extractLyric，此处解码）
+    return decodeLyricEntities(text)
   } catch (err) {
     logger.warn('[lyrics] API error:', err)
     return null
