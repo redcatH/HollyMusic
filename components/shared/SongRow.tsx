@@ -4,6 +4,7 @@ import { useFavoritesStore } from '@/lib/store/favorites-store'
 import { useContextMenuStore } from '@/lib/store/context-menu-store'
 import { useAuthStore } from '@/hooks/useAuth'
 import { useDownload } from '@/hooks/useDownload'
+import { useLongPress } from '@/hooks/useLongPress'
 import { CoverImage } from './CoverImage'
 import { SourceBadge } from './SourceBadge'
 import { QualityBadge } from './QualityBadge'
@@ -31,6 +32,9 @@ export function SongRow({ track, queue, index }: SongRowProps) {
   const isCurrent = currentTrack?.uid === track.uid
   const isCurrentPlaying = isCurrent && isPlaying
 
+  // 触屏长按呼出操作菜单（Spotify/网易云同款），桌面走右键/hover"⋯"
+  const longPress = useLongPress((x, y) => openMenu(track, x, y))
+
   const handlePlay = () => {
     if (isCurrent) {
       usePlayerStore.getState().togglePlay()
@@ -45,7 +49,9 @@ export function SongRow({ track, queue, index }: SongRowProps) {
         e.preventDefault()
         openMenu(track, e.clientX, e.clientY)
       }}
-      className={`group flex items-center gap-3 rounded-md px-2 py-2 ${
+      {...longPress}
+      // 触屏禁用长按文本选择/iOS 放大镜（桌面不受影响）
+      className={`group flex items-center gap-3 rounded-md px-2 py-2 pointer-coarse:select-none pointer-coarse:[-webkit-touch-callout:none] ${
         isCurrent ? 'bg-accent/50' : 'hover:bg-accent/30'
       }`}
     >
@@ -88,7 +94,8 @@ export function SongRow({ track, queue, index }: SongRowProps) {
 
       <button
         onClick={() => toggleFav(track.uid).catch(() => {})}
-        className={`shrink-0 p-1 transition ${
+        // 触屏扩大命中区（视觉不变，24px→40px，负 margin 抵消布局膨胀；HIG 44pt 标准）
+        className={`shrink-0 p-1 transition pointer-coarse:p-3 pointer-coarse:-m-1.5 ${
           isFav
             ? 'text-primary'
             : 'text-muted-foreground opacity-70 hover:text-foreground focus-visible:opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100'
@@ -128,8 +135,9 @@ export function SongRow({ track, queue, index }: SongRowProps) {
           const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
           openMenu(track, rect.right, rect.bottom)
         }}
-        // 手机常显（触屏无 hover，pointer-fine 不匹配即回落 opacity-70），桌面 hover 显现
-        className="shrink-0 p-1 text-muted-foreground opacity-70 hover:text-foreground focus-visible:opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100"
+        // 手机常显（触屏无 hover，pointer-fine 不匹配即回落 opacity-70），桌面 hover 显现；
+        // 触屏扩大命中区（视觉不变，24px→40px），与收藏按钮命中区不重叠
+        className="shrink-0 p-1 text-muted-foreground opacity-70 hover:text-foreground focus-visible:opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-coarse:p-3 pointer-coarse:-m-1.5"
         aria-label="更多操作"
         title="更多操作"
       >
