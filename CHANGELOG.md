@@ -26,6 +26,12 @@
 ### 🐛 问题修复
 
 - **ci**：release job 显式 always()，修复补发时被隐式 success() 跳过
+- **ci**：release notes 改在 main 上按 tag 区间生成，修复老 tag 缺 cliff.toml 回退默认模板
+
+
+### 🔧 工程与依赖
+
+- **release**：同步 v0.20.0 更新日志与版本号
 
 
 ## v0.21.1（2026-08-21）
