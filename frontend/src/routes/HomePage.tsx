@@ -20,8 +20,9 @@ export function HomePage() {
   }
 
   return (
-    <div className="p-6">
-      <div className="mb-6 flex items-center justify-between">
+    // 手机端收紧留白（max-md:p-4，桌面观感不变）；标题/按钮保持全端统一尺寸
+    <div className="p-6 max-md:p-4">
+      <div className="mb-6 flex items-center justify-between max-md:mb-3">
         <div>
           <h1 className="text-2xl font-bold">发现音乐</h1>
           <p className="text-sm text-muted-foreground">精选好歌随机推荐</p>
@@ -90,7 +91,10 @@ function RecommendCard({ track, queue }: { track: Track; queue: Track[] }) {
         <div className="flex items-center gap-1.5">
           <span className="truncate text-xs text-muted-foreground">{track.artist}</span>
           <SourceBadge source={track.source} />
-          <QualityBadge musicInfo={track.musicInfo} />
+          {/* 手机端隐藏音质角标：卡片窄，优先保歌手名可读（桌面照常显示） */}
+          <span className="max-md:hidden">
+            <QualityBadge musicInfo={track.musicInfo} />
+          </span>
         </div>
       </button>
       <button
