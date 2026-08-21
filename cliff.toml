@@ -1,0 +1,68 @@
+# git-cliff 配置 —— 从 Conventional Commits 生成中文分组更新说明
+# 用法一（GitHub Release Notes）: git-cliff --latest --strip header
+# 用法二（全量 CHANGELOG.md）  : git-cliff v0.17.0.. -o CHANGELOG.md
+# 文档: https://git-cliff.org/docs/configuration
+
+[changelog]
+# 静态头部：说明文字 + v0.17.0 及更早版本的手工总结（v0.17.0 前有 180 个提交，不自动展开）
+header = """
+# 更新日志
+
+本项目所有重要变更均会记录在此文件中。自 v0.18.0 起由发布流水线基于提交记录自动生成并维护，无需手工更新；每个版本的完整说明也可在 [GitHub Releases](https://github.com/redcatH/HollyMusic/releases) 查看。
+
+格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
+
+## [v0.17.0] - 2026-08-06
+
+首个提供 Docker 镜像与版本 tag 的发布，涵盖此前全部功能：
+
+- **多源聚合播放**：QQ / 网易 / 酷我 / 酷狗 / 咪咕统一搜索，音质回退（`flac24bit → flac → 320k → 128k`），音源热重载
+- **服务端磁盘缓存 + 边下边播**：音频服务端落盘，HTTP Range 支持，浏览器原生 seek / 暂停 / 恢复；多用户共享缓存，LRU 自动清理
+- **用户系统**：多用户数据隔离、签名 Cookie（HMAC-SHA256）鉴权、admin 用户管理、登录安全加固
+- **AI 能力**：AI 协助建歌单（用户侧）、AI 推荐任务（admin）
+- **Subsonic 协议兼容**、**一键分享**、**PWA**、**Docker 一键部署**
+
+> v0.17.0 之前的完整提交历史可执行 `git log v0.17.0` 查看。
+
+"""
+# 每个版本渲染一次；分组名以 <!-- N --> 前缀强制稳定排序（striptags 去除）
+body = """
+{% if version %}\
+## {{ version }}（{{ timestamp | date(format="%Y-%m-%d") }}）
+
+{% if previous %}\
+**完整对比**：[{{ previous.version }} → {{ version }}](https://github.com/redcatH/HollyMusic/compare/{{ previous.version }}...{{ version }})
+
+{% endif %}\
+{% else %}\
+## 未发布
+
+{% endif %}\
+{% for group, commits in commits | group_by(attribute="group") %}\
+### {{ group | striptags | trim }}
+
+{% for commit in commits %}\
+- {% if commit.scope %}**{{ commit.scope }}**：{% endif %}{{ commit.message }}
+{% endfor %}
+
+{% endfor %}"""
+trim = true
+
+[git]
+conventional_commits = true
+# 不丢弃非规范提交，统一归入「其他变更」，保证变更记录完整
+filter_unconventional = false
+tag_pattern = "v[0-9].*"
+sort_commits = "oldest"
+commit_parsers = [
+  { message = "^feat", group = "<!-- 0 -->✨ 新增功能" },
+  { message = "\\(security\\)", group = "<!-- 1 -->🛡️ 安全修复" },
+  { message = "^fix", group = "<!-- 2 -->🐛 问题修复" },
+  { message = "^perf", group = "<!-- 3 -->⚡ 性能优化" },
+  { message = "^refactor", group = "<!-- 4 -->♻️ 重构优化" },
+  { message = "^style", group = "<!-- 5 -->🎨 界面与样式" },
+  { message = "^docs", group = "<!-- 6 -->📝 文档" },
+  { message = "^test", group = "<!-- 7 -->✅ 测试" },
+  { message = "^chore|^ci|^build", group = "<!-- 8 -->🔧 工程与依赖" },
+  { message = ".*", group = "<!-- 9 -->🧩 其他变更" },
+]

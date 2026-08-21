@@ -1,6 +1,6 @@
 {
   "name": "holly-music",
-  "version": "0.1.0",
+  "version": "0.21.1",
   "private": true,
   "description": "多源在线音乐聚合播放器 · 自部署 · PWA · 移动端友好",
   "license": "MIT",

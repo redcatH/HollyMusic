@@ -1,13 +1,22 @@
 name: Build and Push Docker Image
 
-# 仅推送 v 开头的 tag（如 v1.0.0）时触发构建
+# 推送 v 开头的 tag（如 v1.0.0）时：构建镜像 → 发布 GitHub Release → 同步 CHANGELOG.md
+# 手动触发（workflow_dispatch）时：仅为指定 tag 补发 Release，不重建镜像
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要补发 Release 的 tag（如 v0.21.1）'
+        required: true
+        type: string
 
 jobs:
   build-and-push:
+    # 手动补发时跳过镜像构建：避免用当前 Dockerfile 重建并覆盖历史 tag 的镜像
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
 
     # GITHUB_TOKEN 默认无 packages:write 权限，需显式声明
@@ -50,3 +59,104 @@ jobs:
           # GitHub Actions 缓存加速，二次构建只重建变化层
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # 发布 GitHub Release：基于 Conventional Commits 自动生成中文分组更新说明，
+  # 并把 CHANGELOG.md / package.json 版本号同步提交回 main
+  release:
+    needs: build-and-push
+    # push 发布：镜像构建成功才发 Release（镜像失败不发，避免用户拉不到对应版本）
+    # 手动补发：build 被跳过，直接发
+    if: >-
+      needs.build-and-push.result == 'success' ||
+      (github.event_name == 'workflow_dispatch' && needs.build-and-push.result == 'skipped')
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write   # 创建 Release 与提交回 main 均需写权限
+
+    steps:
+      # 检出发布 tag 对应的代码；git-cliff 需要完整历史与全部 tag
+      - name: Checkout (tag)
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Resolve tag name
+        id: rel
+        run: echo "tag=${{ inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate release notes (git-cliff)
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --latest --strip header -o RELEASE_NOTES.md
+        env:
+          GITHUB_REPO: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 头部拼入 Docker 镜像拉取提示；补发（dispatch）时未构建镜像，不提 latest
+      - name: Prepend Docker image hint
+        run: |
+          {
+            if [ "${{ github.event_name }}" = "push" ]; then
+              echo "🐳 **Docker 镜像**：\`ghcr.io/redcath/hollymusic:${{ steps.rel.outputs.tag }}\`（\`latest\` 已同步更新）"
+            else
+              echo "🐳 **Docker 镜像**：\`ghcr.io/redcath/hollymusic:${{ steps.rel.outputs.tag }}\`"
+            fi
+            echo ""
+            cat RELEASE_NOTES.md
+          } > RELEASE_BODY.md
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.rel.outputs.tag }}
+          body_path: RELEASE_BODY.md
+          # tag 含 "-"（如 v0.20.0-beta.1）视为预发布
+          prerelease: ${{ contains(steps.rel.outputs.tag, '-') }}
+          # 仅 push 正式发布时标记 Latest；补发与 beta 不改变 Latest
+          make_latest: ${{ github.event_name == 'push' && !contains(steps.rel.outputs.tag, '-') && 'true' || 'false' }}
+
+      # ---- 同步 CHANGELOG.md 与 package.json 版本号，提交回 main ----
+
+      - name: Checkout (main)
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Regenerate CHANGELOG.md (git-cliff)
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          # 范围 v0.17.0..：v0.17.0 及更早历史固定在 cliff.toml header 手工段，不自动展开
+          args: v0.17.0.. -o CHANGELOG.md
+        env:
+          GITHUB_REPO: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Sync package.json version
+        run: |
+          VERSION="${{ steps.rel.outputs.tag }}"
+          VERSION="${VERSION#v}"
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = process.argv[1];
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          " "$VERSION"
+
+      # GITHUB_TOKEN 的 push 不会触发其他 workflow，无循环构建风险
+      - name: Commit and push to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md package.json
+          if git diff --cached --quiet; then
+            echo "CHANGELOG 与版本号无变化，跳过提交"
+          else
+            git commit -m "chore(release): 同步 ${{ steps.rel.outputs.tag }} 更新日志与版本号"
+            git pull --rebase origin main
+            git push origin main
+          fi
