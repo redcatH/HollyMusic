@@ -66,9 +66,11 @@ jobs:
     needs: build-and-push
     # push 发布：镜像构建成功才发 Release（镜像失败不发，避免用户拉不到对应版本）
     # 手动补发：build 被跳过，直接发
+    # 注意：必须显式 always()，否则 if 隐式加 success() 前缀，build 被 skip 时本 job 也会被跳过
     if: >-
-      needs.build-and-push.result == 'success' ||
-      (github.event_name == 'workflow_dispatch' && needs.build-and-push.result == 'skipped')
+      always() &&
+      (needs.build-and-push.result == 'success' ||
+      (github.event_name == 'workflow_dispatch' && needs.build-and-push.result == 'skipped'))
     runs-on: ubuntu-latest
 
     permissions:
