@@ -77,22 +77,31 @@ jobs:
       contents: write   # 创建 Release 与提交回 main 均需写权限
 
     steps:
-      # 检出发布 tag 对应的代码；git-cliff 需要完整历史与全部 tag
-      - name: Checkout (tag)
+      # 在 main 上检出（cliff.toml 存在于 main；老 tag 的树里没有，checkout tag 会导致找不到配置）。
+      # git-cliff 用「上一 tag..目标 tag」区间参数生成，与 HEAD 位置无关。
+      - name: Checkout (main)
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.tag || github.ref }}
-          fetch-depth: 0
+          ref: main
+          fetch-depth: 0   # 全量历史与全部 tag，供 git-cliff 解析版本区间
 
-      - name: Resolve tag name
+      - name: Resolve tag and commit range
         id: rel
-        run: echo "tag=${{ inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          # 目标 tag 的上一个 tag；取不到（首个 tag，理论上不会发生）时退回 --latest
+          PREV=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)
+          if [ -n "$PREV" ]; then RANGE="${PREV}..${TAG}"; else RANGE="--latest"; fi
+          {
+            echo "tag=${TAG}"
+            echo "range=${RANGE}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Generate release notes (git-cliff)
         uses: orhun/git-cliff-action@v4
         with:
           config: cliff.toml
-          args: --latest --strip header -o RELEASE_NOTES.md
+          args: ${{ steps.rel.outputs.range }} --strip header -o RELEASE_NOTES.md
         env:
           GITHUB_REPO: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -122,12 +131,6 @@ jobs:
 
       # ---- 同步 CHANGELOG.md 与 package.json 版本号，提交回 main ----
 
-      - name: Checkout (main)
-        uses: actions/checkout@v7
-        with:
-          ref: main
-          fetch-depth: 0
-
       - name: Regenerate CHANGELOG.md (git-cliff)
         uses: orhun/git-cliff-action@v4
         with:
@@ -138,7 +141,9 @@ jobs:
           GITHUB_REPO: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # 版本号只在正常发布时同步；补发旧 tag 时不回退 main 上的版本号
       - name: Sync package.json version
+        if: github.event_name == 'push'
         run: |
           VERSION="${{ steps.rel.outputs.tag }}"
           VERSION="${VERSION#v}"
