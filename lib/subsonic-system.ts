@@ -1,10 +1,30 @@
 import { NextRequest } from 'next/server'
-import { formatSubsonicXML, createSubsonicResponse } from './subsonic'
+import { createSubsonicJsonResponse, createSubsonicResponse, formatSubsonicJSON, formatSubsonicXML, wantsSubsonicJson } from './subsonic'
 import { type AuthResult } from './auth'
 import { PrismaClient } from './generated/prisma'
 import { logger } from './logger'
 
 const prisma = new PrismaClient()
+
+/**
+ * 返回服务许可证状态。
+ *
+ * Holly Music 不需要商业许可证，因此始终报告为有效；该端点是部分
+ * Subsonic 客户端在 ping 后建立连接时必调的基础接口。
+ */
+export function handleGetLicense(request: NextRequest): Response {
+  if (wantsSubsonicJson(request)) {
+    return createSubsonicJsonResponse(formatSubsonicJSON({
+      status: 'ok',
+      attributes: { license: { valid: true } },
+    }))
+  }
+
+  return createSubsonicResponse(formatSubsonicXML({
+    status: 'ok',
+    children: '<license valid="true"/>',
+  }))
+}
 
 /**
  * 返回支持的 OpenSubsonic 扩展列表（静态/可配置）

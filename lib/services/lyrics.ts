@@ -8,6 +8,8 @@
 import { musicSourceManager } from '../music-source-manager'
 import { logger } from '../logger'
 import { decodeLyricEntities } from '../server/lyric-decode'
+import { normalizeStructuredLyricText } from '../server/lyric-normalize'
+import { fetchNativeLyric } from '../server/music-lyric'
 import type { MusicInfo } from '../types/music'
 
 export interface ParsedLyricLine {
@@ -19,9 +21,13 @@ export interface ParsedLyric {
   lines: ParsedLyricLine[]
 }
 
+function normalizeLyricPayload(value: string): string {
+  return normalizeStructuredLyricText(decodeLyricEntities(value).trim()).trim()
+}
+
 /**
  * 调用第三方歌词 API 获取 LRC 文本。
- * 优先级：title > album > artist，只传一个参数。
+ * 优先使用 title + artist，避免同名歌曲命中错误歌词；缺失歌名时再降级使用专辑或歌手。
  */
 async function fetchLyricsFromAPI(title: string, album: string, artist: string): Promise<string | null> {
   try {
@@ -32,8 +38,10 @@ async function fetchLyricsFromAPI(title: string, album: string, artist: string):
 
     if (titleTrimmed) {
       params.title = titleTrimmed
+      if (artistTrimmed) params.artist = artistTrimmed
     } else if (albumTrimmed && albumTrimmed !== '[Unknown Album]') {
       params.album = albumTrimmed
+      if (artistTrimmed) params.artist = artistTrimmed
     } else if (artistTrimmed) {
       params.artist = artistTrimmed
     } else {
@@ -79,17 +87,34 @@ export async function fetchLyricForMusic(
   const artist = musicInfo.singer || ''
   const album = musicInfo.albumName || ''
 
-  // 1) 优先音源
+  // 1) 平台原生接口按歌曲唯一标识取词，避免同名歌曲被标题搜索误配。
+  const nativeLyric = await fetchNativeLyric(musicInfo)
+  if (nativeLyric) {
+    const lyric = normalizeLyricPayload(nativeLyric.lyric)
+    if (lyric) {
+      const tlyric = nativeLyric.tlyric ? normalizeLyricPayload(nativeLyric.tlyric) : ''
+      return { lyric, tlyric: tlyric || null }
+    }
+  }
+
+  // 2) 已配置的自定义音源
   try {
     const result = await musicSourceManager.getLyric(musicInfo, 5000)
-    if (result && result.lyric && result.lyric.trim()) return result
+    if (result?.lyric) {
+      const lyric = normalizeLyricPayload(result.lyric)
+      if (lyric) {
+        const tlyric = result.tlyric ? normalizeLyricPayload(result.tlyric) : ''
+        return { lyric, tlyric: tlyric || null }
+      }
+    }
   } catch (err) {
     logger.debug('[lyrics] musicSourceManager.getLyric failed:', err)
   }
 
-  // 2) 回退第三方 API
+  // 3) 回退第三方 API
   const text = await fetchLyricsFromAPI(title, album || title, artist)
-  if (text && text.trim()) return { lyric: text.trim(), tlyric: null }
+  const lyric = text ? normalizeLyricPayload(text) : ''
+  if (lyric) return { lyric, tlyric: null }
 
   return null
 }

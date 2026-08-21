@@ -21,9 +21,13 @@ export function buildAudioUrl(uid: string, quality: QualityType = '320k'): strin
   return `/api/audio?uid=${encodeURIComponent(uid)}&quality=${encodeURIComponent(quality)}`
 }
 
-/** 构建封面 URL */
-export function buildCoverUrl(uid: string): string {
-  return `/api/cover/${encodeURIComponent(uid)}`
+/**
+ * 构建封面 URL。
+ * cacheKey 通常传当前 musicInfo.img：当音源修正专辑图时，浏览器不会继续使用同 UID 的旧封面缓存。
+ */
+export function buildCoverUrl(uid: string, cacheKey?: string | null): string {
+  const version = cacheKey || '2'
+  return `/api/cover/${encodeURIComponent(uid)}?v=${encodeURIComponent(version)}`
 }
 
 /** 通过 uid 反查曲目元数据（分享链接 ?uid= 自动播放用） */

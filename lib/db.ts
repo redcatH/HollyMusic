@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import crypto from 'crypto'
 import { PrismaClient, Prisma } from './generated/prisma'
+import { logger } from './logger'
 import type { MusicInfo } from './types/music'
 
 export const prisma = new PrismaClient()
@@ -91,6 +92,24 @@ export async function getFirstMusicInfoByAlbumId(albumId: string): Promise<Music
     return JSON.parse(row.data) as MusicInfo
   } catch (e) {
     console.warn('getFirstMusicInfoByAlbumId error', e)
+    return null
+  }
+}
+
+/** 按传统 Subsonic getLyrics 的 artist + title 参数查找已缓存歌曲。 */
+export async function getFirstMusicInfoByArtistAndTitle(artist: string, title: string): Promise<MusicInfo | null> {
+  try {
+    const row = await prisma.musicInfo.findFirst({
+      where: {
+        name: title,
+        singer: artist,
+      },
+      orderBy: { id: 'asc' },
+    })
+    if (!row?.data) return null
+    return JSON.parse(row.data) as MusicInfo
+  } catch (error) {
+    logger.warn('getFirstMusicInfoByArtistAndTitle error', error)
     return null
   }
 }
@@ -419,6 +438,7 @@ export async function upsertMusicInfo(mi: MusicInfo): Promise<{ action: 'insert'
 const dbAPI = {
   getMusicInfo,
   getFirstMusicInfoByAlbumId,
+  getFirstMusicInfoByArtistAndTitle,
   getMusicInfoListByAlbumId,
   getRandomMusicInfoList,
   upsertMusicInfo,

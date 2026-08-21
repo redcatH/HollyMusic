@@ -98,7 +98,7 @@ export function LyricsPanel() {
       <div className="safe-area-bottom shrink-0 border-t border-border bg-card px-3 py-2">
         {/* 歌曲信息 */}
         <div className="mb-2 flex min-w-0 items-center gap-3">
-          <CoverImage uid={track.uid} className="h-10 w-10 shrink-0" />
+          <CoverImage uid={track.uid} cacheKey={track.musicInfo.img} className="h-10 w-10 shrink-0" />
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-medium">{track.name}</div>
             <div className="truncate text-xs text-muted-foreground">{track.artist}</div>

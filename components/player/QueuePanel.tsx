@@ -74,7 +74,7 @@ export function QueuePanel() {
                   onClick={() => playTrack(t, queue)}
                   className="flex min-w-0 flex-1 items-center gap-3 text-left"
                 >
-                  <CoverImage uid={t.uid} className="h-10 w-10" />
+                  <CoverImage uid={t.uid} cacheKey={t.musicInfo.img} className="h-10 w-10" />
                   <div className="min-w-0">
                     <div className={`truncate text-sm ${i === currentIndex ? 'text-primary' : ''}`}>
                       {t.name}

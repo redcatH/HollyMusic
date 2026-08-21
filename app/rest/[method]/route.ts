@@ -7,11 +7,12 @@ import { handleGetSongAsync } from '@/lib/subsonic-song'
 import { handleGetRandomSongs } from '@/lib/subsonic-random'
 import { handleGetStarred } from '@/lib/subsonic-getstarred'
 import { handleGetPlaylists, handleGetPlaylist, handleCreatePlaylist, handleDeletePlaylist, handleUpdatePlaylist } from '@/lib/subsonic-playlist'
-import { formatSubsonicXML, createSubsonicResponse } from '@/lib/subsonic'
-import { handleGetOpenSubsonicExtensions, handleGetUser, handleGetAlbumList2, handleScrobble, handleGetSimilarSongs } from '@/lib/subsonic-system'
+import { formatSubsonicResponseForRequest, formatSubsonicXML, createSubsonicResponse } from '@/lib/subsonic'
+import { handleGetLicense, handleGetOpenSubsonicExtensions, handleGetUser, handleGetAlbumList2, handleScrobble, handleGetSimilarSongs } from '@/lib/subsonic-system'
 import { handleStream } from '@/lib/subsonic-stream'
 import auth, { type AuthResult } from '@/lib/auth'
 import configSync from '@/lib/config-sync'
+import { logger } from '@/lib/logger'
 
 // 同步启动配置中的用户（非阻塞）
 configSync.syncUsersFromConfig().then(r => console.info('[startup] config-sync result', r)).catch(e => console.warn('[startup] config-sync error', e))
@@ -19,6 +20,15 @@ configSync.syncUsersFromConfig().then(r => console.info('[startup] config-sync r
 function normalizeMethod(raw: string | undefined) {
   if (!raw) return ''
   return raw.replace(/\.view$/i, '')
+}
+
+/** 日志中不得暴露 Subsonic 的 token、salt 或旧式密码参数。 */
+function getSafeRequestUrl(request: NextRequest): string {
+  const url = new URL(request.url)
+  url.searchParams.delete('t')
+  url.searchParams.delete('s')
+  url.searchParams.delete('p')
+  return `${url.pathname}${url.search}`
 }
 
 /**
@@ -42,9 +52,9 @@ const AUTH_EXEMPT_METHODS = new Set(['ping', 'getOpenSubsonicExtensions', 'getSc
  * 注意：auth_required（强制认证开启但未带 token）不在此拦截——
  * 由下方豁免集之后的强制认证检查统一处理，保证豁免方法即使带 u 参数也能匿名访问。
  */
-function checkAuthError(authRes: AuthResult): Response | null {
+function checkAuthError(request: NextRequest, authRes: AuthResult): Response | null {
   if (authRes.error === 'invalid_t') {
-    return auth.authFailedResponse('invalid_t')
+    return auth.authFailedResponse('invalid_t', request)
   }
   return null
 }
@@ -74,7 +84,7 @@ async function handleMethod(request: NextRequest, method: string) {
   const authRes = await auth.resolveUserFromRequest(request)
 
   // 检查认证错误（token 无效）
-  const authError = checkAuthError(authRes)
+  const authError = checkAuthError(request, authRes)
   if (authError) return authError
 
   // 写操作必须通过 token 认证（u+t+s），阻断"仅传用户名冒名写"
@@ -91,6 +101,8 @@ async function handleMethod(request: NextRequest, method: string) {
   switch (method) {
     case 'ping':
       return handlePing(request)
+    case 'getLicense':
+      return handleGetLicense(request)
     case 'search3':
       return handleSearch(request)
     case 'stream':
@@ -183,10 +195,21 @@ export async function GET(request: NextRequest, context: { params: Promise<Recor
   const raw = params?.method
   const method = normalizeMethod(raw)
 
-  // 打印参数日志，便于调试
-  console.log('[rest] params:', params, 'raw:', raw, 'method:', method, 'requestUrl:', request.url)
+  logger.info('[rest] request', { method, requestUrl: getSafeRequestUrl(request) })
 
-  return handleMethod(request, method)
+  const response = await formatSubsonicResponseForRequest(request, await handleMethod(request, method))
+
+  // 显式启用时记录最终（已协商 f=json / XML）歌词响应，用于客户端兼容性诊断。
+  // 只读 clone，不会消费实际返回给客户端的 Response body。
+  if (method === 'getLyricsBySongId' && process.env.SUBSONIC_DEBUG_LYRICS === 'true') {
+    logger.info('[rest:getLyricsBySongId] response', {
+      status: response.status,
+      contentType: response.headers.get('content-type'),
+      body: await response.clone().text(),
+    })
+  }
+
+  return response
 }
 
 // export async function POST(request: NextRequest, context: { params: Promise<Record<string, string> | undefined> }) {
