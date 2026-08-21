@@ -74,7 +74,13 @@ export function SongContextMenu() {
     }
   }, [menu, close])
 
-  if (!menu) return null
+  // 「加入歌单」弹窗独立于菜单挂载：点「加入歌单」会 close() 菜单，弹窗不能跟着被卸载
+  // （旧结构在下方早返回 null，导致弹窗闪没 + playlistUid 残留，下次开菜单直接弹出弹窗）
+  const playlistDialog = playlistUid && (
+    <AddToPlaylistDialog uid={playlistUid} onClose={() => setPlaylistUid(null)} />
+  )
+
+  if (!menu) return <>{playlistDialog}</>
   const { track, x, y } = menu
   const left = Math.min(x, window.innerWidth - MENU_WIDTH - 8)
   const top = Math.min(y, window.innerHeight - MENU_MAX_HEIGHT - 8)
@@ -143,7 +149,7 @@ export function SongContextMenu() {
           {menuItems}
         </div>
       )}
-      {playlistUid && <AddToPlaylistDialog uid={playlistUid} onClose={() => setPlaylistUid(null)} />}
+      {playlistDialog}
     </>
   )
 }
