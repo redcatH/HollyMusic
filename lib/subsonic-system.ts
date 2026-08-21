@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { formatSubsonicXML, createSubsonicResponse } from './subsonic'
+import { respond, subsonicError, TEXT_KEY, type SubsonicPayload } from './subsonic'
 import { type AuthResult } from './auth'
 import { PrismaClient } from './generated/prisma'
 import { logger } from './logger'
@@ -11,18 +11,19 @@ const prisma = new PrismaClient()
  */
 export async function handleGetOpenSubsonicExtensions(request: NextRequest, authRes: AuthResult): Promise<Response> {
   try {
-    // 可按需改为从配置读取或根据功能开关动态构建
-    const children = `
-      <openSubsonicExtensions name="songLyrics"><versions>1</versions><versions>2</versions></openSubsonicExtensions>
-      <openSubsonicExtensions name="formPost"><versions>1</versions><versions>2</versions></openSubsonicExtensions>
-    `
-
-    const xml = formatSubsonicXML({ status: 'ok', children })
-    return createSubsonicResponse(xml)
+    // OpenSubsonic 规范格式：单个 openSubsonicExtensions 容器 + extension 子元素，
+    // versions 为该扩展支持的版本号列表。可按需改为从配置读取或根据功能开关动态构建
+    return respond(request, {
+      openSubsonicExtensions: {
+        extension: [
+          { name: 'songLyrics', versions: '1 2' },
+          { name: 'formPost', versions: '1 2' },
+        ],
+      },
+    })
   } catch (err) {
     logger.error('[getOpenSubsonicExtensions] Error:', err)
-    const xml = formatSubsonicXML({ status: 'failed', error: { code: 0, message: 'Internal server error' } })
-    return createSubsonicResponse(xml)
+    return subsonicError(request, 0, 'Internal server error')
   }
 }
 
@@ -38,38 +39,29 @@ export async function handleGetUser(request: NextRequest, authRes: AuthResult): 
     const user = authRes.user
 
     if (!user) {
-      const xml = formatSubsonicXML({ status: 'failed', error: { code: 10, message: 'Missing required parameter: username' } })
-      return createSubsonicResponse(xml)
+      return subsonicError(request, 10, 'Missing required parameter: username')
     }
 
-    // 构建用户的 XML 节点。字段名称依赖于你的 Prisma `User` 模型；这里使用了可用字段并提供回退值。
+    // 构建用户的响应节点。字段名称依赖于你的 Prisma `User` 模型；这里使用了可用字段并提供回退值。
     const username = user.username || ''
     const email = (user as any).email || ''
     const adminRole = Boolean((user as any).isAdmin || (user as any).admin)
     const nickName = (user as any).nickName || (user as any).nick || ''
 
-    const children = `
-      <user username="${escapeXml(username)}" email="${escapeXml(email)}" adminRole="${adminRole}">
-        <folder/>
-        <forcePasswordChange>false</forcePasswordChange>
-        <nickName>${escapeXml(nickName)}</nickName>
-      </user>
-    `
-
-    const xml = formatSubsonicXML({ status: 'ok', children })
-    return createSubsonicResponse(xml)
+    return respond(request, {
+      user: {
+        username,
+        email,
+        adminRole,
+        folder: {}, // 空元素 <folder/>
+        forcePasswordChange: { [TEXT_KEY]: 'false' }, // 标量子元素
+        nickName: { [TEXT_KEY]: nickName },
+      },
+    })
   } catch (err) {
     logger.error('[getUser] Error:', err)
-    const xml = formatSubsonicXML({ status: 'failed', error: { code: 0, message: 'Internal server error' } })
-    return createSubsonicResponse(xml)
+    return subsonicError(request, 0, 'Internal server error')
   }
-}
-
-// 本地 XML 转义工具：将特殊字符替换为实体，防止生成无效 XML
-function escapeXml(text: string | number | null | undefined): string {
-  if (text === null || text === undefined) return ''
-  const str = String(text)
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')
 }
 
 /**
@@ -111,8 +103,7 @@ export async function handleGetAlbumList2(request: NextRequest, authRes: AuthRes
     // Parameters
     const type = url.searchParams.get('type')
     if (!type) {
-      const xml = formatSubsonicXML({ status: 'failed', error: { code: 10, message: 'Missing required parameter: type' } })
-      return createSubsonicResponse(xml)
+      return subsonicError(request, 10, 'Missing required parameter: type')
     }
 
     const sizeRaw = parseInt(url.searchParams.get('size') || '10', 10) || 10
@@ -126,14 +117,12 @@ export async function handleGetAlbumList2(request: NextRequest, authRes: AuthRes
     // Validate parameters for specific types
     if (type === 'byYear') {
       if (!fromYear || !toYear) {
-        const xml = formatSubsonicXML({ status: 'failed', error: { code: 10, message: 'Missing required parameters: fromYear/toYear for type=byYear' } })
-        return createSubsonicResponse(xml)
+        return subsonicError(request, 10, 'Missing required parameters: fromYear/toYear for type=byYear')
       }
     }
     if (type === 'byGenre') {
       if (!genre) {
-        const xml = formatSubsonicXML({ status: 'failed', error: { code: 10, message: 'Missing required parameter: genre for type=byGenre' } })
-        return createSubsonicResponse(xml)
+        return subsonicError(request, 10, 'Missing required parameter: genre for type=byGenre')
       }
     }
 
@@ -175,8 +164,7 @@ export async function handleGetAlbumList2(request: NextRequest, authRes: AuthRes
       const fy = parseInt(fromYear || '', 10)
       const ty = parseInt(toYear || '', 10)
       if (isNaN(fy) || isNaN(ty)) {
-        const xml = formatSubsonicXML({ status: 'failed', error: { code: 10, message: 'Invalid fromYear/toYear' } })
-        return createSubsonicResponse(xml)
+        return subsonicError(request, 10, 'Invalid fromYear/toYear')
       }
       albums = albums.filter(a => {
         const y = a.created ? a.created.getFullYear() : NaN
@@ -226,13 +214,11 @@ export async function handleGetAlbumList2(request: NextRequest, authRes: AuthRes
         // Starred albums for authenticated user
         const username = authRes.user?.username
         if (!username) {
-          const xml = formatSubsonicXML({ status: 'failed', error: { code: 40, message: 'Authentication required for starred' } })
-          return createSubsonicResponse(xml)
+          return subsonicError(request, 40, 'Authentication required for starred')
         }
         const u = await prisma.user.findUnique({ where: { username } })
         if (!u) {
-          const xml = formatSubsonicXML({ status: 'failed', error: { code: 70, message: 'User not found' } })
-          return createSubsonicResponse(xml)
+          return subsonicError(request, 70, 'User not found')
         }
         const favs = await prisma.favorite.findMany({ where: { userId: u.id, itemType: 'album' } })
         const favSet = new Set(favs.map(f => f.itemId))
@@ -245,19 +231,22 @@ export async function handleGetAlbumList2(request: NextRequest, authRes: AuthRes
     }
 
     const slice = albums.slice(offset, offset + size)
-    const albumNodes = slice.map(a => {
+    const albumNodes: SubsonicPayload[] = slice.map(a => {
       const createdStr = a.created ? new Date(a.created).toISOString().replace('T', ' ').substring(0, 19) : new Date().toISOString().replace('T', ' ').substring(0, 19)
-      const coverArtAttr = a.coverArt ? escapeXml(a.coverArt) : escapeXml(a.id)
-      return `  <album id="${escapeXml(a.id)}" coverArt="${coverArtAttr}" songCount="${a.songCount}" duration="${a.duration}" name="${escapeXml(a.name)}" created="${createdStr}"/>`
-    }).join('\n')
+      return {
+        id: a.id,
+        coverArt: a.coverArt || a.id,
+        songCount: a.songCount,
+        duration: a.duration,
+        name: a.name,
+        created: createdStr,
+      }
+    })
 
-    const children = `\n<albumList2>\n${albumNodes}\n</albumList2>`
-    const xml = formatSubsonicXML({ status: 'ok', children })
-    return createSubsonicResponse(xml)
+    return respond(request, { albumList2: { album: albumNodes } })
   } catch (err) {
     logger.error('[getAlbumList2] Error:', err)
-    const xml = formatSubsonicXML({ status: 'failed', error: { code: 0, message: 'Internal server error' } })
-    return createSubsonicResponse(xml)
+    return subsonicError(request, 0, 'Internal server error')
   }
 }
 
@@ -266,8 +255,7 @@ export async function handleGetAlbumList2(request: NextRequest, authRes: AuthRes
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function handleScrobble(request: NextRequest, authRes: AuthResult): Promise<Response> {
-  const xml = formatSubsonicXML({ status: 'ok' })
-  return createSubsonicResponse(xml)
+  return respond(request, null)
 }
 
 /**
@@ -275,6 +263,5 @@ export async function handleScrobble(request: NextRequest, authRes: AuthResult):
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function handleGetSimilarSongs(request: NextRequest, authRes: AuthResult): Promise<Response> {
-  const xml = formatSubsonicXML({ status: 'ok', children: '<similarSongs/>' })
-  return createSubsonicResponse(xml)
+  return respond(request, { similarSongs: {} })
 }

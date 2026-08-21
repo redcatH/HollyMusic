@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { formatSubsonicXML, createSubsonicResponse } from './subsonic'
+import { respond, subsonicError } from './subsonic'
 import favorites, { FavoriteItem } from './favorites'
 import { type AuthResult } from './auth'
 
@@ -25,8 +25,7 @@ export async function handleStar(request: NextRequest, authRes: AuthResult): Pro
     const ids = parseListParam(params.get('id'))
 
     if (ids.length === 0) {
-      const xml = formatSubsonicXML({ status: 'failed', error: { code: 50, message: 'Required parameter missing: id' } })
-      return createSubsonicResponse(xml)
+      return subsonicError(request, 50, 'Required parameter missing: id')
     }
 
     const userId = authRes.user!.id
@@ -41,12 +40,10 @@ export async function handleStar(request: NextRequest, authRes: AuthResult): Pro
     const { created } = await favorites.starItems(userId, items)
     console.debug('[star] created:', created)
 
-    const xml = formatSubsonicXML({ status: 'ok' })
-    return createSubsonicResponse(xml)
+    return respond(request, null)
   } catch (err) {
     console.error('[star] Error:', err)
-    const xml = formatSubsonicXML({ status: 'failed', error: { code: 0, message: 'Internal error' } })
-    return createSubsonicResponse(xml)
+    return subsonicError(request, 0, 'Internal error')
   }
 }
 
@@ -57,8 +54,7 @@ export async function handleUnstar(request: NextRequest, authRes: AuthResult): P
     const ids = parseListParam(params.get('id'))
 
     if (ids.length === 0) {
-      const xml = formatSubsonicXML({ status: 'failed', error: { code: 10, message: 'Required parameter missing: id' } })
-      return createSubsonicResponse(xml)
+      return subsonicError(request, 10, 'Required parameter missing: id')
     }
 
     const userId = authRes.user!.id
@@ -69,12 +65,10 @@ export async function handleUnstar(request: NextRequest, authRes: AuthResult): P
     const { deleted } = await favorites.unstarItems(userId, items)
     console.debug('[unstar] deleted:', deleted)
 
-    const xml = formatSubsonicXML({ status: 'ok' })
-    return createSubsonicResponse(xml)
+    return respond(request, null)
   } catch (err) {
     console.error('[unstar] Error:', err)
-    const xml = formatSubsonicXML({ status: 'failed', error: { code: 0, message: 'Internal error' } })
-    return createSubsonicResponse(xml)
+    return subsonicError(request, 0, 'Internal error')
   }
 }
 

@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { formatSubsonicXML, createSubsonicResponse } from './subsonic'
+import { respond, subsonicError, type SubsonicSongNode } from './subsonic'
 import { getRandomMusicInfoList, getStorageSongmidForMusicInfo } from './db'
 import { getSearchSources } from './search-config'
 import { logger } from './logger'
@@ -17,10 +17,6 @@ function parseDuration(interval: string | undefined): number {
   return 0
 }
 
-function escapeXml(unsafe: string): string {
-  return unsafe.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')
-}
-
 /**
  * Subsonic getRandomSongs：从 DB 已入库曲目中随机返回 size 首。
  * 返回的 song id 与 search3 一致（source-{存储songmid}），可直接被 stream 播放。
@@ -35,32 +31,40 @@ export async function handleGetRandomSongs(request: NextRequest): Promise<Respon
     const allowedSources = getSearchSources()
     const songs: MusicInfo[] = await getRandomMusicInfoList(size, allowedSources)
 
-    const songNodes = songs.map((s, idx) => {
+    const songNodes: SubsonicSongNode[] = songs.map((s, idx) => {
       const a = s as any
       // 对外 song id = `source-{存储songmid}`，与 search3/stream 一致
       const songId = `${s.source}-${getStorageSongmidForMusicInfo(s) || s.songId || idx}`
-      const title = escapeXml(String(s.name || a.title || ''))
-      const album = escapeXml(String(s.albumName || a.album || ''))
-      const artist = escapeXml(String(s.singer || a.artist || ''))
       const duration = parseDuration(s.interval)
       const bitRate = s._types && s._types['320k'] ? 320 : (s._types && s._types['128k'] ? 128 : 0)
       const firstType = s._types ? (Object.values(s._types)[0] as any) : null
       const sizeBytes = firstType && firstType.size ? firstType.size : (a.size || a.fileSize || 0)
       const sizeNum = Number.parseInt(String(sizeBytes || 0), 10) || 0
-      const pathAttr = escapeXml(String(a.path || a.filePath || ''))
 
-      return `<song id="${songId}" parent="${songId}" title="${title}" album="${album}" artist="${artist}" isDir="false" coverArt="${songId}" duration="${duration}" bitRate="${bitRate}" size="${sizeNum}" suffix="mp3" contentType="audio/mpeg" isVideo="false" path="${pathAttr}" albumId="${songId}" artistId="" type="music"/>`
-    }).join('')
+      return {
+        id: songId,
+        parent: songId,
+        title: String(s.name || a.title || ''),
+        album: String(s.albumName || a.album || ''),
+        artist: String(s.singer || a.artist || ''),
+        isDir: false,
+        coverArt: songId,
+        duration,
+        bitRate,
+        size: sizeNum,
+        suffix: 'mp3',
+        contentType: 'audio/mpeg',
+        isVideo: false,
+        path: String(a.path || a.filePath || ''),
+        albumId: songId,
+        artistId: '',
+        type: 'music',
+      }
+    })
 
-    const children = `<randomSongs>${songNodes}</randomSongs>`
-    const xml = formatSubsonicXML({ status: 'ok', children })
-    return createSubsonicResponse(xml)
+    return respond(request, { randomSongs: { song: songNodes } })
   } catch (err) {
     logger.error('[getRandomSongs] error:', err)
-    const xml = formatSubsonicXML({
-      status: 'failed',
-      error: { code: 0, message: err instanceof Error ? err.message : 'getRandomSongs error' },
-    })
-    return createSubsonicResponse(xml)
+    return subsonicError(request, 0, err instanceof Error ? err.message : 'getRandomSongs error')
   }
 }

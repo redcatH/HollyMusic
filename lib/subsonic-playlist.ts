@@ -1,22 +1,10 @@
 import { NextRequest } from 'next/server'
-import { formatSubsonicXML, createSubsonicResponse } from './subsonic'
+import { respond, subsonicError, type SubsonicPlaylistNode } from './subsonic'
 import { type AuthResult } from './auth'
 import { PrismaClient, Prisma } from './generated/prisma'
 import { logger } from './logger'
 
 const prisma = new PrismaClient()
-
-// 转义 XML 特殊字符
-function escapeXml(text: string | number | null | undefined): string {
-    if (text === null || text === undefined) return ''
-    const str = String(text)
-    return str
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&apos;')
-}
 
 /**
  * 处理 getPlaylists 请求 - 返回用户的所有播放列表
@@ -27,11 +15,7 @@ export async function handleGetPlaylists(request: NextRequest, authRes: AuthResu
         const username = authRes.user?.username
 
         if (!username) {
-            const xml = formatSubsonicXML({
-                status: 'failed',
-                error: { code: 10, message: 'Missing required parameter: username' }
-            })
-            return createSubsonicResponse(xml)
+            return subsonicError(request, 10, 'Missing required parameter: username')
         }
 
         // 查询用户的播放列表：自己创建的 + 公开的 + 被授权的
@@ -49,42 +33,34 @@ export async function handleGetPlaylists(request: NextRequest, authRes: AuthResu
             orderBy: { createdAt: 'desc' }
         })
 
-        // 生成 playlist 节点 - 如果属于当前用户则显示 allowedUser 子节点；否则使用自闭合标签
-        const playlistNodes = userPlaylists.map(p => {
+        // 生成 playlist 节点（XML 转义由渲染层统一处理）
+        const playlistNodes: SubsonicPlaylistNode[] = userPlaylists.map(p => {
             const isOwner = p.username === username
             // 格式化时间为 Subsonic 格式: yyyy-MM-dd HH:mm:ss
             const createdStr = p.createdAt.toISOString().replace('T', ' ').substring(0, 19)
 
-            const attrs = `id="${p.id}" name="${escapeXml(p.name)}" comment="${escapeXml(p.comment)}" owner="${escapeXml(p.owner || p.username)}" public="${p.isPublic}" songCount="${p.songCount}" duration="${p.duration || 0}" created="${createdStr}" coverArt="${escapeXml(p.coverArt || `pl-${p.id}`)}"`
-
+            const node: SubsonicPlaylistNode = {
+                id: String(p.id),
+                name: p.name,
+                comment: p.comment ?? '',
+                owner: p.owner || p.username,
+                public: p.isPublic,
+                songCount: p.songCount,
+                duration: p.duration || 0,
+                created: createdStr,
+                coverArt: p.coverArt || `pl-${p.id}`,
+            }
+            // 只有属于当前用户且有授权用户的歌单才显示 allowedUser 子节点
             if (isOwner && p.allowedUsers.length > 0) {
-                // 属于当前用户且有授权用户的歌单，显示 allowedUser 子节点
-                const allowedUserNodes = p.allowedUsers.map(au =>
-                    `    <allowedUser>${escapeXml(au.username)}</allowedUser>`
-                ).join('\n')
-                return `  <playlist ${attrs}>\n${allowedUserNodes}\n  </playlist>`
-            } else {
-                // 不是所有者的歌单或没有授权用户的歌单使用自闭合标签
-                return `  <playlist ${attrs} />`
+                node.allowedUser = p.allowedUsers.map(au => au.username)
             }
-        }).join('\n')
-
-        const xml =formatSubsonicXML({status:'ok',children:`<playlists>${playlistNodes}</playlists>`})
-
-        return new Response(xml, {
-            status: 200,
-            headers: {
-                'Content-Type': 'application/xml; charset=utf-8',
-                'Content-Length': String(Buffer.byteLength(xml, 'utf8'))
-            }
+            return node
         })
+
+        return respond(request, { playlists: { playlist: playlistNodes } })
     } catch (err) {
         logger.error('[getPlaylists] Error:', err)
-        const xml = formatSubsonicXML({
-            status: 'failed',
-            error: { code: 0, message: 'Internal server error' }
-        })
-        return createSubsonicResponse(xml)
+        return subsonicError(request, 0, 'Internal server error')
     }
 }
 
@@ -96,20 +72,12 @@ export async function handleGetPlaylist(request: NextRequest, authRes: AuthResul
         const url = new URL(request.url)
         const idStr = url.searchParams.get('id')
         if (!idStr) {
-            const xml = formatSubsonicXML({
-                status: 'failed',
-                error: { code: 10, message: 'Missing required parameter: id' }
-            })
-            return createSubsonicResponse(xml)
+            return subsonicError(request, 10, 'Missing required parameter: id')
         }
 
         const playlistId = parseInt(idStr, 10)
         if (isNaN(playlistId)) {
-            const xml = formatSubsonicXML({
-                status: 'failed',
-                error: { code: 70, message: 'Invalid playlist id' }
-            })
-            return createSubsonicResponse(xml)
+            return subsonicError(request, 70, 'Invalid playlist id')
         }
 
         // 查询播放列表及其条目
@@ -125,11 +93,7 @@ export async function handleGetPlaylist(request: NextRequest, authRes: AuthResul
         })
 
         if (!playlist) {
-            const xml = formatSubsonicXML({
-                status: 'failed',
-                error: { code: 70, message: 'Playlist not found' }
-            })
-            return createSubsonicResponse(xml)
+            return subsonicError(request, 70, 'Playlist not found')
         }
 
         // 权限检查：非公开列表只有owner和被授权用户可以访问
@@ -138,106 +102,64 @@ export async function handleGetPlaylist(request: NextRequest, authRes: AuthResul
         const isAllowed = playlist.allowedUsers.some(au => au.username === username)
 
         if (!playlist.isPublic && !isOwner && !isAllowed) {
-            const xml = formatSubsonicXML({
-                status: 'failed',
-                error: { code: 50, message: 'Access denied' }
-            })
-            return createSubsonicResponse(xml)
+            return subsonicError(request, 50, 'Access denied')
         }
 
         // 格式化时间为 Subsonic 格式: yyyy-MM-dd HH:mm:ss
         const createdStr = playlist.createdAt.toISOString().replace('T', ' ').substring(0, 19)
 
-        // 生成 allowedUser 子节点
-        const allowedUserNodes = playlist.allowedUsers.map(au =>
-            `\t<allowedUser>${escapeXml(au.username)}</allowedUser>`
-        ).join('\n')
-
-        // 生成 entry 节点（映射为 Subsonic song 格式）
+        // 生成 entry 节点（映射为 Subsonic song 格式；snapshot 条目暂跳过）
         const entryNodes = playlist.entries.map(entry => {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            let musicData: any = {}
+            const mi = entry.musicInfo
+            if (!mi) return null
 
-            // 优先使用 musicInfo，否则解析 snapshot
-            if (entry.musicInfo) {
-
-                const mi = entry.musicInfo
-                musicData = {
-                    id: `${mi.source}-${mi.songmid}`,
-                    title: mi.name || '',
-                    artist: mi.singer || '',
-                    album: mi.albumName || '',
-                    coverArt: `${mi.source}-${mi.songmid}`,
-                    duration: mi.durationSeconds || 0,
-                    parent: playlist.id || '',
-                    albumId: `${mi.source}-${mi.songmid}`,
-                    artistId: '',
-                    year: '',
-                    genre: '',
-                    size: 0,
-                    suffix: 'mp3',
-                    contentType: 'audio/mpeg',
-                    path: `${mi.singer || 'Unknown'}/${mi.albumName || 'Unknown'}/${mi.name || 'Unknown'}.mp3`
-                }
-                return `\t<entry id="${escapeXml(musicData.id)}" parent="${escapeXml(musicData.parent)}" title="${escapeXml(musicData.title)}" album="${escapeXml(musicData.album)}" artist="${escapeXml(musicData.artist)}" isDir="false" coverArt="${escapeXml(musicData.coverArt)}" created="${entry.addedAt.toISOString()}" duration="${musicData.duration}" bitRate="320" track="0" year="${escapeXml(musicData.year)}" genre="${escapeXml(musicData.genre)}" size="${musicData.size}" suffix="${escapeXml(musicData.suffix)}" contentType="${escapeXml(musicData.contentType)}" isVideo="false" path="${escapeXml(musicData.path)}" albumId="${escapeXml(musicData.albumId)}" artistId="${escapeXml(musicData.artistId)}" type="music"/>`
-            } 
-            else if (entry.snapshotJson) {
-                return '';
-                // try {
-                //     const snapshot = JSON.parse(entry.snapshotJson)
-                //     musicData = {
-                //         id: snapshot.songmid || entry.songmid || '',
-                //         title: snapshot.name || '',
-                //         artist: snapshot.singer || '',
-                //         album: snapshot.albumName || '',
-                //         coverArt: `pl-${playlist.id}`,
-                //         duration: snapshot.durationSeconds || 0,
-                //         parent: snapshot.albumId || '',
-                //         albumId: snapshot.albumId || '',
-                //         artistId: '',
-                //         year: '',
-                //         genre: '',
-                //         size: 0,
-                //         suffix: 'mp3',
-                //         contentType: 'audio/mpeg',
-                //         path: `${snapshot.singer || 'Unknown'}/${snapshot.albumName || 'Unknown'}/${snapshot.name || 'Unknown'}.mp3`
-                //     }
-                // } catch {
-                //     logger.warn('[getPlaylist] Failed to parse snapshot for entry', entry.id)
-                // }
-                return `\t<entry id="${escapeXml(musicData.id)}" parent="${escapeXml(musicData.parent)}" title="${escapeXml(musicData.title)}" album="${escapeXml(musicData.album)}" artist="${escapeXml(musicData.artist)}" isDir="false" coverArt="${escapeXml(musicData.coverArt)}" created="${entry.addedAt.toISOString()}" duration="${musicData.duration}" bitRate="320" track="0" year="${escapeXml(musicData.year)}" genre="${escapeXml(musicData.genre)}" size="${musicData.size}" suffix="${escapeXml(musicData.suffix)}" contentType="${escapeXml(musicData.contentType)}" isVideo="false" path="${escapeXml(musicData.path)}" albumId="${escapeXml(musicData.albumId)}" artistId="${escapeXml(musicData.artistId)}" type="music"/>`
+            const entryId = `${mi.source}-${mi.songmid}`
+            return {
+                id: entryId,
+                parent: String(playlist.id ?? ''),
+                title: mi.name || '',
+                album: mi.albumName || '',
+                artist: mi.singer || '',
+                isDir: false,
+                coverArt: entryId,
+                created: entry.addedAt.toISOString(),
+                duration: mi.durationSeconds || 0,
+                bitRate: 320,
+                track: 0,
+                year: '',
+                genre: '',
+                size: 0,
+                suffix: 'mp3',
+                contentType: 'audio/mpeg',
+                isVideo: false,
+                path: `${mi.singer || 'Unknown'}/${mi.albumName || 'Unknown'}/${mi.name || 'Unknown'}.mp3`,
+                albumId: entryId,
+                artistId: '',
+                type: 'music',
             }
+        }).filter((e): e is NonNullable<typeof e> => e !== null)
 
-            
-        }).join('\n')
-
-        // 构建 playlist 子节点内容
-        const childNodes = [
-            allowedUserNodes,
-            entryNodes
-        ].filter(Boolean).join('\n')
-
-        const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1" type="navidrome">
-\t<playlist id="${playlist.id}" name="${escapeXml(playlist.name)}" comment="${escapeXml(playlist.comment)}" owner="${escapeXml(playlist.owner || playlist.username)}" public="${playlist.isPublic}" songCount="${playlist.songCount}" duration="${playlist.duration || 0}" created="${createdStr}" coverArt="${escapeXml(playlist.coverArt || `pl-${playlist.id}`)}">
-${childNodes}
-\t</playlist>
-</subsonic-response>`
-
-        return new Response(xml, {
-            status: 200,
-            headers: {
-                'Content-Type': 'application/xml; charset=utf-8',
-                'Content-Length': String(Buffer.byteLength(xml, 'utf8'))
-            }
+        return respond(request, {
+            playlist: {
+                id: String(playlist.id),
+                name: playlist.name,
+                comment: playlist.comment ?? '',
+                owner: playlist.owner || playlist.username,
+                public: playlist.isPublic,
+                songCount: playlist.songCount,
+                duration: playlist.duration || 0,
+                created: createdStr,
+                coverArt: playlist.coverArt || `pl-${playlist.id}`,
+                allowedUser: playlist.allowedUsers.map(au => au.username),
+                entry: entryNodes,
+            },
+        }, {
+            // 保留 navidrome 兼容标记（部分客户端据此启用 Navidrome 专属行为）
+            rootAttrs: { type: 'navidrome' },
         })
     } catch (err) {
         logger.error('[getPlaylist] Error:', err)
-        const xml = formatSubsonicXML({
-            status: 'failed',
-            error: { code: 0, message: 'Internal server error' }
-        })
-        return createSubsonicResponse(xml)
+        return subsonicError(request, 0, 'Internal server error')
     }
 }
 
@@ -252,22 +174,14 @@ export async function handleCreatePlaylist(request: NextRequest, authRes: AuthRe
         const username = authRes.user?.username
 
         if (!username) {
-            const xml = formatSubsonicXML({
-                status: 'failed',
-                error: { code: 10, message: 'User not authenticated' }
-            })
-            return createSubsonicResponse(xml)
+            return subsonicError(request, 10, 'User not authenticated')
         }
 
         // 更新现有播放列表
         if (playlistId) {
             const id = parseInt(playlistId, 10)
             if (isNaN(id)) {
-                const xml = formatSubsonicXML({
-                    status: 'failed',
-                    error: { code: 70, message: 'Invalid playlist id' }
-                })
-                return createSubsonicResponse(xml)
+                return subsonicError(request, 70, 'Invalid playlist id')
             }
 
             // 检查播放列表是否存在且用户有权限
@@ -276,19 +190,11 @@ export async function handleCreatePlaylist(request: NextRequest, authRes: AuthRe
             })
 
             if (!existing) {
-                const xml = formatSubsonicXML({
-                    status: 'failed',
-                    error: { code: 70, message: 'Playlist not found' }
-                })
-                return createSubsonicResponse(xml)
+                return subsonicError(request, 70, 'Playlist not found')
             }
 
             if (existing.username !== username) {
-                const xml = formatSubsonicXML({
-                    status: 'failed',
-                    error: { code: 50, message: 'Access denied' }
-                })
-                return createSubsonicResponse(xml)
+                return subsonicError(request, 50, 'Access denied')
             }
 
             // 更新播放列表名称
@@ -300,17 +206,12 @@ export async function handleCreatePlaylist(request: NextRequest, authRes: AuthRe
                 logger.info(`[createPlaylist] Updated playlist ${id} name to: ${name}`)
             }
 
-            const xml = formatSubsonicXML({ status: 'ok' })
-            return createSubsonicResponse(xml)
+            return respond(request, null)
         }
 
         // 创建新播放列表
         if (!name) {
-            const xml = formatSubsonicXML({
-                status: 'failed',
-                error: { code: 10, message: 'Missing required parameter: name' }
-            })
-            return createSubsonicResponse(xml)
+            return subsonicError(request, 10, 'Missing required parameter: name')
         }
 
         const newPlaylist = await prisma.playlist.create({
@@ -332,21 +233,21 @@ export async function handleCreatePlaylist(request: NextRequest, authRes: AuthRe
 
         logger.info(`[createPlaylist] Created new playlist: ${newPlaylist.id} - ${name}`)
 
-        const xml = formatSubsonicXML({
-            status: 'ok', children: `
-            <playlist id="${newPlaylist.id}" name="${newPlaylist.name}" comment="" owner="${newPlaylist.owner}" songCount="${newPlaylist.songCount}" public="${newPlaylist.isPublic}"
-        created="${new Date().toISOString()}">
-        <allowedUser>${newPlaylist.owner}</allowedUser>
-    </playlist>
-        ` })
-        return createSubsonicResponse(xml)
+        return respond(request, {
+            playlist: {
+                id: String(newPlaylist.id),
+                name: newPlaylist.name,
+                comment: '',
+                owner: newPlaylist.owner ?? username,
+                songCount: newPlaylist.songCount,
+                public: newPlaylist.isPublic,
+                created: new Date().toISOString(),
+                allowedUser: [newPlaylist.owner ?? username],
+            },
+        })
     } catch (err) {
         logger.error('[createPlaylist] Error:', err)
-        const xml = formatSubsonicXML({
-            status: 'failed',
-            error: { code: 0, message: 'Internal server error' }
-        })
-        return createSubsonicResponse(xml)
+        return subsonicError(request, 0, 'Internal server error')
     }
 }
 
@@ -360,28 +261,16 @@ export async function handleDeletePlaylist(request: NextRequest, authRes: AuthRe
         const username = authRes.user?.username
 
         if (!username) {
-            const xml = formatSubsonicXML({
-                status: 'failed',
-                error: { code: 10, message: 'User not authenticated' }
-            })
-            return createSubsonicResponse(xml)
+            return subsonicError(request, 10, 'User not authenticated')
         }
 
         if (!idStr) {
-            const xml = formatSubsonicXML({
-                status: 'failed',
-                error: { code: 10, message: 'Missing required parameter: id' }
-            })
-            return createSubsonicResponse(xml)
+            return subsonicError(request, 10, 'Missing required parameter: id')
         }
 
         const id = parseInt(idStr, 10)
         if (isNaN(id)) {
-            const xml = formatSubsonicXML({
-                status: 'failed',
-                error: { code: 70, message: 'Invalid playlist id' }
-            })
-            return createSubsonicResponse(xml)
+            return subsonicError(request, 70, 'Invalid playlist id')
         }
 
         // 检查播放列表是否存在且用户有权限
@@ -390,19 +279,11 @@ export async function handleDeletePlaylist(request: NextRequest, authRes: AuthRe
         })
 
         if (!playlist) {
-            const xml = formatSubsonicXML({
-                status: 'failed',
-                error: { code: 70, message: 'Playlist not found' }
-            })
-            return createSubsonicResponse(xml)
+            return subsonicError(request, 70, 'Playlist not found')
         }
 
         if (playlist.username !== username) {
-            const xml = formatSubsonicXML({
-                status: 'failed',
-                error: { code: 50, message: 'Access denied' }
-            })
-            return createSubsonicResponse(xml)
+            return subsonicError(request, 50, 'Access denied')
         }
 
         // 删除播放列表（会级联删除 entries 和 allowedUsers）
@@ -412,15 +293,10 @@ export async function handleDeletePlaylist(request: NextRequest, authRes: AuthRe
 
         logger.info(`[deletePlaylist] Deleted playlist: ${id} - ${playlist.name}`)
 
-        const xml = formatSubsonicXML({ status: 'ok' })
-        return createSubsonicResponse(xml)
+        return respond(request, null)
     } catch (err) {
         logger.error('[deletePlaylist] Error:', err)
-        const xml = formatSubsonicXML({
-            status: 'failed',
-            error: { code: 0, message: 'Internal server error' }
-        })
-        return createSubsonicResponse(xml)
+        return subsonicError(request, 0, 'Internal server error')
     }
 }
 
@@ -433,31 +309,26 @@ export async function handleUpdatePlaylist(request: NextRequest, authRes: AuthRe
         const url = new URL(request.url)
         const playlistIdStr = url.searchParams.get('playlistId')
         if (!playlistIdStr) {
-            const xml = formatSubsonicXML({ status: 'failed', error: { code: 10, message: 'Missing required parameter: playlistId' } })
-            return createSubsonicResponse(xml)
+            return subsonicError(request, 10, 'Missing required parameter: playlistId')
         }
 
         const playlistId = parseInt(playlistIdStr, 10)
         if (isNaN(playlistId)) {
-            const xml = formatSubsonicXML({ status: 'failed', error: { code: 70, message: 'Invalid playlist id' } })
-            return createSubsonicResponse(xml)
+            return subsonicError(request, 70, 'Invalid playlist id')
         }
 
         const username = authRes.user?.username
         if (!username) {
-            const xml = formatSubsonicXML({ status: 'failed', error: { code: 40, message: 'Authentication required' } })
-            return createSubsonicResponse(xml)
+            return subsonicError(request, 40, 'Authentication required')
         }
 
         const existing = await prisma.playlist.findUnique({ where: { id: playlistId }, include: { entries: { orderBy: { position: 'asc' } } } })
         if (!existing) {
-            const xml = formatSubsonicXML({ status: 'failed', error: { code: 70, message: 'Playlist not found' } })
-            return createSubsonicResponse(xml)
+            return subsonicError(request, 70, 'Playlist not found')
         }
 
         if (existing.username !== username) {
-            const xml = formatSubsonicXML({ status: 'failed', error: { code: 50, message: 'Access denied' } })
-            return createSubsonicResponse(xml)
+            return subsonicError(request, 50, 'Access denied')
         }
 
         // 更新元数据: name/comment/public
@@ -554,11 +425,9 @@ export async function handleUpdatePlaylist(request: NextRequest, authRes: AuthRe
         const totalDuration = entriesWithMi.reduce((acc, e) => acc + (e.musicInfo?.durationSeconds ?? 0), 0)
         await prisma.playlist.update({ where: { id: playlistId }, data: { songCount: total, duration: totalDuration } })
 
-        const xml = formatSubsonicXML({ status: 'ok' })
-        return createSubsonicResponse(xml)
+        return respond(request, null)
     } catch (err) {
         logger.error('[updatePlaylist] Error:', err)
-        const xml = formatSubsonicXML({ status: 'failed', error: { code: 0, message: 'Internal server error' } })
-        return createSubsonicResponse(xml)
+        return subsonicError(request, 0, 'Internal server error')
     }
 }
