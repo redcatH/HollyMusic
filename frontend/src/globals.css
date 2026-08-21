@@ -135,7 +135,9 @@ body {
     padding-top: env(safe-area-inset-top);
   }
   .safe-area-bottom {
-    padding-bottom: env(safe-area-inset-bottom);
+    /* calc 叠加而非直接覆盖：无安全区设备（桌面/多数安卓）env=0，若直接用 env 会把
+       组件自身的 py、pb 内边距清零，导致内容贴死屏幕底边（播放栏/底部弹层都踩过） */
+    padding-bottom: calc(env(safe-area-inset-bottom) + 0.5rem);
   }
   .touch-target {
     min-width: 44px;
