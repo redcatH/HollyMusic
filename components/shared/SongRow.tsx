@@ -128,7 +128,8 @@ export function SongRow({ track, queue, index }: SongRowProps) {
           const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
           openMenu(track, rect.right, rect.bottom)
         }}
-        className="hidden shrink-0 p-1 text-muted-foreground opacity-70 hover:text-foreground focus-visible:opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 md:block"
+        // 手机常显（触屏无 hover，pointer-fine 不匹配即回落 opacity-70），桌面 hover 显现
+        className="shrink-0 p-1 text-muted-foreground opacity-70 hover:text-foreground focus-visible:opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100"
         aria-label="更多操作"
         title="更多操作"
       >

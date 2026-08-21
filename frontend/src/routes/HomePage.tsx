@@ -1,16 +1,18 @@
 import { useRandomSongs } from '@/hooks/useRandomSongs'
 import { usePlayerStore } from '@/lib/store/player-store'
+import { useContextMenuStore } from '@/lib/store/context-menu-store'
 import { CoverImage } from '@/components/shared/CoverImage'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { SourceBadge } from '@/components/shared/SourceBadge'
 import { QualityBadge } from '@/components/shared/QualityBadge'
-import { RefreshCw, Play, Shuffle } from 'lucide-react'
+import { RefreshCw, Play, Shuffle, MoreHorizontal } from 'lucide-react'
 import { toTrack } from '@/lib/types/player'
 
 export function HomePage() {
   const { songs, loading, error, reload } = useRandomSongs(30)
   const playTrack = usePlayerStore(s => s.playTrack)
+  const openMenu = useContextMenuStore(s => s.openMenu)
 
   const tracks = songs.map(s => toTrack({ uid: s.uid, musicInfo: s }))
   const playAll = () => {
@@ -50,24 +52,47 @@ export function HomePage() {
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
           {tracks.map(t => (
-            <button
+            // 卡片拆两层（按钮嵌按钮非法 HTML）：外层承载右键菜单，内层按钮负责播放，
+            // "⋯"提供单曲操作入口（下一首播放/收藏/下载/分享），复用全局 SongContextMenu
+            <div
               key={t.uid}
-              onClick={() => playTrack(t, tracks)}
-              className="group flex flex-col gap-2 rounded-lg p-2 text-left hover:bg-accent/40"
+              className="group relative"
+              onContextMenu={e => {
+                e.preventDefault()
+                openMenu(t, e.clientX, e.clientY)
+              }}
             >
-              <div className="relative">
-                <CoverImage uid={t.uid} className="aspect-square w-full" />
-                <div className="absolute bottom-2 right-2 translate-y-2 rounded-full bg-primary p-2 text-primary-foreground opacity-0 shadow-lg transition group-hover:translate-y-0 group-hover:opacity-100">
-                  <Play className="h-4 w-4 fill-current" />
+              <button
+                onClick={() => playTrack(t, tracks)}
+                className="flex w-full flex-col gap-2 rounded-lg p-2 text-left hover:bg-accent/40"
+              >
+                <div className="relative">
+                  <CoverImage uid={t.uid} className="aspect-square w-full" />
+                  <div className="absolute bottom-2 right-2 translate-y-2 rounded-full bg-primary p-2 text-primary-foreground opacity-0 shadow-lg transition group-hover:translate-y-0 group-hover:opacity-100">
+                    <Play className="h-4 w-4 fill-current" />
+                  </div>
                 </div>
-              </div>
-              <div className="truncate text-sm font-medium">{t.name}</div>
-              <div className="flex items-center gap-1.5">
-                <span className="truncate text-xs text-muted-foreground">{t.artist}</span>
-                <SourceBadge source={t.source} />
-                <QualityBadge musicInfo={t.musicInfo} />
-              </div>
-            </button>
+                <div className="truncate text-sm font-medium">{t.name}</div>
+                <div className="flex items-center gap-1.5">
+                  <span className="truncate text-xs text-muted-foreground">{t.artist}</span>
+                  <SourceBadge source={t.source} />
+                  <QualityBadge musicInfo={t.musicInfo} />
+                </div>
+              </button>
+              <button
+                onClick={e => {
+                  e.stopPropagation()
+                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                  openMenu(t, rect.right, rect.bottom)
+                }}
+                // 手机常显（触屏无 hover，pointer-fine 不匹配即回落 opacity-70），桌面 hover 显现
+                className="absolute right-2 top-2 z-10 rounded-full bg-card/80 p-1.5 text-muted-foreground opacity-70 backdrop-blur transition hover:text-foreground focus-visible:opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100"
+                aria-label="更多操作"
+                title="更多操作"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+            </div>
           ))}
         </div>
       )}

@@ -2,7 +2,8 @@
  * 歌曲右键菜单（全局单例，由 context-menu-store 驱动）。
  *
  * 设计：
- * - 定位 fixed，边界检测靠右/下翻转
+ * - 桌面：fixed 定位小菜单，边界检测靠右/下翻转，右键或行内"⋯"触发
+ * - 手机（<768px）：同一份菜单项渲染为底部 action sheet（iOS/Android 通用惯例），点遮罩关闭
  * - outside-click（document mousedown）+ ESC 关闭
  * - 「加入歌单」自管 AddToPlaylistDialog，零回调透传
  * - 动作全部走 store action / 现有 hook，与 SongRow 一致
@@ -26,6 +27,21 @@ import { AddToPlaylistDialog } from '../../frontend/src/components/playlists/Add
 
 const MENU_WIDTH = 192
 const MENU_MAX_HEIGHT = 360
+const MOBILE_QUERY = '(max-width: 767px)'
+
+/** 手机端判定（与 AiPlaylistPage 同款 matchMedia 监听，无第三方依赖） */
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(MOBILE_QUERY).matches
+  )
+  useEffect(() => {
+    const mql = window.matchMedia(MOBILE_QUERY)
+    const update = () => setIsMobile(mql.matches)
+    mql.addEventListener('change', update)
+    return () => mql.removeEventListener('change', update)
+  }, [])
+  return isMobile
+}
 
 export function SongContextMenu() {
   const menu = useContextMenuStore(s => s.menu)
@@ -40,6 +56,7 @@ export function SongContextMenu() {
   const { download } = useDownload()
   const [playlistUid, setPlaylistUid] = useState<string | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+  const isMobile = useIsMobile()
 
   useEffect(() => {
     if (!menu) return
@@ -71,37 +88,61 @@ export function SongContextMenu() {
     close()
   }
 
+  // 两套布局共用的菜单项列表（addNext/addToQueue 入插播队列必生效，toast 恒真）
+  const menuItems = (
+    <>
+      <MenuItem icon={Play} label="播放" onClick={() => { void playTrack(track); close() }} />
+      <MenuItem icon={Plus} label="下一首播放" onClick={() => { addNext(track); toast.info('已加入下一首播放'); close() }} />
+      <MenuItem icon={ListPlus} label="加入队列" onClick={() => { addToQueue(track); toast.info('已加入播放队列'); close() }} />
+      <MenuItem
+        icon={Heart}
+        label={isFav ? '取消收藏' : '收藏'}
+        onClick={() => { void toggleFav(track.uid).catch(() => {}); close() }}
+      />
+      <MenuItem icon={ListMusic} label="加入歌单" onClick={() => { setPlaylistUid(track.uid); close() }} />
+      {authenticated && (
+        <MenuItem
+          icon={Download}
+          label="下载"
+          onClick={() => {
+            download({
+              uid: track.uid,
+              quality: resolveQuality(usePlayerStore.getState().quality, track.musicInfo.types),
+            })
+            close()
+          }}
+        />
+      )}
+      <MenuItem icon={Share2} label="分享" onClick={handleShare} />
+    </>
+  )
+
   return (
     <>
-      <div
-        ref={menuRef}
-        className="fixed z-50 w-48 rounded-md border border-border bg-card p-1 shadow-lg"
-        style={{ left, top }}
-      >
-        <MenuItem icon={Play} label="播放" onClick={() => { void playTrack(track); close() }} />
-        <MenuItem icon={Plus} label="下一首播放" onClick={() => { addNext(track); toast.info('已加入下一首播放'); close() }} />
-        <MenuItem icon={ListPlus} label="加入队列" onClick={() => { addToQueue(track); toast.info('已加入播放队列'); close() }} />
-        <MenuItem
-          icon={Heart}
-          label={isFav ? '取消收藏' : '收藏'}
-          onClick={() => { void toggleFav(track.uid).catch(() => {}); close() }}
-        />
-        <MenuItem icon={ListMusic} label="加入歌单" onClick={() => { setPlaylistUid(track.uid); close() }} />
-        {authenticated && (
-          <MenuItem
-            icon={Download}
-            label="下载"
-            onClick={() => {
-              download({
-                uid: track.uid,
-                quality: resolveQuality(usePlayerStore.getState().quality, track.musicInfo.types),
-              })
-              close()
-            }}
-          />
-        )}
-        <MenuItem icon={Share2} label="分享" onClick={handleShare} />
-      </div>
+      {isMobile ? (
+        // 手机：底部 action sheet，点遮罩关闭
+        <div className="fixed inset-0 z-50 bg-black/50" onClick={close}>
+          <div
+            ref={menuRef}
+            className="safe-area-bottom absolute inset-x-0 bottom-0 max-h-[70vh] overflow-y-auto rounded-t-xl border-t border-border bg-card p-2 pb-3 shadow-2xl"
+            onClick={e => e.stopPropagation()}
+            role="menu"
+          >
+            <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-border" />
+            {menuItems}
+          </div>
+        </div>
+      ) : (
+        // 桌面：原 fixed 定位小菜单
+        <div
+          ref={menuRef}
+          className="fixed z-50 w-48 rounded-md border border-border bg-card p-1 shadow-lg"
+          style={{ left, top }}
+          role="menu"
+        >
+          {menuItems}
+        </div>
+      )}
       {playlistUid && <AddToPlaylistDialog uid={playlistUid} onClose={() => setPlaylistUid(null)} />}
     </>
   )
@@ -111,7 +152,7 @@ function MenuItem({ icon: Icon, label, onClick }: { icon: LucideIcon; label: str
   return (
     <button
       onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      className="flex w-full items-center gap-3 rounded-md px-3 py-3 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:py-2"
     >
       <Icon className="h-4 w-4 shrink-0" />
       {label}

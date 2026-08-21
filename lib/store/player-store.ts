@@ -43,6 +43,12 @@ const SLEEP_STEPS = [15, 30, 45, 60] // 分钟
 interface PlayerStore {
   // 队列与当前
   queue: Track[]
+  /** 手动插播队列（"下一首播放"插队头 / "加入队列"排队尾）。
+   *  独立于主队列、优先于一切播放模式（对齐 Spotify "Next in queue" 与 LX tempPlayList）：
+   *  随机/单曲循环都会先消费插播；播完即出队、不回流主队列；换列表播放时保留。 */
+  playNextQueue: Track[]
+  /** 当前曲是否来自插播队列（插播期间主队列 currentIndex 冻结，消费完毕回到冻结处继续） */
+  isCurrentTempPlay: boolean
   currentIndex: number
   currentTrack: Track | null
   streamUrl: string | null
@@ -103,6 +109,10 @@ interface PlayerStore {
   // 队列操作
   addToQueue: (track: Track) => void
   addNext: (track: Track) => void
+  removeFromPlayNext: (index: number) => void
+  clearPlayNext: () => void
+  /** 消费插播队列第 index 首并立即播放（next/handleTrackEnd 优先调 index 0；队列面板点击用） */
+  playFromPlayNext: (index: number) => void
   removeFromQueue: (index: number) => void
   clearQueue: () => void
 
@@ -119,6 +129,8 @@ interface PlayerStore {
 
 export const usePlayerStore = create<PlayerStore>((set, get) => ({
   queue: [],
+  playNextQueue: [],
+  isCurrentTempPlay: false,
   currentIndex: -1,
   currentTrack: null,
   streamUrl: null,
@@ -156,7 +168,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
         set(s => ({ queue: [...s.queue, track], currentIndex: s.queue.length }))
       }
     }
-    set({ currentTrack: track, currentTime: 0, duration: 0, urlFetchError: null })
+    set({ currentTrack: track, isCurrentTempPlay: false, currentTime: 0, duration: 0, urlFetchError: null })
     await get().loadStreamUrl(track)
     reportPlayIfAuthed(track.musicInfo)
   },
@@ -250,6 +262,11 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   },
 
   next: () => {
+    // 插播队列优先：手动点"下一首"也先播"下一首播放"插进来的歌（Spotify 同款）
+    if (get().playNextQueue.length > 0) {
+      get().playFromPlayNext(0)
+      return
+    }
     const { queue, currentIndex, playbackMode } = get()
     if (queue.length === 0) return
     let nextIndex: number
@@ -260,26 +277,35 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       nextIndex = (currentIndex + 1) % queue.length
     }
     const track = queue[nextIndex]
-    set({ currentIndex: nextIndex, currentTrack: track, currentTime: 0, duration: 0 })
+    set({ currentIndex: nextIndex, currentTrack: track, isCurrentTempPlay: false, currentTime: 0, duration: 0 })
     get().loadStreamUrl(track)
     reportPlayIfAuthed(track.musicInfo)
   },
 
   previous: () => {
-    const { queue, currentIndex, currentTime } = get()
+    const { queue, currentIndex, currentTime, isCurrentTempPlay } = get()
     if (queue.length === 0) return
     if (currentTime > 3) {
       get().seek(0)
       return
     }
-    const prevIndex = (currentIndex - 1 + queue.length) % queue.length
+    // 插播中按上一首：回到主队列冻结游标处（插播前刚播的那首，LX 同款）
+    const prevIndex = isCurrentTempPlay
+      ? currentIndex
+      : (currentIndex - 1 + queue.length) % queue.length
+    if (prevIndex < 0 || prevIndex >= queue.length) return
     const track = queue[prevIndex]
-    set({ currentIndex: prevIndex, currentTrack: track, currentTime: 0, duration: 0 })
+    set({ currentIndex: prevIndex, currentTrack: track, isCurrentTempPlay: false, currentTime: 0, duration: 0 })
     get().loadStreamUrl(track)
     reportPlayIfAuthed(track.musicInfo)
   },
 
   handleTrackEnd: () => {
+    // 插播队列优先于一切模式：随机不跳过、单曲循环被打断、顺序播到队尾也不提前停止
+    if (get().playNextQueue.length > 0) {
+      get().playFromPlayNext(0)
+      return
+    }
     const { playbackMode, queue, currentIndex } = get()
     if (queue.length === 0) return
     if (playbackMode === 'loop') {
@@ -295,15 +321,36 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     get().next()
   },
 
-  addToQueue: (track) =>
-    set(s => (s.queue.some(t => t.uid === track.uid) ? {} : { queue: [...s.queue, track] })),
-  addNext: (track) =>
-    set(s => {
-      if (s.queue.some(t => t.uid === track.uid)) return {}
-      const newQueue = [...s.queue]
-      newQueue.splice(s.currentIndex + 1, 0, track)
-      return { queue: newQueue }
-    }),
+  /** 加入队列（Play Later 语义）：排到插播队列末尾，整体优先于主队列剩余歌曲。
+   *  允许重复入队（Spotify/Apple/LX 一致），不做 uid 去重——去重会让列表内已存在的歌静默失效。 */
+  addToQueue: (track) => {
+    set(s => ({ playNextQueue: [...s.playNextQueue, track] }))
+    // 播放器空闲时直接开播用户刚操作的这首（LX addTempPlayList 同款）
+    if (!get().currentTrack) get().playFromPlayNext(get().playNextQueue.length - 1)
+  },
+  /** 下一首播放（Play Next 语义）：插到插播队列最前，后点的先播（Apple 同款） */
+  addNext: (track) => {
+    set(s => ({ playNextQueue: [track, ...s.playNextQueue] }))
+    if (!get().currentTrack) get().playFromPlayNext(0)
+  },
+  removeFromPlayNext: (index) =>
+    set(s => ({ playNextQueue: s.playNextQueue.filter((_, i) => i !== index) })),
+  clearPlayNext: () => set({ playNextQueue: [] }),
+  playFromPlayNext: (index) => {
+    const { playNextQueue } = get()
+    const track = playNextQueue[index]
+    if (!track) return
+    // 主队列 currentIndex 冻结不动：插播消费完毕后 next() 从冻结位置继续主队列
+    set({
+      playNextQueue: playNextQueue.filter((_, i) => i !== index),
+      currentTrack: track,
+      isCurrentTempPlay: true,
+      currentTime: 0,
+      duration: 0,
+    })
+    get().loadStreamUrl(track)
+    reportPlayIfAuthed(track.musicInfo)
+  },
   removeFromQueue: (index) =>
     set(s => {
       if (index < 0 || index >= s.queue.length) return {}
@@ -312,6 +359,10 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
         return { queue: newQueue, currentIndex: s.currentIndex - 1 }
       }
       if (index === s.currentIndex) {
+        // 插播期间移除的是主队列冻结游标处的歌（并非正在播的曲）：只回退游标，不打断插播
+        if (s.isCurrentTempPlay) {
+          return { queue: newQueue, currentIndex: s.currentIndex - 1 }
+        }
         // 移除当前曲目：清空播放状态（顺带修预存 bug——原实现留下指向已移除曲目的 streamUrl）
         return {
           queue: newQueue,
@@ -328,6 +379,8 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   clearQueue: () =>
     set({
       queue: [],
+      playNextQueue: [],
+      isCurrentTempPlay: false,
       currentIndex: -1,
       currentTrack: null,
       streamUrl: null,
