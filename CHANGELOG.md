@@ -16,6 +16,18 @@
 
 > v0.17.0 之前的完整提交历史可执行 `git log v0.17.0` 查看。
 
+## 未发布
+
+### ✨ 新增功能
+
+- **ci**：tag 发布自动创建 GitHub Release 并自动维护 CHANGELOG
+
+
+### 🐛 问题修复
+
+- **ci**：release job 显式 always()，修复补发时被隐式 success() 跳过
+
+
 ## v0.21.1（2026-08-21）
 
 **完整对比**：[v0.21.0 → v0.21.1](https://github.com/redcatH/HollyMusic/compare/v0.21.0...v0.21.1)
