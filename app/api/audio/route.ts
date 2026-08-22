@@ -22,6 +22,7 @@ import { musicSourceManager } from '@/lib/music-source-manager'
 import type { QualityType } from '@/lib/types/music'
 import { parseIntervalToSeconds } from '@/lib/types/player'
 import { audioServe } from '@/lib/audio-serve'
+import { cacheNativeLyricForMusic } from '@/lib/services/lyrics'
 
 function buildErrorResponse(status: number, code: string, message: string): Response {
   return new Response(
@@ -72,6 +73,7 @@ async function handleAudio(request: NextRequest, isHead: boolean): Promise<Respo
       rangeHeader,
       isHead,
       intervalSec: parseIntervalToSeconds(musicInfo.interval),
+      onCached: () => cacheNativeLyricForMusic(musicInfo),
     })
   } catch (error) {
     logger.error('[/api/audio] 失败:', error)

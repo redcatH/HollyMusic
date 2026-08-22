@@ -5,10 +5,17 @@
  * 与第三方 API（api.lrc.cx）回退。逻辑与 subsonic-metadata.ts 的私有函数保持一致。
  */
 
-import { musicSourceManager } from '../music-source-manager'
-import { logger } from '../logger'
-import { decodeLyricEntities } from '../server/lyric-decode'
-import type { MusicInfo } from '../types/music'
+import fsp from 'fs/promises'
+import path from 'path'
+import { getAudioServeConfig } from '@/lib/audio-serve'
+import { prisma } from '@/lib/db'
+import { logger } from '@/lib/logger'
+import { musicSourceManager } from '@/lib/music-source-manager'
+import { getLyricSidecarPath, getTranslationLyricSidecarPath } from '@/lib/server/lyric-cache'
+import { decodeLyricEntities } from '@/lib/server/lyric-decode'
+import { normalizeStructuredLyricText } from '@/lib/server/lyric-normalize'
+import { fetchNativeLyric } from '@/lib/server/music-lyric'
+import type { MusicInfo } from '@/lib/types/music'
 
 export interface ParsedLyricLine {
   time: number // 毫秒
@@ -19,9 +26,181 @@ export interface ParsedLyric {
   lines: ParsedLyricLine[]
 }
 
+type LyricResult = { lyric: string; tlyric: string | null }
+
+const nativeLyricInflight = new Map<string, Promise<LyricResult | null>>()
+
+function getAudioCacheKeyPrefix(musicInfo: MusicInfo): string {
+  return `${musicInfo.source}:${musicInfo.songmid}:`
+}
+
+function resolveSidecarPaths(
+  cacheDir: string,
+  relativeAudioPath: string
+): { audioPath: string; lyricPath: string; translationPath: string } | null {
+  const audioPath = path.resolve(cacheDir, relativeAudioPath)
+  const relative = path.relative(cacheDir, audioPath)
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return null
+  return {
+    audioPath,
+    lyricPath: getLyricSidecarPath(audioPath),
+    translationPath: getTranslationLyricSidecarPath(audioPath),
+  }
+}
+
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fsp.access(filePath)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function getCachedNativeLyric(musicInfo: MusicInfo): Promise<LyricResult | null> {
+  const config = getAudioServeConfig()
+  if (!config.enabled) return null
+
+  try {
+    const records = await prisma.audioCache.findMany({
+      where: { cacheKey: { startsWith: getAudioCacheKeyPrefix(musicInfo) } },
+      orderBy: { lastAccessAt: 'desc' },
+      select: { filePath: true },
+    })
+    for (const record of records) {
+      const paths = resolveSidecarPaths(config.cacheDir, record.filePath)
+      if (!paths) continue
+      try {
+        if (!(await fileExists(paths.audioPath))) continue
+        const lyric = (await fsp.readFile(paths.lyricPath, 'utf-8')).trim()
+        if (lyric) {
+          const tlyric = await fsp.readFile(paths.translationPath, 'utf-8').catch(() => '')
+          logger.debug('[lyrics] disk cache hit', { source: musicInfo.source, songId: musicInfo.songmid })
+          return { lyric, tlyric: tlyric.trim() || null }
+        }
+      } catch {
+        // 未缓存、缓存文件被删除或内容损坏时，继续检查其他音质及网络回退。
+      }
+    }
+  } catch (err) {
+    logger.debug('[lyrics] disk cache read failed', { source: musicInfo.source, songId: musicInfo.songmid, err })
+  }
+  return null
+}
+
+async function persistNativeLyric(musicInfo: MusicInfo, lyric: LyricResult): Promise<void> {
+  const config = getAudioServeConfig()
+  if (!config.enabled) return
+
+  try {
+    const records = await prisma.audioCache.findMany({
+      where: { cacheKey: { startsWith: getAudioCacheKeyPrefix(musicInfo) } },
+      orderBy: { lastAccessAt: 'desc' },
+      select: { filePath: true },
+    })
+    if (!records.length) return
+
+    const existingPaths = (await Promise.all(records.map(async record => {
+      const paths = resolveSidecarPaths(config.cacheDir, record.filePath)
+      return paths && await fileExists(paths.audioPath) ? paths : null
+    }))).filter((paths): paths is NonNullable<ReturnType<typeof resolveSidecarPaths>> => paths !== null)
+    if (!existingPaths.length) return
+
+    // 首次缓存只写入一份歌词，放在当前最近使用且实际存在的音频旁。
+    const targetPaths = existingPaths[0]
+
+    await writeTextAtomically(targetPaths.lyricPath, lyric.lyric)
+    if (lyric.tlyric) {
+      await writeTextAtomically(targetPaths.translationPath, lyric.tlyric)
+    } else {
+      await fsp.unlink(targetPaths.translationPath).catch(() => {})
+    }
+
+    logger.info('[lyrics] cached precise source lyric to disk', { source: musicInfo.source, songId: musicInfo.songmid })
+  } catch (err) {
+    // 歌词缓存失败不应影响播放或正常的歌词响应。
+    logger.warn('[lyrics] disk cache write failed', { source: musicInfo.source, songId: musicInfo.songmid, err })
+  }
+}
+
+async function writeTextAtomically(filePath: string, content: string): Promise<void> {
+  const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}`
+  await fsp.writeFile(tempPath, content, 'utf-8')
+  try {
+    await fsp.rename(tempPath, filePath)
+  } catch (error) {
+    await fsp.unlink(tempPath).catch(() => {})
+    throw error
+  }
+}
+
+async function getNativeLyricWithDiskCache(musicInfo: MusicInfo): Promise<LyricResult | null> {
+  const cached = await getCachedNativeLyric(musicInfo)
+  if (cached) return cached
+
+  const key = `${musicInfo.source}:${musicInfo.songmid}`
+  const running = nativeLyricInflight.get(key)
+  if (running) return running
+
+  const task = (async () => {
+    const nativeLyric = await fetchNativeLyric(musicInfo)
+    if (!nativeLyric) return null
+    const lyric = normalizeLyricPayload(nativeLyric.lyric)
+    if (!lyric) return null
+    const result = {
+      lyric,
+      tlyric: nativeLyric.tlyric ? normalizeLyricPayload(nativeLyric.tlyric) || null : null,
+    }
+    await persistNativeLyric(musicInfo, result)
+    return result
+  })()
+  nativeLyricInflight.set(key, task)
+  try {
+    return await task
+  } finally {
+    nativeLyricInflight.delete(key)
+  }
+}
+
+/**
+ * 从已配置的渠道音源脚本取词。脚本调用携带当前 source + MusicInfo，
+ * 结果可作为渠道内歌词缓存；不包含按标题搜索的公共 API 回退。
+ */
+async function getSourceLyricWithDiskCache(musicInfo: MusicInfo): Promise<LyricResult | null> {
+  try {
+    const result = await musicSourceManager.getLyric(musicInfo, 5000)
+    if (!result?.lyric) return null
+
+    const lyric = normalizeLyricPayload(result.lyric)
+    if (!lyric) return null
+
+    const tlyric = result.tlyric ? normalizeLyricPayload(result.tlyric) : ''
+    const resolved = { lyric, tlyric: tlyric || null }
+    await persistNativeLyric(musicInfo, resolved)
+    return resolved
+  } catch (err) {
+    logger.debug('[lyrics] musicSourceManager.getLyric failed:', err)
+    return null
+  }
+}
+
+/** 音频完整落盘后触发：仅缓存所属渠道精确歌词，不使用标题搜索回退。 */
+export async function cacheNativeLyricForMusic(musicInfo: MusicInfo): Promise<void> {
+  // 仅缓存渠道唯一标识精确取得的歌词；标题搜索等第三方回退结果可能错配，
+  // 可以临时返回给页面，但绝不能落盘固化。
+  const cached = await getCachedNativeLyric(musicInfo)
+  if (cached) return
+  if (await getNativeLyricWithDiskCache(musicInfo)) return
+  await getSourceLyricWithDiskCache(musicInfo)
+}
+
+function normalizeLyricPayload(value: string): string {
+  return normalizeStructuredLyricText(decodeLyricEntities(value).trim()).trim()
+}
+
 /**
  * 调用第三方歌词 API 获取 LRC 文本。
- * 优先级：title > album > artist，只传一个参数。
+ * 优先使用 title + artist，避免同名歌曲命中错误歌词；缺失歌名时再降级使用专辑或歌手。
  */
 async function fetchLyricsFromAPI(title: string, album: string, artist: string): Promise<string | null> {
   try {
@@ -32,8 +211,10 @@ async function fetchLyricsFromAPI(title: string, album: string, artist: string):
 
     if (titleTrimmed) {
       params.title = titleTrimmed
+      if (artistTrimmed) params.artist = artistTrimmed
     } else if (albumTrimmed && albumTrimmed !== '[Unknown Album]') {
       params.album = albumTrimmed
+      if (artistTrimmed) params.artist = artistTrimmed
     } else if (artistTrimmed) {
       params.artist = artistTrimmed
     } else {
@@ -72,24 +253,23 @@ async function fetchLyricsFromAPI(title: string, album: string, artist: string):
  * 统一歌词获取：音源优先，第三方 API 回退。
  * 返回 { lyric, tlyric } 或 null。
  */
-export async function fetchLyricForMusic(
-  musicInfo: MusicInfo
-): Promise<{ lyric: string; tlyric: string | null } | null> {
+export async function fetchLyricForMusic(musicInfo: MusicInfo): Promise<LyricResult | null> {
   const title = musicInfo.name || ''
   const artist = musicInfo.singer || ''
   const album = musicInfo.albumName || ''
 
-  // 1) 优先音源
-  try {
-    const result = await musicSourceManager.getLyric(musicInfo, 5000)
-    if (result && result.lyric && result.lyric.trim()) return result
-  } catch (err) {
-    logger.debug('[lyrics] musicSourceManager.getLyric failed:', err)
-  }
+  // 1) 平台原生接口按歌曲唯一标识取词，避免同名歌曲被标题搜索误配。
+  const nativeLyric = await getNativeLyricWithDiskCache(musicInfo)
+  if (nativeLyric) return nativeLyric
 
-  // 2) 回退第三方 API
+  // 2) 已配置的渠道音源脚本（以 source + MusicInfo 查询，可作为精确结果缓存）
+  const sourceLyric = await getSourceLyricWithDiskCache(musicInfo)
+  if (sourceLyric) return sourceLyric
+
+  // 3) 回退第三方 API
   const text = await fetchLyricsFromAPI(title, album || title, artist)
-  if (text && text.trim()) return { lyric: text.trim(), tlyric: null }
+  const lyric = text ? normalizeLyricPayload(text) : ''
+  if (lyric) return { lyric, tlyric: null }
 
   return null
 }

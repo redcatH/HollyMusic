@@ -6,7 +6,7 @@ import { resolveSubsonicMediaMeta } from './subsonic-media'
 import { type AuthResult } from './auth'
 import * as dbAPI from './db'
 import { logger } from './logger'
-import { musicSourceManager } from './music-source-manager'
+import { fetchLyricForMusic } from './services/lyrics'
 import type { MusicInfo } from './types/music'
 
 // 原生封面获取模块（参考 lx-music 各源 pic 实现），替代黑盒脚本与第三方聚合 API
@@ -140,56 +140,45 @@ async function fetchImageFromUrl(imageUrl: string): Promise<Response | null> {
 }
 
 /**
- * 统一的歌词获取（音源优先，第三方 API 回退）。供 getLyrics / getLyricsBySongId 复用。
- * 返回 { lyric, tlyric } 或 null。
+ * 统一歌词入口。复用歌词服务，确保 Subsonic 与 Web 共用同一份
+ * 原生精确歌词、磁盘 .lrc 缓存和回退策略。
  */
 async function fetchLyric(musicInfo: MusicInfo): Promise<{ lyric: string; tlyric: string | null } | null> {
-  const title = musicInfo.name || ''
-  const artist = musicInfo.singer || ''
-  const album = musicInfo.albumName || ''
-
-  // 1) 优先音源
-  try {
-    const result = await musicSourceManager.getLyric(musicInfo, 5000)
-    if (result && result.lyric && result.lyric.trim()) return result
-  } catch (err) {
-    logger.debug('[fetchLyric] musicSourceManager.getLyric failed:', err)
-  }
-
-  // 2) 回退第三方 API
-  const text = await fetchLyricsFromAPI(title, album || title, artist)
-  if (text && text.trim()) return { lyric: text.trim(), tlyric: null }
-
-  return null
+  return fetchLyricForMusic(musicInfo)
 }
 
 // 异步版本 - 供路由中调用
 export async function handleGetLyricsAsync(request: NextRequest, authRes: AuthResult): Promise<Response> {
   try {
-    // 获取请求中的 id 和可选参数
+    // 传统 Subsonic getLyrics 使用 artist + title；同时兼容带 id 的客户端。
     const url = new URL(request.url)
     const id = url.searchParams.get('id')
+    const requestedArtist = url.searchParams.get('artist')?.trim() || ''
+    const requestedTitle = url.searchParams.get('title')?.trim() || ''
 
-    if (!id) {
-      return subsonicError(request, 10, 'Missing required parameter: id')
+    const musicInfo = id
+      ? await dbAPI.resolveMusicInfoById(id)
+      : requestedArtist && requestedTitle
+        ? await dbAPI.getFirstMusicInfoByArtistAndTitle(requestedArtist, requestedTitle)
+        : null
+
+    // 标准 getLyrics 的正文位于 lyrics.value 属性中；查无结果返回空 lyrics 节点。
+    if (!musicInfo) {
+      return respond(request, { lyrics: {} }, {
+        headers: { 'Cache-Control': 'public, max-age=3600' },
+      })
     }
 
-    // 根据 id 获取 MusicInfo（song id 为 `source-songmid` 复合格式，或旧版纯 songmid）
-    const musicInfo = await dbAPI.resolveMusicInfoById(id)
-
-    const artist = musicInfo?.singer || ''
-    const title = musicInfo?.name || ''
-
-    // 统一走 fetchLyric（音源优先，第三方 API 回退）；查无歌曲或无歌词均返回"无歌词"占位
-    const lyric = musicInfo ? await fetchLyric(musicInfo) : null
-
-    const payload: SubsonicPayload = {
-      lyrics: {
-        artist: { [TEXT_KEY]: artist },
-        title: { [TEXT_KEY]: title },
-        line: parseLrcToLines(lyric?.lyric),
-      },
-    }
+    const lyric = await fetchLyric(musicInfo)
+    const payload: SubsonicPayload = lyric
+      ? {
+          lyrics: {
+            artist: musicInfo.singer || '',
+            title: musicInfo.name || '',
+            value: lyric.lyric,
+          },
+        }
+      : { lyrics: {} }
 
     return respond(request, payload, {
       headers: { 'Cache-Control': lyric ? 'public, max-age=86400' : 'public, max-age=3600' },
@@ -384,75 +373,6 @@ export async function handleGetAlbumAsync(request: NextRequest, authRes: AuthRes
 }
 
 /**
- * 调用第三方歌词 API 获取 LRC 格式歌词
- * API 参数说明：
- * - title: 歌曲标题
- * - album: 专辑名称
- * - artist: 作者
- * 
- * 优先级：title > album > artist
- * 只传一个参数到 API
- */
-async function fetchLyricsFromAPI(title: string, album: string, artist: string): Promise<string | null> {
-  try {
-    // 构建参数对象 - 按优先级只传一个参数
-    const params: Record<string, string> = {}
-    
-    const titleTrimmed = title.trim()
-    const albumTrimmed = album.trim()
-    const artistTrimmed = artist.trim()
-    
-    // 优先级：title > album > artist
-    if (titleTrimmed) {
-      params.title = titleTrimmed
-    } else if (albumTrimmed && albumTrimmed !== '[Unknown Album]') {
-      params.album = albumTrimmed
-    } else if (artistTrimmed) {
-      params.artist = artistTrimmed
-    } else {
-      // 没有有效参数
-      return null
-    }
-    
-    const searchParams = new URLSearchParams(params)
-    const url = `https://api.lrc.cx/lyrics?${searchParams.toString()}`
-    
-    logger.info('[fetchLyricsFromAPI] Fetching from:', url)
-    
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 5000) // 5秒超时
-
-    const response = await fetch(url, {
-      method: 'GET',
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      }
-    })
-    
-    clearTimeout(timeoutId)
-
-    if (!response.ok) {
-      logger.warn('[fetchLyricsFromAPI] API returned status:', response.status)
-      return null
-    }
-
-    const text = await response.text()
-    
-    if (!text || text.trim().length === 0) {
-      logger.warn('[fetchLyricsFromAPI] Empty response from API')
-      return null
-    }
-
-    logger.info('[fetchLyricsFromAPI] Got lyrics, length:', text.length)
-    return text
-  } catch (err) {
-    logger.warn('[fetchLyricsFromAPI] Error fetching lyrics:', err)
-    return null
-  }
-}
-
-/**
  * LRC 解析结果
  */
 interface LrcLine { time: number; text: string }
@@ -503,22 +423,4 @@ function parseLrc(lrcText: string): ParsedLrc {
 
   result.lines.sort((a, b) => a.time - b.time)
   return result
-}
-
-/**
- * 将 LRC 格式歌词解析为 Subsonic 行节点（传统 getLyrics 用，向后兼容）。
- * 基于 parseLrc，输出 <line time="毫秒">文本</line>；无可解析内容时返回"无歌词"占位行。
- */
-function parseLrcToLines(lrcText?: string | null): SubsonicPayload[] {
-  try {
-    if (lrcText) {
-      const parsed = parseLrc(lrcText)
-      if (parsed.lines.length > 0) {
-        return parsed.lines.map(l => ({ time: l.time, [TEXT_KEY]: l.text }))
-      }
-    }
-  } catch (err) {
-    logger.warn('[parseLrcToLines] Error parsing LRC:', err)
-  }
-  return [{ time: 0, [TEXT_KEY]: '无歌词' }]
 }
