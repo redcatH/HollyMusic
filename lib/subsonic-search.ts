@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { respond, subsonicError, type SubsonicPayload, type SubsonicSongNode } from '@/lib/subsonic'
 import { resolveSubsonicMediaMeta } from '@/lib/subsonic-media'
 import type { MusicInfo } from '@/lib/types/music'
-import { upsertMusicInfo, getStorageSongmidForMusicInfo } from '@/lib/db'
+import { upsertMusicInfo, getStorageSongmidForMusicInfo, getRandomMusicInfoList } from '@/lib/db'
 import { searchCache } from '@/lib/cache-manager'
 import { logger } from '@/lib/logger'
 import { buildSubsonicSearchCacheKey } from '@/lib/cache-key'
@@ -18,6 +18,13 @@ function parseOffset(v: string | undefined) {
   return Number.isNaN(n) ? 0 : n
 }
 
+/** 解析协议的 songCount 参数：1–500，缺失/非法回默认 50（仅作为返回数量上限，不影响对上游的请求量） */
+export function parseSongCount(raw: string | null): number {
+  const n = parseInt(raw ?? '', 10)
+  if (Number.isNaN(n)) return 50
+  return Math.max(1, Math.min(n, 500))
+}
+
 function parseDuration(interval: string | undefined) {
   if (!interval) return 0
   const parts = interval.split(':').map(p => parseInt(p))
@@ -26,11 +33,52 @@ function parseDuration(interval: string | undefined) {
   return 0
 }
 
+/** song 节点构造（空 query 随机分支用；与 getRandomSongs 端点同规则） */
+function buildRandomSongNode(s: MusicInfo, idx: number): SubsonicSongNode {
+  const songId = `${s.source}-${getStorageSongmidForMusicInfo(s) || s.songId || idx}`
+  const meta = resolveSubsonicMediaMeta(s)
+  return {
+    id: songId,
+    parent: songId,
+    title: s.name || '',
+    album: s.albumName || '',
+    artist: s.singer || '',
+    isDir: false,
+    coverArt: songId,
+    duration: parseDuration(s.interval),
+    bitRate: meta.bitRate,
+    size: meta.size,
+    suffix: meta.suffix,
+    contentType: meta.contentType,
+    isVideo: false,
+    path: '',
+    albumId: songId,
+    artistId: '',
+    type: 'music',
+  }
+}
+
 export async function handleSearch(request: NextRequest) {
   const url = new URL(request.url)
-  const q = url.searchParams.get('query') || url.searchParams.get('q') || ''
-  const songCount = 50 //parseCount(url.searchParams.get('songCount') ?? undefined, 20)
+  const q = (url.searchParams.get('query') || url.searchParams.get('q') || '').trim()
+  const songCount = parseSongCount(url.searchParams.get('songCount'))
   const songOffset = parseOffset(url.searchParams.get('songOffset') ?? undefined)
+
+  // 空 query：客户端（如箭头音乐）打开 App 时的「随便听听」预加载（artistCount/albumCount 也为 0）。
+  // 与 PC 首页「发现音乐」同源：从推荐白名单随机抽取（getRandomMusicInfoList），
+  // 不触发任何聚合搜索（对音源零请求），结果每次随机故不走缓存。
+  if (!q) {
+    try {
+      const allowedSources = getSearchSources()
+      const songs = await getRandomMusicInfoList(songCount, allowedSources)
+      const songNodes = songs.map((s, idx) => buildRandomSongNode(s, idx))
+      logger.debug('[subsonic-search] empty query -> random from recommended pool:', songNodes.length)
+      return respond(request, { searchResult3: { song: songNodes } })
+    } catch (err) {
+      logger.error('[subsonic-search] empty query random error:', err)
+      return subsonicError(request, 0, err instanceof Error ? err.message : 'search error')
+    }
+  }
 
   // aggregate sources used for search (moved outside try so cache key can be computed)
   const sources = getSearchSources()
