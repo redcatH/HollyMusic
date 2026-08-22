@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { resolveMusicInfoById } from '@/lib/db'
-import { formatSubsonicXML, createSubsonicResponse } from '@/lib/subsonic'
+import { subsonicError } from '@/lib/subsonic'
 import { musicSourceManager } from '@/lib/music-source-manager'
 import { audioServe } from '@/lib/audio-serve'
 import { logger } from '@/lib/logger'
@@ -54,18 +54,13 @@ export async function handleStream(request: NextRequest): Promise<Response> {
 
     // ========== STEP 1: 解析 id → MusicInfo ==========
     if (!id) {
-      const xml = formatSubsonicXML({ status: 'failed', error: { code: 70, message: 'Missing id' } })
-      return createSubsonicResponse(xml)
+      return subsonicError(request, 70, 'Missing id')
     }
 
     const musicInfo = await resolveMusicInfoById(id)
     if (!musicInfo) {
       logger.warn(`[handleStream] Invalid ID: ${id}`)
-      const xml = formatSubsonicXML({
-        status: 'failed',
-        error: { code: 70, message: 'Invalid song id' },
-      })
-      return createSubsonicResponse(xml)
+      return subsonicError(request, 70, 'Invalid song id')
     }
 
     // ========== STEP 2: 验证必填字段 ==========
@@ -76,11 +71,7 @@ export async function handleStream(request: NextRequest): Promise<Response> {
     if (!musicInfo.singer) missingFields.push('singer')
     if (missingFields.length > 0) {
       logger.warn(`[handleStream] Missing fields: ${missingFields.join(', ')}`)
-      const xml = formatSubsonicXML({
-        status: 'failed',
-        error: { code: 70, message: 'Invalid song info' },
-      })
-      return createSubsonicResponse(xml)
+      return subsonicError(request, 70, 'Invalid song info')
     }
 
     // ========== STEP 3: 确定音质 ==========
@@ -93,11 +84,7 @@ export async function handleStream(request: NextRequest): Promise<Response> {
     const supportedQualities: QualityType[] = musicInfo.types.map(t => t.type)
     if (supportedQualities.length === 0) {
       logger.warn(`[handleStream] No supported qualities for ${musicInfo.songmid}`)
-      const xml = formatSubsonicXML({
-        status: 'failed',
-        error: { code: 0, message: 'No supported audio quality available' },
-      })
-      return createSubsonicResponse(xml)
+      return subsonicError(request, 0, 'No supported audio quality available')
     }
 
     const quality = selectQuality(idealQuality, supportedQualities)
@@ -135,20 +122,12 @@ export async function handleStream(request: NextRequest): Promise<Response> {
     const ct = response.headers.get('content-type') || ''
     if (response.status >= 400 && (ct.includes('application/json') || ct === '')) {
       const body = await response.text().catch(() => '')
-      const xml = formatSubsonicXML({
-        status: 'failed',
-        error: { code: 0, message: `Stream failed: ${response.status} ${body.slice(0, 200)}` },
-      })
-      return createSubsonicResponse(xml)
+      return subsonicError(request, 0, `Stream failed: ${response.status} ${body.slice(0, 200)}`)
     }
 
     return response
   } catch (err) {
     logger.error('[handleStream] Error:', err instanceof Error ? err.message : String(err))
-    const xml = formatSubsonicXML({
-      status: 'failed',
-      error: { code: 0, message: 'Stream request failed' },
-    })
-    return createSubsonicResponse(xml)
+    return subsonicError(request, 0, 'Stream request failed')
   }
 }

@@ -7,11 +7,12 @@ import { handleGetSongAsync } from '@/lib/subsonic-song'
 import { handleGetRandomSongs } from '@/lib/subsonic-random'
 import { handleGetStarred } from '@/lib/subsonic-getstarred'
 import { handleGetPlaylists, handleGetPlaylist, handleCreatePlaylist, handleDeletePlaylist, handleUpdatePlaylist } from '@/lib/subsonic-playlist'
-import { formatSubsonicXML, createSubsonicResponse } from '@/lib/subsonic'
+import { respond, subsonicError } from '@/lib/subsonic'
 import { handleGetOpenSubsonicExtensions, handleGetUser, handleGetAlbumList2, handleScrobble, handleGetSimilarSongs } from '@/lib/subsonic-system'
 import { handleStream } from '@/lib/subsonic-stream'
 import auth, { type AuthResult } from '@/lib/auth'
 import configSync from '@/lib/config-sync'
+import { logger } from '@/lib/logger'
 
 // 同步启动配置中的用户（非阻塞）
 configSync.syncUsersFromConfig().then(r => console.info('[startup] config-sync result', r)).catch(e => console.warn('[startup] config-sync error', e))
@@ -42,9 +43,9 @@ const AUTH_EXEMPT_METHODS = new Set(['ping', 'getOpenSubsonicExtensions', 'getSc
  * 注意：auth_required（强制认证开启但未带 token）不在此拦截——
  * 由下方豁免集之后的强制认证检查统一处理，保证豁免方法即使带 u 参数也能匿名访问。
  */
-function checkAuthError(authRes: AuthResult): Response | null {
+function checkAuthError(request: NextRequest, authRes: AuthResult): Response | null {
   if (authRes.error === 'invalid_t') {
-    return auth.authFailedResponse('invalid_t')
+    return auth.authFailedResponse(request, 'invalid_t')
   }
   return null
 }
@@ -62,9 +63,9 @@ const WRITE_METHODS = new Set([
   'createPlaylist', 'deletePlaylist', 'updatePlaylist',
 ])
 
-function checkWriteAuth(method: string, authRes: AuthResult): Response | null {
+function checkWriteAuth(request: NextRequest, method: string, authRes: AuthResult): Response | null {
   if (WRITE_METHODS.has(method) && !authRes.verified) {
-    return auth.authFailedResponse('Authentication required')
+    return auth.authFailedResponse(request, 'Authentication required')
   }
   return null
 }
@@ -74,17 +75,17 @@ async function handleMethod(request: NextRequest, method: string) {
   const authRes = await auth.resolveUserFromRequest(request)
 
   // 检查认证错误（token 无效）
-  const authError = checkAuthError(authRes)
+  const authError = checkAuthError(request, authRes)
   if (authError) return authError
 
   // 写操作必须通过 token 认证（u+t+s），阻断"仅传用户名冒名写"
-  const writeAuthError = checkWriteAuth(method, authRes)
+  const writeAuthError = checkWriteAuth(request, method, authRes)
   if (writeAuthError) return writeAuthError
 
   // 强制认证：默认所有方法（除豁免集）要求已认证用户；
   // REQUIRE_AUTH 为方法列表时仅列表内方法要求（向后兼容）
   if (isMethodAuthRequired(method) && !AUTH_EXEMPT_METHODS.has(method) && !authRes.verified) {
-    return auth.authFailedResponse('Authentication required')
+    return auth.authFailedResponse(request, 'Authentication required')
   }
 
   // 分发到各个 handler，传递 authRes 避免重复查询
@@ -131,11 +132,7 @@ async function handleMethod(request: NextRequest, method: string) {
     case 'getAlbumList2':
       return handleGetAlbumList2(request, authRes)
     case 'getScanStatus':
-       const getScanStatus = formatSubsonicXML({
-        status: 'ok',
-        children:'<scanStatus scanning="false" count="10000"/>' }
-      )
-      return createSubsonicResponse(getScanStatus)
+      return respond(request, { scanStatus: { scanning: false, count: 10000 } })
     case 'scrobble':
       // 听歌统计暂不落库，返回 ok
       return handleScrobble(request, authRes)
@@ -157,17 +154,9 @@ async function handleMethod(request: NextRequest, method: string) {
     case 'updatePlaylist':
       return handleUpdatePlaylist(request, authRes)
     default: {
-      // console.log("404 url", method)
-      // return new Response(null, {
-      //   status: 404
-      // })
       // 返回 subsonic 风格的 404/未找到响应
-      console.log("error: Method not found:", method)
-      const xml = formatSubsonicXML({
-        status: 'failed',
-        error: { code: 70, message: `Method not found: ${method}` }
-      })
-      return createSubsonicResponse(xml)
+      logger.warn('[rest] Method not found:', method)
+      return subsonicError(request, 70, `Method not found: ${method}`)
     }
   }
 }
@@ -184,7 +173,7 @@ export async function GET(request: NextRequest, context: { params: Promise<Recor
   const method = normalizeMethod(raw)
 
   // 打印参数日志，便于调试
-  console.log('[rest] params:', params, 'raw:', raw, 'method:', method, 'requestUrl:', request.url)
+  logger.debug('[rest] params:', params, 'raw:', raw, 'method:', method, 'requestUrl:', request.url)
 
   return handleMethod(request, method)
 }

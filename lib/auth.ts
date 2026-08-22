@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { getOrCreateUserByName, verifyTForUser } from './favorites'
-import { formatSubsonicXML, createSubsonicResponse } from './subsonic'
+import { subsonicError } from './subsonic'
 
 export type AuthResult = {
   user: { id: number; username: string } | null
@@ -54,9 +54,8 @@ export async function resolveUserFromRequest(request: NextRequest): Promise<Auth
   return resolveUserFromParams(u, t, s)
 }
 
-export function authFailedResponse(reason: string) {
-  const xml = formatSubsonicXML({ status: 'failed', error: { code: 40, message: `Authentication failed: ${reason}` } })
-  return createSubsonicResponse(xml)
+export function authFailedResponse(request: Request | URL, reason: string) {
+  return subsonicError(request, 40, `Authentication failed: ${reason}`)
 }
 
 const authApi = { resolveUserFromParams, resolveUserFromRequest, authFailedResponse }

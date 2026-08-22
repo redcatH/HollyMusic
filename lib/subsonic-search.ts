@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { formatSubsonicXML, createSubsonicResponse } from '@/lib/subsonic'
+import { respond, subsonicError, type SubsonicPayload, type SubsonicSongNode } from '@/lib/subsonic'
 import type { MusicInfo } from '@/lib/types/music'
 import { upsertMusicInfo, getStorageSongmidForMusicInfo } from '@/lib/db'
 import { searchCache } from '@/lib/cache-manager'
@@ -34,10 +34,11 @@ export async function handleSearch(request: NextRequest) {
   // aggregate sources used for search (moved outside try so cache key can be computed)
   const sources = getSearchSources()
   const cacheKey = buildSubsonicSearchCacheKey(q, sources, songCount, songOffset)
-  const cachedXml = searchCache.get(cacheKey) as string | null
-  if (cachedXml) {
+  // 缓存 payload 对象而非序列化结果，命中后仍可按 f= 参数渲染 XML/JSON
+  const cachedPayload = searchCache.get(cacheKey) as SubsonicPayload | null
+  if (cachedPayload) {
     logger.debug('[subsonic-search] cache hit', cacheKey)
-    return createSubsonicResponse(cachedXml)
+    return respond(request, cachedPayload)
   }
 
   try {
@@ -147,8 +148,8 @@ export async function handleSearch(request: NextRequest) {
 
     // artist nodes not emitted currently; artistMap preserved for potential future use
 
-    // build XML children following Subsonic searchResult3 song attributes
-    const songNodes = sliced.map((s, idx) => {
+    // build song nodes following Subsonic searchResult3 attributes（XML 转义由渲染层统一处理）
+    const songNodes: SubsonicSongNode[] = sliced.map((s, idx) => {
       // 对外 song id = `source-{存储songmid}`，与 DB 的 songmid 列一致，
       // 使 stream 等接口能通过 (source, 存储songmid) 精确命中 DB 记录。
       // 注意：存储键可能与 mi.songmid 不同（kg 用 FileHash 而非 Audioid）。
@@ -156,57 +157,56 @@ export async function handleSearch(request: NextRequest) {
 
       // parent/coverArt/albumId 统一用 source-{songmid}（= songId），
       // 让 Musiver 从任意一首歌的 albumId 调 getAlbum 都能定位到整张专辑
-      const parent = songId
-      const title = escapeXml(String(s.name || s.title || ''))
-      const album = escapeXml(String(s.albumName || s.album || ''))
-      const artist = escapeXml(String(s.singer || s.artist || ''))
       const duration = parseDuration(s.interval)
       const bitRate = s._types && s._types['320k'] ? 320 : (s._types && s._types['128k'] ? 128 : 0)
       const rawSize = s._types && Object.values(s._types)[0] && (Object.values(s._types)[0] as any).size ? (Object.values(s._types)[0] as any).size : (s.size || s.fileSize || 0)
       const sizeNum = Number.parseInt(String(rawSize || 0), 10) || 0
-      const suffix = 'mp3'
-      const contentType = 'audio/mpeg'
-      const coverArt = parent || ''
-      const albumId = parent || ''
-      const artistId = s.artistId || ''
-      const pathAttr = escapeXml(String(s.path || s.filePath || ''))
 
       // compute track number within album (1-based)
-      let trackAttr = ''
+      let track: number | undefined
       const albumKey = (s.albumId || s.albummid || `${s.source}-album-${(s.albumName || s.album || '').replace(/\s+/g, '-')}`) as string
       const albumEntry = albumMap.get(albumKey)
       if (albumEntry && Array.isArray(albumEntry.songs)) {
         const pos = albumEntry.songs.indexOf(songId)
-        if (pos >= 0) trackAttr = String(pos + 1)
+        if (pos >= 0) track = pos + 1
       }
 
-      const trackPart = trackAttr ? ` track="${trackAttr}"` : ''
+      return {
+        id: songId,
+        parent: songId,
+        title: String(s.name || s.title || ''),
+        album: String(s.albumName || s.album || ''),
+        artist: String(s.singer || s.artist || ''),
+        isDir: false,
+        coverArt: songId,
+        duration,
+        bitRate,
+        size: sizeNum,
+        suffix: 'mp3',
+        contentType: 'audio/mpeg',
+        isVideo: false,
+        path: String(s.path || s.filePath || ''),
+        albumId: songId,
+        artistId: s.artistId || '',
+        type: 'music',
+        track,
+      }
+    })
 
-      return `<song id="${songId}" parent="${parent}" title="${title}" album="${album}" artist="${artist}" isDir="false" coverArt="${coverArt}" duration="${duration}" bitRate="${bitRate}" size="${sizeNum}" suffix="${suffix}" contentType="${contentType}" isVideo="false" path="${pathAttr}" albumId="${albumId}" artistId="${artistId}" type="music"${trackPart}/>`
-    }).join('')
+    const payload: SubsonicPayload = { searchResult3: { song: songNodes } }
 
-    // emit artists first, then albums, then songs
-    const children = `<searchResult3>${songNodes}</searchResult3>`
-    // const children = `<searchResult3>${artistNodes}${albumNodes}${songNodes}</searchResult3>`
-    const xml = formatSubsonicXML({ status: 'ok', children })
-    
-    // cache the generated XML for subsequent identical searches
+    // cache the generated payload for subsequent identical searches
     try {
       const ttl = getSearchCacheTTL()
-      searchCache.set(cacheKey, xml, ttl)
+      searchCache.set(cacheKey, payload, ttl)
     } catch (err) {
       // ignore cache set errors
       logger.warn('[subsonic-search] failed to set cache', err)
     }
-    
-    console.log(xml)
-    return createSubsonicResponse(xml)
-  } catch (err) {
-    const xml = formatSubsonicXML({ status: 'failed', error: { code: 0, message: err instanceof Error ? err.message : 'search error' } })
-    return createSubsonicResponse(xml)
-  }
-}
 
-function escapeXml(unsafe: string) {
-  return unsafe.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')
+    logger.debug('[subsonic-search] returning', songNodes.length, 'songs for query:', q)
+    return respond(request, payload)
+  } catch (err) {
+    return subsonicError(request, 0, err instanceof Error ? err.message : 'search error')
+  }
 }
