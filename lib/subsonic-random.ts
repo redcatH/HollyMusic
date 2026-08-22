@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { respond, subsonicError, type SubsonicSongNode } from './subsonic'
+import { resolveSubsonicMediaMeta } from './subsonic-media'
 import { getRandomMusicInfoList, getStorageSongmidForMusicInfo } from './db'
 import { getSearchSources } from './search-config'
 import { logger } from './logger'
@@ -36,10 +37,7 @@ export async function handleGetRandomSongs(request: NextRequest): Promise<Respon
       // 对外 song id = `source-{存储songmid}`，与 search3/stream 一致
       const songId = `${s.source}-${getStorageSongmidForMusicInfo(s) || s.songId || idx}`
       const duration = parseDuration(s.interval)
-      const bitRate = s._types && s._types['320k'] ? 320 : (s._types && s._types['128k'] ? 128 : 0)
-      const firstType = s._types ? (Object.values(s._types)[0] as any) : null
-      const sizeBytes = firstType && firstType.size ? firstType.size : (a.size || a.fileSize || 0)
-      const sizeNum = Number.parseInt(String(sizeBytes || 0), 10) || 0
+      const meta = resolveSubsonicMediaMeta(s)
 
       return {
         id: songId,
@@ -50,10 +48,10 @@ export async function handleGetRandomSongs(request: NextRequest): Promise<Respon
         isDir: false,
         coverArt: songId,
         duration,
-        bitRate,
-        size: sizeNum,
-        suffix: 'mp3',
-        contentType: 'audio/mpeg',
+        bitRate: meta.bitRate,
+        size: meta.size,
+        suffix: meta.suffix,
+        contentType: meta.contentType,
         isVideo: false,
         path: String(a.path || a.filePath || ''),
         albumId: songId,

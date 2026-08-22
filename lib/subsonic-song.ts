@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { respond, subsonicError, type SubsonicSongNode } from './subsonic'
+import { resolveSubsonicMediaMeta } from './subsonic-media'
 import { type AuthResult } from './auth'
 import * as dbAPI from './db'
 import { logger } from './logger'
@@ -49,6 +50,9 @@ export async function handleGetSongAsync(request: NextRequest, authRes: AuthResu
       return subsonicError(request, 70, 'Song not found')
     }
 
+    // bitRate/size/suffix/contentType 按默认播放音质真实推断（无数据时字段省略，不编造）
+    const meta = resolveSubsonicMediaMeta(musicInfo)
+
     const song: SubsonicSongNode = {
       id,
       parent: id,
@@ -59,12 +63,12 @@ export async function handleGetSongAsync(request: NextRequest, authRes: AuthResu
       coverArt: id,
       created: '2024-01-01T00:00:00',
       duration: parseDurationToSeconds(musicInfo.interval),
-      bitRate: 320,
-      size: 10485760,
-      suffix: 'mp3',
-      contentType: 'audio/mpeg',
+      bitRate: meta.bitRate,
+      size: meta.size,
+      suffix: meta.suffix,
+      contentType: meta.contentType,
       isVideo: false,
-      path: `${musicInfo.singer || 'Unknown'}/${musicInfo.albumName || 'Unknown'}/${musicInfo.name || 'Unknown'}.mp3`,
+      path: `${musicInfo.singer || 'Unknown'}/${musicInfo.albumName || 'Unknown'}/${musicInfo.name || 'Unknown'}.${meta.suffix ?? 'mp3'}`,
       albumId: id,
     }
 

@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { respond, subsonicError, type SubsonicPlaylistNode } from './subsonic'
+import { resolveSubsonicMediaMeta, toDurationSeconds } from './subsonic-media'
 import { type AuthResult } from './auth'
 import { PrismaClient, Prisma } from './generated/prisma'
 import { logger } from './logger'
@@ -109,11 +110,13 @@ export async function handleGetPlaylist(request: NextRequest, authRes: AuthResul
         const createdStr = playlist.createdAt.toISOString().replace('T', ' ').substring(0, 19)
 
         // 生成 entry 节点（映射为 Subsonic song 格式；snapshot 条目暂跳过）
+        // mi 为原始 Prisma 行：types 数据在 data JSON 列里，由 resolveSubsonicMediaMeta 适配解析
         const entryNodes = playlist.entries.map(entry => {
             const mi = entry.musicInfo
             if (!mi) return null
 
             const entryId = `${mi.source}-${mi.songmid}`
+            const meta = resolveSubsonicMediaMeta(mi)
             return {
                 id: entryId,
                 parent: String(playlist.id ?? ''),
@@ -123,16 +126,16 @@ export async function handleGetPlaylist(request: NextRequest, authRes: AuthResul
                 isDir: false,
                 coverArt: entryId,
                 created: entry.addedAt.toISOString(),
-                duration: mi.durationSeconds || 0,
-                bitRate: 320,
+                duration: toDurationSeconds(mi),
+                bitRate: meta.bitRate,
                 track: 0,
                 year: '',
                 genre: '',
-                size: 0,
-                suffix: 'mp3',
-                contentType: 'audio/mpeg',
+                size: meta.size,
+                suffix: meta.suffix,
+                contentType: meta.contentType,
                 isVideo: false,
-                path: `${mi.singer || 'Unknown'}/${mi.albumName || 'Unknown'}/${mi.name || 'Unknown'}.mp3`,
+                path: `${mi.singer || 'Unknown'}/${mi.albumName || 'Unknown'}/${mi.name || 'Unknown'}.${meta.suffix ?? 'mp3'}`,
                 albumId: entryId,
                 artistId: '',
                 type: 'music',

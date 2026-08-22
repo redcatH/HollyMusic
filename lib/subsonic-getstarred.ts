@@ -1,9 +1,9 @@
 import { NextRequest } from 'next/server'
 import { respond, subsonicError, type SubsonicPayload } from '@/lib/subsonic'
+import { resolveSubsonicMediaMeta } from '@/lib/subsonic-media'
 import { type AuthResult } from '@/lib/auth'
 import favorites from '@/lib/favorites'
 import dbAPI, { getStorageSongmidForMusicInfo } from '@/lib/db'
-import { normalizeSizeToBytes } from '@/lib/utils'
 import { logger } from '@/lib/logger'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -103,14 +103,7 @@ export async function handleGetStarred(request: NextRequest, authRes: AuthResult
               }
             }
 
-            const bitRate = musicInfo._types?.['320k'] ? 320 : (musicInfo._types?.['128k'] ? 128 : 0)
-            let size = 0
-            if (musicInfo._types && typeof musicInfo._types === 'object') {
-              const firstType = Object.values(musicInfo._types)[0]
-              if (firstType) {
-                size = Number(normalizeSizeToBytes((firstType as any).size)) || 0
-              }
-            }
+            const meta = resolveSubsonicMediaMeta(musicInfo)
 
             // id/parent/coverArt/albumId 统一用 source-{songmid}（从 musicInfo 重算存储键）
             const songId = `${musicInfo.source}-${getStorageSongmidForMusicInfo(musicInfo)}`
@@ -125,13 +118,13 @@ export async function handleGetStarred(request: NextRequest, authRes: AuthResult
               created: formatDate(fav.createdAt),
               starred: formatDate(fav.createdAt),
               duration,
-              bitRate,
+              bitRate: meta.bitRate,
               track: 0,
               year: 0,
               genre: 'Unknown',
-              size,
-              suffix: 'mp3',
-              contentType: 'audio/mpeg',
+              size: meta.size,
+              suffix: meta.suffix,
+              contentType: meta.contentType,
               isVideo: false,
               path: musicInfo.singer ? `${musicInfo.singer}/${musicInfo.albumName || ''}/${musicInfo.name}` : musicInfo.name,
               albumId: songId,
@@ -162,7 +155,7 @@ export async function handleGetStarred(request: NextRequest, authRes: AuthResult
   }
 }
 
-/** 查不到 MusicInfo 时的兜底 song 节点（与原实现字段一致） */
+/** 查不到 MusicInfo 时的兜底 song 节点（无真实音质数据，相关字段省略不编造） */
 function buildDefaultStarredSong(itemId: string, source: string | null | undefined, starred: string): SubsonicPayload {
   return {
     id: itemId,
@@ -175,13 +168,9 @@ function buildDefaultStarredSong(itemId: string, source: string | null | undefin
     created: starred,
     starred,
     duration: 0,
-    bitRate: 320,
     track: 0,
     year: 0,
     genre: 'Unknown',
-    size: 0,
-    suffix: 'mp3',
-    contentType: 'audio/mpeg',
     isVideo: false,
     path: itemId,
     albumId: '',
