@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { resolveMusicInfoById } from '@/lib/db'
 import { subsonicError } from '@/lib/subsonic'
+import { selectQuality } from '@/lib/subsonic-media'
 import { musicSourceManager } from '@/lib/music-source-manager'
 import { audioServe } from '@/lib/audio-serve'
 import { logger } from '@/lib/logger'
@@ -8,29 +9,8 @@ import type { MusicInfo, QualityType } from '@/lib/types/music'
 import { parseIntervalToSeconds } from '@/lib/types/player'
 
 // ============================================================================
-// QUALITY SELECTION
+// QUALITY SELECTION —— selectQuality 实现已迁至 lib/subsonic-media.ts（与元数据端点共用同一条回退链）
 // ============================================================================
-
-/**
- * 根据请求的音质和支持的音质列表，选择最接近的音质
- * 优先级：flac24bit > flac > 320k > 128k
- */
-function selectQuality(requestedQuality: QualityType, supportedTypes: QualityType[]): QualityType {
-  if (supportedTypes.includes(requestedQuality)) {
-    return requestedQuality
-  }
-
-  const qualityPriority: QualityType[] = ['flac24bit', 'flac', '320k', '128k']
-  for (const q of qualityPriority) {
-    if (supportedTypes.includes(q)) {
-      logger.debug(`[selectQuality] Requested ${requestedQuality} not available, downgrading to ${q}`)
-      return q
-    }
-  }
-
-  logger.warn(`[selectQuality] No matching quality found, using first available: ${supportedTypes[0]}`)
-  return supportedTypes[0]
-}
 
 // ============================================================================
 // STREAM HANDLER

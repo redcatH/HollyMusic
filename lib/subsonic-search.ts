@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { respond, subsonicError, type SubsonicPayload, type SubsonicSongNode } from '@/lib/subsonic'
+import { resolveSubsonicMediaMeta } from '@/lib/subsonic-media'
 import type { MusicInfo } from '@/lib/types/music'
 import { upsertMusicInfo, getStorageSongmidForMusicInfo } from '@/lib/db'
 import { searchCache } from '@/lib/cache-manager'
@@ -158,9 +159,7 @@ export async function handleSearch(request: NextRequest) {
       // parent/coverArt/albumId 统一用 source-{songmid}（= songId），
       // 让 Musiver 从任意一首歌的 albumId 调 getAlbum 都能定位到整张专辑
       const duration = parseDuration(s.interval)
-      const bitRate = s._types && s._types['320k'] ? 320 : (s._types && s._types['128k'] ? 128 : 0)
-      const rawSize = s._types && Object.values(s._types)[0] && (Object.values(s._types)[0] as any).size ? (Object.values(s._types)[0] as any).size : (s.size || s.fileSize || 0)
-      const sizeNum = Number.parseInt(String(rawSize || 0), 10) || 0
+      const meta = resolveSubsonicMediaMeta(s)
 
       // compute track number within album (1-based)
       let track: number | undefined
@@ -180,10 +179,10 @@ export async function handleSearch(request: NextRequest) {
         isDir: false,
         coverArt: songId,
         duration,
-        bitRate,
-        size: sizeNum,
-        suffix: 'mp3',
-        contentType: 'audio/mpeg',
+        bitRate: meta.bitRate,
+        size: meta.size,
+        suffix: meta.suffix,
+        contentType: meta.contentType,
         isVideo: false,
         path: String(s.path || s.filePath || ''),
         albumId: songId,

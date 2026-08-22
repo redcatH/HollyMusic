@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { readFileSync } from 'fs'
 import { resolve } from 'path'
 import { respond, subsonicError, TEXT_KEY, type SubsonicPayload } from './subsonic'
+import { resolveSubsonicMediaMeta } from './subsonic-media'
 import { type AuthResult } from './auth'
 import * as dbAPI from './db'
 import { logger } from './logger'
@@ -338,7 +339,7 @@ export async function handleGetAlbumAsync(request: NextRequest, authRes: AuthRes
     const songNodes = songs.map((s, idx) => {
       const songId = `${s.source}-${dbAPI.getStorageSongmidForMusicInfo(s)}`
       const duration = parseIntervalToSeconds(s.interval)
-      const bitRate = s._types && s._types['320k'] ? 320 : (s._types && s._types['128k'] ? 128 : 0)
+      const meta = resolveSubsonicMediaMeta(s)
       return {
         id: songId,
         parent: albumEntryId,
@@ -348,10 +349,11 @@ export async function handleGetAlbumAsync(request: NextRequest, authRes: AuthRes
         isDir: false,
         coverArt: songId,
         duration,
-        bitRate,
+        bitRate: meta.bitRate,
+        size: meta.size,
         track: idx + 1,
-        suffix: 'mp3',
-        contentType: 'audio/mpeg',
+        suffix: meta.suffix,
+        contentType: meta.contentType,
         isVideo: false,
         albumId: songId,
         artistId: '',
