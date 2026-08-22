@@ -16,6 +16,25 @@
 
 > v0.17.0 之前的完整提交历史可执行 `git log v0.17.0` 查看。
 
+## v0.21.3（2026-08-22）
+
+**完整对比**：[v0.21.2 → v0.21.3](https://github.com/redcatH/HollyMusic/compare/v0.21.2...v0.21.3)
+
+### 🐛 问题修复
+
+- **subsonic**：歌曲元数据真实化——bitRate/size/suffix 按默认播放音质推断 (#56)
+
+
+### ⚡ 性能优化
+
+- **cover**：压缩默认 404 封面，2048px/3.6MB → 512px/107KB (#57)
+
+
+### 🔧 工程与依赖
+
+- **release**：同步 v0.21.2 更新日志与版本号
+
+
 ## v0.21.2（2026-08-22）
 
 **完整对比**：[v0.21.1 → v0.21.2](https://github.com/redcatH/HollyMusic/compare/v0.21.1...v0.21.2)
