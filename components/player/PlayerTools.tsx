@@ -23,7 +23,7 @@ export function PlayerTools() {
   const VolIcon = isMuted || volume === 0 ? VolumeX : Volume2
 
   return (
-    <div className="flex items-center justify-end gap-1 md:w-[30%]">
+    <div className="hidden items-center justify-end gap-1 md:flex md:w-[30%]">
       <PlayerButton icon={Mic2} label="歌词" onClick={toggleLyrics} showLabel />
       <PlayerButton icon={ListMusic} label="队列" onClick={toggleQueue} showLabel />
       <PlayerButton

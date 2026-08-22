@@ -19,6 +19,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 interface UseAudioPlayerOptions {
+  /** 音频元素创建/销毁通知，供频谱等附属能力接入同一播放实例。 */
+  onAudioElement?: (audio: HTMLAudioElement | null) => void
   onTimeUpdate?: (t: number) => void
   onDuration?: (d: number) => void
   onPlayState?: (playing: boolean) => void
@@ -43,7 +45,62 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
   const activeGenRef = useRef(0)
   /** 自管理的 seek 标志（比 audio.seeking 更可靠，区分"seek 引起的 spurious pause"与"用户主动暂停"） */
   const seekingRef = useRef(false)
+  /** 用户设定的目标音量；淡入淡出只改变 audio.volume，不覆盖该偏好。 */
+  const targetVolumeRef = useRef(1)
+  /** 当前音量渐变。取消时也要结束旧 Promise，避免暂停流程卡在 await。 */
+  const volumeFadeRef = useRef<{ frame: number | null; resolve: () => void } | null>(null)
+  /** 用户最后一次明确的播放意图优先于缓冲恢复带来的原生 playing 事件。 */
+  const playbackIntentRef = useRef<'playing' | 'paused'>('paused')
   const [isReady, setIsReady] = useState(false)
+
+  const cancelVolumeFade = useCallback(() => {
+    const activeFade = volumeFadeRef.current
+    if (!activeFade) return
+    if (activeFade.frame !== null) cancelAnimationFrame(activeFade.frame)
+    volumeFadeRef.current = null
+    activeFade.resolve()
+  }, [])
+
+  /** 参考 lxserver 的渐进音量：使用 rAF，快速重复操作会取消上一段过渡。 */
+  const fadeVolume = useCallback((target: number, duration: number): Promise<void> => {
+    const audio = audioRef.current
+    if (!audio) return Promise.resolve()
+
+    cancelVolumeFade()
+    const from = Math.max(0, Math.min(1, audio.volume))
+    const to = Math.max(0, Math.min(1, target))
+    if (duration <= 0 || Math.abs(from - to) < 0.001) {
+      audio.volume = to
+      return Promise.resolve()
+    }
+
+    return new Promise(resolve => {
+      const activeFade = { frame: null as number | null, resolve }
+      volumeFadeRef.current = activeFade
+      const start = performance.now()
+      const tick = (now: number) => {
+        if (volumeFadeRef.current !== activeFade) return
+        // 个别浏览器的 rAF 时间戳可能短暂早于 performance.now()；必须双向截断。
+        // 否则负进度代入缓动公式会算出大于 1 的音量并抛出 DOMException，
+        // 从而中断暂停流程。
+        const progress = Math.max(0, Math.min(1, (now - start) / duration))
+        // easeInOutQuad：起止柔和，中段自然加速，避免线性音量变化的突兀感。
+        const eased = progress < 0.5
+          ? 2 * progress * progress
+          : 1 - Math.pow(-2 * progress + 2, 2) / 2
+        audio.volume = Math.max(0, Math.min(1, from + (to - from) * eased))
+
+        if (progress < 1) {
+          activeFade.frame = requestAnimationFrame(tick)
+          return
+        }
+        audio.volume = to
+        volumeFadeRef.current = null
+        resolve()
+      }
+      activeFade.frame = requestAnimationFrame(tick)
+    })
+  }, [cancelVolumeFade])
 
   // ------------------------------------------------------------------
   // 初始化：创建单个 Audio 元素 + 绑定原生事件（仅一次）
@@ -52,8 +109,12 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
     if (typeof window === 'undefined') return
 
     const audio = new Audio()
+    // 频谱通过 MediaElementAudioSourceNode 读取该元素；必须在设置 src 前声明 CORS 模式。
+    // 正常 /api/audio 同源请求不受影响，部分 Android 内核会据此决定是否向 Web Audio 暴露样本数据。
+    audio.crossOrigin = 'anonymous'
     audio.preload = 'auto'
     audioRef.current = audio
+    optsRef.current.onAudioElement?.(audio)
 
     // iOS autoplay 解锁：首次用户交互时触发一次 load，解除 play() 限制
     const unlock = () => {
@@ -82,6 +143,7 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
       optsRef.current.onLoading?.(null)
     }
     const onPlay = () => {
+      if (playbackIntentRef.current !== 'playing') return
       optsRef.current.onPlayState?.(true)
       startProgress()
     }
@@ -89,16 +151,20 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
       // playing 事件：播放恢复后触发（缓冲结束 / seek 完成后）
       // play 事件只在 paused→playing 时触发，seek 期间不触发 play 只有 playing
       // 所以这里必须也启动 rAF 循环，否则 seek 到未缓冲区恢复后进度条不动
+      // 用户已点击暂停时，缓冲恢复仍可能冒出 playing 事件；不能把状态改回播放。
+      if (playbackIntentRef.current !== 'playing') return
       optsRef.current.onPlayState?.(true)
       startProgress()
     }
     const onPause = () => {
       // 用自管理 seekingRef 区分：seek 引起的 spurious pause 静默，用户主动暂停正常上报
       if (seekingRef.current) return
+      playbackIntentRef.current = 'paused'
       optsRef.current.onPlayState?.(false)
       stopProgress()
     }
     const onEnded = () => {
+      playbackIntentRef.current = 'paused'
       optsRef.current.onPlayState?.(false)
       stopProgress()
       optsRef.current.onEnd?.()
@@ -181,12 +247,14 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
       audio.removeEventListener('durationchange', onDurationChange)
       audio.removeEventListener('error', onError)
       if (rafRef.current !== undefined) cancelAnimationFrame(rafRef.current)
+      cancelVolumeFade()
       audio.pause()
       audio.removeAttribute('src')
       audio.load()
       audioRef.current = null
+      optsRef.current.onAudioElement?.(null)
     }
-  }, [])
+  }, [cancelVolumeFade])
 
   // ------------------------------------------------------------------
   // rAF 进度循环：播放期间高精度更新 currentTime
@@ -230,12 +298,21 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
       // generation 计数：快速切歌时放弃过期的事件回调
       const gen = ++loadGenRef.current
       activeGenRef.current = gen
+      playbackIntentRef.current = autoplay ? 'playing' : 'paused'
 
       // 清理旧状态
       stopProgress()
       seekingRef.current = false
       setIsReady(false)
       optsRef.current.onLoading?.(null)
+
+      // 切歌时先快速淡出旧曲，避免 src 直接替换带来的突兀断音。
+      if (!audio.paused && audio.src) {
+        await fadeVolume(0, 180)
+      } else {
+        cancelVolumeFade()
+      }
+      if (gen !== loadGenRef.current) return
 
       // 设置新源
       audio.pause()
@@ -246,42 +323,65 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
       if (autoplay) {
         // play() 是 async，失败时（如 autoplay 被拦截）同步 UI 状态避免假"播放中"
         try {
+          // load 内部 pause 产生的原生 pause 事件不能覆盖这次自动播放意图。
+          playbackIntentRef.current = 'playing'
+          audio.volume = 0
           await audio.play()
+          if (gen !== loadGenRef.current) return
+          void fadeVolume(targetVolumeRef.current, 420)
         } catch (e) {
           // AbortError：play() 被 pause()/load() 打断（快速切歌），浏览器标准行为，忽略
           // gen 校验：过期 load（快速连切）的 play 结果不影响当前歌曲状态，避免状态闪变
           const name = e instanceof Error ? e.name : ''
           if (name === 'AbortError' || gen !== loadGenRef.current) return
+          audio.volume = targetVolumeRef.current
           console.warn('[useAudioPlayer] autoplay blocked', e)
           // autoplay 被浏览器拦截——同步 UI 状态，避免显示"播放中"但实际没声音
           optsRef.current.onPlayState?.(false)
         }
       }
     },
-    [stopProgress]
+    [cancelVolumeFade, fadeVolume, stopProgress]
   )
 
-  const play = useCallback(() => {
+  const play = useCallback(async () => {
     const audio = audioRef.current
     if (!audio) return
-    // 幂等：已播放时不重复调 play()，避免重叠
-    if (!audio.paused) return
+    playbackIntentRef.current = 'playing'
+    // 暂停淡出尚未结束时再次播放：取消淡出并平滑恢复，无需重新 play()。
+    if (!audio.paused) {
+      void fadeVolume(targetVolumeRef.current, 240)
+      return
+    }
     console.log('[diag] audio play, readyState=', audio.readyState)
-    audio.play().catch(e => {
+    try {
+      audio.volume = 0
+      await audio.play()
+      void fadeVolume(targetVolumeRef.current, 420)
+    } catch (e) {
       // AbortError：play() promise 未决期间被 pause()/load()/切歌打断，
       // 是浏览器标准行为，不算播放失败——否则会触发自动跳歌甚至停播
       if (e instanceof Error && e.name === 'AbortError') return
+      audio.volume = targetVolumeRef.current
       console.error('[useAudioPlayer] play() failed', e)
       optsRef.current.onError?.('播放失败：' + (e instanceof Error ? e.message : String(e)))
-    })
-  }, [])
+    }
+  }, [fadeVolume])
 
-  const pause = useCallback(() => {
+  const pause = useCallback(async () => {
     const audio = audioRef.current
     if (!audio) return
+    playbackIntentRef.current = 'paused'
+    const generation = loadGenRef.current
+    // play() Promise 尚未完成时 audio.paused 仍可能为 true；意图已写入，
+    // 让随后到达的 play/playing 事件保持静默即可。
+    if (audio.paused) return
     console.log('[diag] audio pause, paused=', audio.paused)
+    await fadeVolume(0, 360)
+    // 淡出期间可能已切歌或恢复播放；仅暂停仍是同一段淡出的音频。
+    if (audioRef.current !== audio || audio.paused || loadGenRef.current !== generation || playbackIntentRef.current !== 'paused') return
     audio.pause()
-  }, [])
+  }, [fadeVolume])
 
   const seek = useCallback(
     (t: number) => {
@@ -313,9 +413,12 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
 
   const setVolume = useCallback((v: number) => {
     const audio = audioRef.current
+    const volume = Math.max(0, Math.min(1, v))
+    targetVolumeRef.current = volume
     if (!audio) return
-    audio.volume = Math.max(0, Math.min(1, v))
-  }, [])
+    cancelVolumeFade()
+    audio.volume = volume
+  }, [cancelVolumeFade])
 
   const setMuted = useCallback((m: boolean) => {
     const audio = audioRef.current
