@@ -3,6 +3,8 @@ import { createSubsonicJsonResponse, createSubsonicResponse, formatSubsonicJSON,
 import { type AuthResult } from './auth'
 import { PrismaClient } from './generated/prisma'
 import { logger } from './logger'
+import { resolveMusicInfoById } from './db'
+import { reportPlay } from './services/history-service'
 
 const prisma = new PrismaClient()
 
@@ -282,10 +284,25 @@ export async function handleGetAlbumList2(request: NextRequest, authRes: AuthRes
 }
 
 /**
- * 处理 scrobble 请求 — 听歌统计暂不落库，返回 ok 避免 Musiver 报错。
+ * 处理 scrobble 请求，将 Subsonic 客户端的播放同步进统一播放历史。
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function handleScrobble(request: NextRequest, authRes: AuthResult): Promise<Response> {
+  const ids = new URL(request.url).searchParams.getAll('id').filter(Boolean)
+  if (authRes.user && ids.length > 0) {
+    await Promise.all(ids.map(async id => {
+      try {
+        const musicInfo = await resolveMusicInfoById(id)
+        if (!musicInfo) {
+          logger.warn(`[scrobble] unknown song id: ${id}`)
+          return
+        }
+        await reportPlay(authRes.user!.username, musicInfo)
+      } catch (err) {
+        // 播放上报失败不应影响客户端播放流程。
+        logger.warn('[scrobble] failed to record play history', err)
+      }
+    }))
+  }
   const xml = formatSubsonicXML({ status: 'ok' })
   return createSubsonicResponse(xml)
 }

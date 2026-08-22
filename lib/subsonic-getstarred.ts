@@ -1,5 +1,11 @@
 import { NextRequest } from 'next/server'
-import { formatSubsonicXML, createSubsonicResponse } from '@/lib/subsonic'
+import {
+  createSubsonicJsonResponse,
+  createSubsonicResponse,
+  formatSubsonicXmlAsJson,
+  formatSubsonicXML,
+  wantsSubsonicJson,
+} from '@/lib/subsonic'
 import { type AuthResult } from '@/lib/auth'
 import favorites from '@/lib/favorites'
 import dbAPI, { getStorageSongmidForMusicInfo } from '@/lib/db'
@@ -49,7 +55,13 @@ function formatDate(date: any): string {
   }
 }
 
-export async function handleGetStarred(request: NextRequest, authRes: AuthResult): Promise<Response> {
+type StarredResponseTag = 'starred' | 'starred2'
+
+export async function handleGetStarred(
+  request: NextRequest,
+  authRes: AuthResult,
+  responseTag: StarredResponseTag = 'starred'
+): Promise<Response> {
   try {
     if (!authRes.user) {
       const xml = formatSubsonicXML({ status: 'failed', error: { code: 40, message: 'Authentication required' } })
@@ -229,7 +241,7 @@ export async function handleGetStarred(request: NextRequest, authRes: AuthResult
     // 合并所有节点
     const allNodes = [artistNodes, albumNodes, songNodes].filter(Boolean).join('\n')
     
-    const children = `<starred>\n${allNodes}\n</starred>`
+    const children = `<${responseTag}>\n${allNodes}\n</${responseTag}>`
     const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<subsonic-response xmlns="http://subsonic.org/restapi" status="ok" version="1.16.1">\n${children}\n</subsonic-response>`
     
     console.log('[getStarred] Returning', artists.length, 'artists,', albums.length, 'albums,', songs.length, 'songs')
@@ -245,4 +257,24 @@ export async function handleGetStarred(request: NextRequest, authRes: AuthResult
     const xml = formatSubsonicXML({ status: 'failed', error: { code: 0, message: err instanceof Error ? err.message : 'Internal error' } })
     return createSubsonicResponse(xml)
   }
+}
+
+/** OpenSubsonic `getStarred2`：复用收藏查询，但返回协议要求的 starred2 节点。 */
+export async function handleGetStarred2(request: NextRequest, authRes: AuthResult): Promise<Response> {
+  const response = await handleGetStarred(request, authRes, 'starred2')
+  if (!wantsSubsonicJson(request) || !response.headers.get('content-type')?.includes('xml')) {
+    return response
+  }
+
+  const payload = JSON.parse(formatSubsonicXmlAsJson(await response.text())) as {
+    'subsonic-response'?: { starred2?: Record<string, unknown> }
+  }
+  const starred2 = payload['subsonic-response']?.starred2
+  if (starred2) {
+    for (const key of ['artist', 'album', 'song']) {
+      const value = starred2[key]
+      starred2[key] = value === undefined ? [] : Array.isArray(value) ? value : [value]
+    }
+  }
+  return createSubsonicJsonResponse(JSON.stringify(payload))
 }

@@ -1,5 +1,11 @@
 import { NextRequest } from 'next/server'
-import { formatSubsonicXML, createSubsonicResponse } from './subsonic'
+import {
+    createSubsonicJsonResponse,
+    createSubsonicResponse,
+    formatSubsonicXmlAsJson,
+    formatSubsonicXML,
+    wantsSubsonicJson,
+} from './subsonic'
 import { type AuthResult } from './auth'
 import { PrismaClient, Prisma } from './generated/prisma'
 import { logger } from './logger'
@@ -69,7 +75,22 @@ export async function handleGetPlaylists(request: NextRequest, authRes: AuthResu
             }
         }).join('\n')
 
-        const xml =formatSubsonicXML({status:'ok',children:`<playlists>${playlistNodes}</playlists>`})
+        const xml = formatSubsonicXML({ status: 'ok', children: `<playlists>${playlistNodes}</playlists>` })
+
+        // XML 的重复 playlist 标签在通用 JSON 转换时只有一项会退化为对象，
+        // Arrow Music 按 Subsonic 模型只读取数组，因而单个歌单会显示为空。
+        if (wantsSubsonicJson(request)) {
+            const payload = JSON.parse(formatSubsonicXmlAsJson(xml)) as {
+                'subsonic-response': {
+                    playlists?: { playlist?: unknown | unknown[] }
+                }
+            }
+            const response = payload['subsonic-response']
+            const playlists = response.playlists ?? (response.playlists = {})
+            const playlist = playlists.playlist
+            playlists.playlist = playlist === undefined ? [] : Array.isArray(playlist) ? playlist : [playlist]
+            return createSubsonicJsonResponse(JSON.stringify(payload))
+        }
 
         return new Response(xml, {
             status: 200,
@@ -153,6 +174,24 @@ export async function handleGetPlaylist(request: NextRequest, authRes: AuthResul
             `\t<allowedUser>${escapeXml(au.username)}</allowedUser>`
         ).join('\n')
 
+        // `starred` 是当前用户维度的字段，Arrow Music 据此显示歌单内歌曲的喜爱状态。
+        // 歌单条目存的是 source-songmid 复合 id，与 Favorite.itemId 保持一致。
+        const entrySongIds = playlist.entries
+            .map(entry => entry.songmid || (entry.musicInfo ? `${entry.musicInfo.source}-${entry.musicInfo.songmid}` : ''))
+            .filter(Boolean)
+        const starredBySongId = new Map<string, Date>()
+        if (authRes.user && entrySongIds.length > 0) {
+            const favorites = await prisma.favorite.findMany({
+                where: {
+                    userId: authRes.user.id,
+                    itemType: 'song',
+                    itemId: { in: entrySongIds },
+                },
+                select: { itemId: true, createdAt: true },
+            })
+            for (const favorite of favorites) starredBySongId.set(favorite.itemId, favorite.createdAt)
+        }
+
         // 生成 entry 节点（映射为 Subsonic song 格式）
         const entryNodes = playlist.entries.map(entry => {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -179,7 +218,9 @@ export async function handleGetPlaylist(request: NextRequest, authRes: AuthResul
                     contentType: 'audio/mpeg',
                     path: `${mi.singer || 'Unknown'}/${mi.albumName || 'Unknown'}/${mi.name || 'Unknown'}.mp3`
                 }
-                return `\t<entry id="${escapeXml(musicData.id)}" parent="${escapeXml(musicData.parent)}" title="${escapeXml(musicData.title)}" album="${escapeXml(musicData.album)}" artist="${escapeXml(musicData.artist)}" isDir="false" coverArt="${escapeXml(musicData.coverArt)}" created="${entry.addedAt.toISOString()}" duration="${musicData.duration}" bitRate="320" track="0" year="${escapeXml(musicData.year)}" genre="${escapeXml(musicData.genre)}" size="${musicData.size}" suffix="${escapeXml(musicData.suffix)}" contentType="${escapeXml(musicData.contentType)}" isVideo="false" path="${escapeXml(musicData.path)}" albumId="${escapeXml(musicData.albumId)}" artistId="${escapeXml(musicData.artistId)}" type="music"/>`
+                const starredAt = starredBySongId.get(entry.songmid || musicData.id)
+                const starredAttribute = starredAt ? ` starred="${starredAt.toISOString().substring(0, 19)}"` : ''
+                return `\t<entry id="${escapeXml(musicData.id)}" parent="${escapeXml(musicData.parent)}" title="${escapeXml(musicData.title)}" album="${escapeXml(musicData.album)}" artist="${escapeXml(musicData.artist)}" isDir="false" coverArt="${escapeXml(musicData.coverArt)}" created="${entry.addedAt.toISOString()}" duration="${musicData.duration}" bitRate="320" track="0" year="${escapeXml(musicData.year)}" genre="${escapeXml(musicData.genre)}" size="${musicData.size}" suffix="${escapeXml(musicData.suffix)}" contentType="${escapeXml(musicData.contentType)}" isVideo="false" path="${escapeXml(musicData.path)}" albumId="${escapeXml(musicData.albumId)}" artistId="${escapeXml(musicData.artistId)}" type="music"${starredAttribute}/>`
             } 
             else if (entry.snapshotJson) {
                 return '';
@@ -223,6 +264,20 @@ export async function handleGetPlaylist(request: NextRequest, authRes: AuthResul
 ${childNodes}
 \t</playlist>
 </subsonic-response>`
+
+        // 与 getPlaylists 相同，单条 XML entry 经通用转换会变成对象。
+        // Arrow Music 按数组读取 playlist.entry，因此即使只有一首也必须保留数组形态。
+        if (wantsSubsonicJson(request)) {
+            const payload = JSON.parse(formatSubsonicXmlAsJson(xml)) as {
+                'subsonic-response': { playlist?: { entry?: unknown | unknown[] } }
+            }
+            const playlistPayload = payload['subsonic-response'].playlist
+            if (playlistPayload) {
+                const entry = playlistPayload.entry
+                playlistPayload.entry = entry === undefined ? [] : Array.isArray(entry) ? entry : [entry]
+            }
+            return createSubsonicJsonResponse(JSON.stringify(payload))
+        }
 
         return new Response(xml, {
             status: 200,

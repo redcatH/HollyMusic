@@ -1,5 +1,6 @@
 /**
  * 音源配置单条操作 API（仅管理员）
+ * POST   /api/admin/sources/[id]   手动更新在线订阅脚本
  * PUT    /api/admin/sources/[id]   修改音源 { name?, description?, priority?, timeout?, enabled?, pt? }
  * DELETE /api/admin/sources/[id]   删除音源 + 关联脚本
  *
@@ -13,7 +14,12 @@ import {
   AuthError,
   ForbiddenError,
 } from '@/lib/services/user-context'
-import { removeSource, updateSource } from '@/lib/services/source-manager-service'
+import {
+  removeSource,
+  SourceSubscriptionError,
+  updateSource,
+  updateSubscribedSource,
+} from '@/lib/services/source-manager-service'
 import { logger } from '@/lib/logger'
 
 function guard(err: unknown) {
@@ -58,6 +64,26 @@ export async function PUT(
     if (g) return g
     logger.error('[api/admin/sources/[id] PUT] error:', err)
     return createErrorResponse('INTERNAL_ERROR', '更新音源失败', 500)
+  }
+}
+
+export async function POST(
+  request: NextRequest,
+  props: { params: Promise<{ id: string }> }
+) {
+  try {
+    await requireAdmin(request)
+    const sourcePath = await parsePath(props)
+    const updated = await updateSubscribedSource(sourcePath)
+    return createSuccessResponse(updated)
+  } catch (err) {
+    const g = guard(err)
+    if (g) return g
+    if (err instanceof SourceSubscriptionError) {
+      return createErrorResponse('SUBSCRIPTION_ERROR', err.message, err.status)
+    }
+    logger.error('[api/admin/sources/[id] POST] error:', err)
+    return createErrorResponse('INTERNAL_ERROR', '更新订阅失败', 500)
   }
 }
 

@@ -4,6 +4,7 @@ import { logger } from '@/lib/logger'
 import { resolveMusicInfoById } from '@/lib/db'
 import { musicSourceManager } from '@/lib/music-source-manager'
 import { audioServe } from '@/lib/audio-serve'
+import { cacheNativeLyricForMusic } from '@/lib/services/lyrics'
 import { parseIntervalToSeconds } from '@/lib/types/player'
 import type { QualityType } from '@/lib/types/music'
 import {
@@ -103,6 +104,7 @@ async function handleDownloadByUid(
     rangeHeader,
     isHead: false,
     intervalSec: parseIntervalToSeconds(musicInfo.interval),
+    onCached: () => cacheNativeLyricForMusic(musicInfo),
   })
 
   // 6. audioServe 错误响应（502/503）直接透传

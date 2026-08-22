@@ -1,7 +1,15 @@
 import { NextRequest } from 'next/server'
-import { formatSubsonicXML, createSubsonicResponse } from '@/lib/subsonic'
+import {
+  createSubsonicJsonResponse,
+  createSubsonicResponse,
+  formatSubsonicXmlAsJson,
+  formatSubsonicXML,
+  wantsSubsonicJson,
+} from '@/lib/subsonic'
 import type { MusicInfo } from '@/lib/types/music'
 import { upsertMusicInfo, getStorageSongmidForMusicInfo } from '@/lib/db'
+import type { AuthResult } from '@/lib/auth'
+import { listHistory } from '@/lib/services/history-service'
 import { searchCache } from '@/lib/cache-manager'
 import { logger } from '@/lib/logger'
 import { buildSubsonicSearchCacheKey } from '@/lib/cache-key'
@@ -17,6 +25,11 @@ function parseOffset(v: string | undefined) {
   return Number.isNaN(n) ? 0 : n
 }
 
+function parseCount(v: string | undefined, fallback = 50) {
+  const parsed = parseInt(v ?? '', 10)
+  return Number.isNaN(parsed) ? fallback : Math.max(0, Math.min(parsed, 500))
+}
+
 function parseDuration(interval: string | undefined) {
   if (!interval) return 0
   const parts = interval.split(':').map(p => parseInt(p))
@@ -25,11 +38,64 @@ function parseDuration(interval: string | undefined) {
   return 0
 }
 
-export async function handleSearch(request: NextRequest) {
+function createSearchResponse(request: NextRequest, xml: string): Response {
+  if (!wantsSubsonicJson(request)) return createSubsonicResponse(xml)
+
+  const payload = JSON.parse(formatSubsonicXmlAsJson(xml)) as {
+    'subsonic-response': { searchResult3?: { song?: unknown | unknown[] } }
+  }
+  const searchResult3 = payload['subsonic-response'].searchResult3
+  if (!searchResult3) return createSubsonicJsonResponse(JSON.stringify(payload))
+  const song = searchResult3.song
+  searchResult3.song = song === undefined ? [] : Array.isArray(song) ? song : [song]
+  return createSubsonicJsonResponse(JSON.stringify(payload))
+}
+
+function formatSearchSongNode(s: MusicInfo & Record<string, any>, index: number, created?: string): string {
+  const songId = `${s.source}-${getStorageSongmidForMusicInfo(s) || s.songId || index}`
+  const title = escapeXml(String(s.name || s.title || ''))
+  const album = escapeXml(String(s.albumName || s.album || ''))
+  const artist = escapeXml(String(s.singer || s.artist || ''))
+  const duration = parseDuration(s.interval)
+  const bitRate = s._types?.['320k'] ? 320 : (s._types?.['128k'] ? 128 : 0)
+  const firstType = s._types ? Object.values(s._types)[0] as any : null
+  const sizeNum = Number.parseInt(String(firstType?.size || s.size || s.fileSize || 0), 10) || 0
+  const pathAttr = escapeXml(String(s.path || s.filePath || ''))
+  const createdPart = created ? ` created="${escapeXml(created)}"` : ''
+
+  return `<song id="${songId}" parent="${songId}" title="${title}" album="${album}" artist="${artist}" isDir="false" coverArt="${songId}" duration="${duration}" bitRate="${bitRate}" size="${sizeNum}" suffix="mp3" contentType="audio/mpeg" isVideo="false" path="${pathAttr}" albumId="${songId}" artistId="${escapeXml(String(s.artistId || ''))}" type="music"${createdPart}/>`
+}
+
+async function handleRecentSearch(request: NextRequest, username: string | undefined, count: number, offset: number): Promise<Response> {
+  const history = username ? await listHistory(username, { limit: count, offset }) : { list: [] }
+  const songNodes = history.list
+    .flatMap((entry, index) => entry.musicInfo
+      ? [formatSearchSongNode(entry.musicInfo, index, entry.playedAt)]
+      : [])
+    .join('')
+  const xml = formatSubsonicXML({ status: 'ok', children: `<searchResult3>${songNodes}</searchResult3>` })
+  return createSearchResponse(request, xml)
+}
+
+export async function handleSearch(request: NextRequest, authRes?: AuthResult) {
   const url = new URL(request.url)
   const q = url.searchParams.get('query') || url.searchParams.get('q') || ''
-  const songCount = 50 //parseCount(url.searchParams.get('songCount') ?? undefined, 20)
+  const songCount = parseCount(url.searchParams.get('songCount') ?? undefined)
   const songOffset = parseOffset(url.searchParams.get('songOffset') ?? undefined)
+
+  // Arrow Music 用空 query + order=playDate 请求当前用户的最近播放；
+  // 不能将它当成普通空搜索，否则会把音源结果误显示为历史记录。
+  if (q.trim() === '' && url.searchParams.get('order')?.toLowerCase() === 'playdate') {
+    try {
+      return await handleRecentSearch(request, authRes?.user?.username, songCount, songOffset)
+    } catch (err) {
+      logger.error('[subsonic-search] failed to list recent plays', err)
+      return createSearchResponse(request, formatSubsonicXML({
+        status: 'failed',
+        error: { code: 0, message: 'Failed to list recent plays' },
+      }))
+    }
+  }
 
   // aggregate sources used for search (moved outside try so cache key can be computed)
   const sources = getSearchSources()
@@ -37,7 +103,7 @@ export async function handleSearch(request: NextRequest) {
   const cachedXml = searchCache.get(cacheKey) as string | null
   if (cachedXml) {
     logger.debug('[subsonic-search] cache hit', cacheKey)
-    return createSubsonicResponse(cachedXml)
+    return createSearchResponse(request, cachedXml)
   }
 
   try {
@@ -200,10 +266,10 @@ export async function handleSearch(request: NextRequest) {
     }
     
     console.log(xml)
-    return createSubsonicResponse(xml)
+    return createSearchResponse(request, xml)
   } catch (err) {
     const xml = formatSubsonicXML({ status: 'failed', error: { code: 0, message: err instanceof Error ? err.message : 'search error' } })
-    return createSubsonicResponse(xml)
+    return createSearchResponse(request, xml)
   }
 }
 

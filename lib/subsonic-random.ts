@@ -1,5 +1,11 @@
 import { NextRequest } from 'next/server'
-import { formatSubsonicXML, createSubsonicResponse } from './subsonic'
+import {
+  createSubsonicJsonResponse,
+  createSubsonicResponse,
+  formatSubsonicXmlAsJson,
+  formatSubsonicXML,
+  wantsSubsonicJson,
+} from './subsonic'
 import { getRandomMusicInfoList, getStorageSongmidForMusicInfo } from './db'
 import { getSearchSources } from './search-config'
 import { logger } from './logger'
@@ -27,7 +33,8 @@ function escapeXml(unsafe: string): string {
  */
 export async function handleGetRandomSongs(request: NextRequest): Promise<Response> {
   const url = new URL(request.url)
-  const parsed = parseInt(url.searchParams.get('size') ?? '10', 10)
+  // Arrow Music 使用 songCount；标准 Subsonic 客户端一般使用 size。
+  const parsed = parseInt(url.searchParams.get('size') ?? url.searchParams.get('songCount') ?? '10', 10)
   const size = Number.isNaN(parsed) ? 10 : Math.max(1, Math.min(parsed, 500))
 
   try {
@@ -54,6 +61,15 @@ export async function handleGetRandomSongs(request: NextRequest): Promise<Respon
 
     const children = `<randomSongs>${songNodes}</randomSongs>`
     const xml = formatSubsonicXML({ status: 'ok', children })
+    if (wantsSubsonicJson(request)) {
+      const payload = JSON.parse(formatSubsonicXmlAsJson(xml)) as {
+        'subsonic-response': { randomSongs?: { song?: unknown | unknown[] } }
+      }
+      const randomSongs = payload['subsonic-response'].randomSongs ?? (payload['subsonic-response'].randomSongs = {})
+      const song = randomSongs.song
+      randomSongs.song = song === undefined ? [] : Array.isArray(song) ? song : [song]
+      return createSubsonicJsonResponse(JSON.stringify(payload))
+    }
     return createSubsonicResponse(xml)
   } catch (err) {
     logger.error('[getRandomSongs] error:', err)

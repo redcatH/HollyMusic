@@ -43,6 +43,16 @@ export function deleteSource(sourcePath: string): Promise<{ ok: boolean }> {
   return apiDelete<{ ok: boolean }>(`admin/sources/${encodeURIComponent(sourcePath)}`)
 }
 
+/** 从在线洛雪链接导入脚本，并注册为可手动更新的订阅。 */
+export function importSourceSubscription(url: string): Promise<SourceConfig> {
+  return apiPost<SourceConfig>('admin/sources/subscriptions', { url })
+}
+
+/** 手动拉取已订阅脚本的最新内容。 */
+export function updateSourceSubscription(sourcePath: string): Promise<SourceConfig> {
+  return apiPost<SourceConfig>(`admin/sources/${encodeURIComponent(sourcePath)}`)
+}
+
 /**
  * 上传音源脚本文件。
  * 成功后自动注册到 music-sources.json。

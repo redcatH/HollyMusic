@@ -5,7 +5,7 @@ import { handleStar, handleUnstar } from '@/lib/subsonic-favorites'
 import { handleCoverArtAsync, handleGetLyricsAsync, handleGetLyricsBySongIdAsync, handleGetAlbumAsync } from '@/lib/subsonic-metadata'
 import { handleGetSongAsync } from '@/lib/subsonic-song'
 import { handleGetRandomSongs } from '@/lib/subsonic-random'
-import { handleGetStarred } from '@/lib/subsonic-getstarred'
+import { handleGetStarred, handleGetStarred2 } from '@/lib/subsonic-getstarred'
 import { handleGetPlaylists, handleGetPlaylist, handleCreatePlaylist, handleDeletePlaylist, handleUpdatePlaylist } from '@/lib/subsonic-playlist'
 import { formatSubsonicResponseForRequest, formatSubsonicXML, createSubsonicResponse } from '@/lib/subsonic'
 import { handleGetLicense, handleGetOpenSubsonicExtensions, handleGetUser, handleGetAlbumList2, handleScrobble, handleGetSimilarSongs } from '@/lib/subsonic-system'
@@ -104,7 +104,7 @@ async function handleMethod(request: NextRequest, method: string) {
     case 'getLicense':
       return handleGetLicense(request)
     case 'search3':
-      return handleSearch(request)
+      return handleSearch(request, authRes)
     case 'stream':
       return handleStream(request)
     case 'star':
@@ -128,6 +128,8 @@ async function handleMethod(request: NextRequest, method: string) {
       return handleGetAlbumAsync(request, authRes)
     case 'getStarred':
       return handleGetStarred(request, authRes)
+    case 'getStarred2':
+      return handleGetStarred2(request, authRes)
     case 'getPlaylists':
       return handleGetPlaylists(request, authRes)
     case 'getPlaylist':
@@ -197,19 +199,7 @@ export async function GET(request: NextRequest, context: { params: Promise<Recor
 
   logger.info('[rest] request', { method, requestUrl: getSafeRequestUrl(request) })
 
-  const response = await formatSubsonicResponseForRequest(request, await handleMethod(request, method))
-
-  // 显式启用时记录最终（已协商 f=json / XML）歌词响应，用于客户端兼容性诊断。
-  // 只读 clone，不会消费实际返回给客户端的 Response body。
-  if (method === 'getLyricsBySongId' && process.env.SUBSONIC_DEBUG_LYRICS === 'true') {
-    logger.info('[rest:getLyricsBySongId] response', {
-      status: response.status,
-      contentType: response.headers.get('content-type'),
-      body: await response.clone().text(),
-    })
-  }
-
-  return response
+  return formatSubsonicResponseForRequest(request, await handleMethod(request, method))
 }
 
 // export async function POST(request: NextRequest, context: { params: Promise<Record<string, string> | undefined> }) {

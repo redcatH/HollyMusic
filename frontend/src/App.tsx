@@ -41,6 +41,8 @@ export function App() {
   const loadFavorites = useFavoritesStore(s => s.load)
   const playByUid = usePlayerStore(s => s.playByUid)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  // 播放引擎只创建一张原生 Audio；传给底栏与歌词详情共用同一分析对象。
+  const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null)
 
   // 启动时获取会话状态
   useEffect(() => {
@@ -164,10 +166,10 @@ export function App() {
           </Routes>
         </main>
       </div>
-      <PlayerBar />
+      <PlayerBar audio={audioElement} onAudioElement={setAudioElement} />
       <MobileSidebar open={drawerOpen} onClose={() => setDrawerOpen(false)} />
       <QueuePanel />
-      <LyricsPanel />
+      <LyricsPanel audio={audioElement} />
       <SongContextMenu />
       <ToastContainer />
     </div>

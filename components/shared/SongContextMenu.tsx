@@ -57,7 +57,11 @@ export function SongContextMenu() {
     }
   }, [menu, close])
 
-  if (!menu) return null
+  // 选择“加入歌单”时会先关闭右键菜单。弹窗状态属于这个常驻的全局组件，
+  // 不能随着 menu 置空一起停止渲染，否则用户点击歌单前弹窗就被卸载了。
+  if (!menu) {
+    return playlistUid ? <AddToPlaylistDialog uid={playlistUid} onClose={() => setPlaylistUid(null)} /> : null
+  }
   const { track, x, y } = menu
   const left = Math.min(x, window.innerWidth - MENU_WIDTH - 8)
   const top = Math.min(y, window.innerHeight - MENU_MAX_HEIGHT - 8)
