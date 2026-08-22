@@ -37,11 +37,14 @@ function formatPlayCount(value: number): string {
   return String(value || 0)
 }
 
-function Cover({ src, icon: Icon }: { src: string; icon: typeof Music }) {
+function Cover({ src, icon: Icon, title }: { src: string; icon: typeof Music; title?: string }) {
   return src ? (
     <RemoteCoverImage src={src} alt="" className="aspect-square w-full rounded-lg object-cover" />
   ) : (
-    <div className="flex aspect-square w-full items-center justify-center rounded-lg bg-gradient-to-br from-primary/45 to-primary/10"><Icon className="h-8 w-8 text-primary" /></div>
+    <div className="flex aspect-square w-full flex-col items-center justify-center gap-2 rounded-lg bg-gradient-to-br from-primary/45 to-primary/10 px-3 text-center">
+      <Icon className="h-8 w-8 shrink-0 text-primary" />
+      {title && <div className="line-clamp-2 text-sm font-semibold leading-5 text-foreground">{title}</div>}
+    </div>
   )
 }
 
@@ -127,7 +130,7 @@ export function HomePage() {
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
             {toplists.map(item => (
               <Link key={item.id} to={`/discover/toplists/${item.id}?source=${source}`} className="group rounded-lg p-2 transition hover:bg-accent/50">
-                <Cover src={item.cover} icon={Trophy} />
+                <Cover src={item.cover} icon={Trophy} title={item.name} />
                 <div className="mt-2 truncate text-sm font-medium group-hover:text-primary">{item.name}</div>
                 <div className="truncate text-xs text-muted-foreground">{item.description}</div>
               </Link>
