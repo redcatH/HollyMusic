@@ -16,6 +16,20 @@
 
 > v0.17.0 之前的完整提交历史可执行 `git log v0.17.0` 查看。
 
+## v0.21.4（2026-08-22）
+
+**完整对比**：[v0.21.3 → v0.21.4](https://github.com/redcatH/HollyMusic/compare/v0.21.3...v0.21.4)
+
+### 🐛 问题修复
+
+- **subsonic**：search3 空 query 与 PC 发现音乐同源（白名单随机），恢复 songCount (#58)
+
+
+### 🔧 工程与依赖
+
+- **release**：同步 v0.21.3 更新日志与版本号
+
+
 ## v0.21.3（2026-08-22）
 
 **完整对比**：[v0.21.2 → v0.21.3](https://github.com/redcatH/HollyMusic/compare/v0.21.2...v0.21.3)
