@@ -10,12 +10,14 @@ import {
   createSource,
   updateSource,
   deleteSource,
+  importSourceSubscription,
   uploadScript,
+  updateSourceSubscription,
   type AdminSource,
 } from '@/lib/api/admin-sources'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { Plus, Pencil, Trash2, Music, X, Loader2, Upload, AlertCircle, CheckCircle2, FileWarning } from 'lucide-react'
+import { Plus, Pencil, Trash2, Music, X, Loader2, Upload, AlertCircle, CheckCircle2, FileWarning, RefreshCw, Rss } from 'lucide-react'
 
 const PLATFORMS = ['tx', 'wy', 'kw', 'kg', 'mg'] as const
 const PLATFORM_LABELS: Record<string, string> = {
@@ -37,6 +39,9 @@ export function SourcesPanel() {
   const [error, setError] = useState<string | null>(null)
   const [dialog, setDialog] = useState<DialogMode>(null)
   const [uploading, setUploading] = useState(false)
+  const [subscriptionDialogOpen, setSubscriptionDialogOpen] = useState(false)
+  const [subscribing, setSubscribing] = useState(false)
+  const [updatingSubscriptionPath, setUpdatingSubscriptionPath] = useState<string | null>(null)
   const [uploadMsg, setUploadMsg] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -69,6 +74,35 @@ export function SourcesPanel() {
     } finally {
       setUploading(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  const handleSubscriptionImport = async (url: string) => {
+    setSubscribing(true)
+    setUploadMsg(null)
+    try {
+      await importSourceSubscription(url)
+      setSubscriptionDialogOpen(false)
+      setUploadMsg({ kind: 'success', text: '订阅导入成功，后续可在列表中手动更新' })
+      await reload()
+    } catch (e) {
+      setUploadMsg({ kind: 'error', text: e instanceof Error ? e.message : '导入订阅失败' })
+    } finally {
+      setSubscribing(false)
+    }
+  }
+
+  const handleSubscriptionUpdate = async (source: AdminSource) => {
+    setUpdatingSubscriptionPath(source.path)
+    setUploadMsg(null)
+    try {
+      await updateSourceSubscription(source.path)
+      setUploadMsg({ kind: 'success', text: `订阅「${source.name || source.path}」已更新` })
+      await reload()
+    } catch (e) {
+      setUploadMsg({ kind: 'error', text: e instanceof Error ? e.message : '更新订阅失败' })
+    } finally {
+      setUpdatingSubscriptionPath(null)
     }
   }
 
@@ -125,6 +159,12 @@ export function SourcesPanel() {
           <p className="text-sm text-muted-foreground">管理自定义音源脚本与配置</p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setSubscriptionDialogOpen(true)}
+            className="flex items-center gap-1 rounded-full border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-accent"
+          >
+            <Rss className="h-4 w-4" /> 添加订阅
+          </button>
           <input
             ref={fileInputRef}
             type="file"
@@ -196,6 +236,11 @@ export function SourcesPanel() {
                 <tr key={s.path} className="border-t border-border hover:bg-accent/20">
                   <td className="px-4 py-3 font-medium">
                     {s.name || s.path}
+                    {s.subscription && (
+                      <span className="ml-2 rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium text-sky-600">
+                        订阅
+                      </span>
+                    )}
                     {s.description && (
                       <span className="ml-2 text-xs text-muted-foreground">{s.description}</span>
                     )}
@@ -240,6 +285,16 @@ export function SourcesPanel() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1">
+                      {s.subscription && (
+                        <button
+                          onClick={() => handleSubscriptionUpdate(s)}
+                          disabled={updatingSubscriptionPath === s.path}
+                          className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+                          title="手动更新订阅"
+                        >
+                          <RefreshCw className={`h-4 w-4 ${updatingSubscriptionPath === s.path ? 'animate-spin' : ''}`} />
+                        </button>
+                      )}
                       <button
                         onClick={() => setDialog({ kind: 'edit', source: s })}
                         className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -271,6 +326,70 @@ export function SourcesPanel() {
           onUpdated={handleUpdated}
         />
       )}
+      {subscriptionDialogOpen && (
+        <SubscriptionDialog
+          submitting={subscribing}
+          onClose={() => setSubscriptionDialogOpen(false)}
+          onSubmit={handleSubscriptionImport}
+        />
+      )}
+    </div>
+  )
+}
+
+function SubscriptionDialog({
+  submitting,
+  onClose,
+  onSubmit,
+}: {
+  submitting: boolean
+  onClose: () => void
+  onSubmit: (url: string) => Promise<void>
+}) {
+  const [url, setUrl] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!url.trim()) {
+      setError('请输入洛雪在线脚本链接')
+      return
+    }
+    setError(null)
+    await onSubmit(url.trim())
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
+      <div className="w-full max-w-md rounded-lg bg-card p-6 shadow-xl" onClick={event => event.stopPropagation()}>
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="flex items-center gap-2 text-lg font-semibold"><Rss className="h-5 w-5 text-primary" />添加订阅</h3>
+          <button onClick={onClose} disabled={submitting} className="text-muted-foreground hover:text-foreground">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <form onSubmit={submit} className="space-y-3">
+          <label className="block">
+            <span className="mb-1 block text-xs text-muted-foreground">洛雪在线脚本链接</span>
+            <input
+              autoFocus
+              type="url"
+              value={url}
+              onChange={event => setUrl(event.target.value)}
+              placeholder="https://example.com/lx-music-source.js"
+              className="w-full rounded-md bg-background px-3 py-2 text-sm outline-none ring-1 ring-border focus:ring-primary"
+            />
+            <span className="mt-1 block text-[10px] text-muted-foreground">导入后会校验脚本，并在列表中提供手动更新按钮。</span>
+          </label>
+          {error && <p className="text-xs text-destructive">{error}</p>}
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={onClose} disabled={submitting} className="rounded-full px-4 py-2 text-sm text-muted-foreground hover:text-foreground">取消</button>
+            <button type="submit" disabled={submitting} className="flex items-center gap-1 rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50">
+              {submitting && <Loader2 className="h-4 w-4 animate-spin" />} 导入
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   )
 }

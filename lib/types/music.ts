@@ -66,6 +66,11 @@ export interface SourceConfig {
   name?: string
   description?: string
   pt?: string[] // 该音源支持的平台列表，用于驱动搜索平台
+  /** 订阅脚本的在线地址；存在时可在音源管理中手动拉取更新。 */
+  subscription?: {
+    url: string
+    updatedAt: string
+  }
 }
 
 // 音源配置文件
