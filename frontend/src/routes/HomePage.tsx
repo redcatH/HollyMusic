@@ -1,116 +1,164 @@
-import { useRandomSongs } from '@/hooks/useRandomSongs'
-import { usePlayerStore } from '@/lib/store/player-store'
-import { useContextMenuStore } from '@/lib/store/context-menu-store'
-import { useLongPress } from '@/hooks/useLongPress'
-import { CoverImage } from '@/components/shared/CoverImage'
-import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
+import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { ChevronLeft, ChevronRight, ListMusic, Music, Play, RefreshCw, Search, Trophy } from 'lucide-react'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { SourceBadge } from '@/components/shared/SourceBadge'
-import { QualityBadge } from '@/components/shared/QualityBadge'
-import { RefreshCw, Play, Shuffle, MoreHorizontal } from 'lucide-react'
-import { toTrack, type Track } from '@/lib/types/player'
+import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
+import { RemoteCoverImage } from '@/components/shared/RemoteCoverImage'
+import { getRecommendedPlaylists, getToplists } from '@/lib/api/discovery'
+import type { DiscoveryPlaylist, DiscoveryPlaylistSort, DiscoverySource, DiscoveryToplist } from '@/lib/services/discovery-service'
 
-export function HomePage() {
-  const { songs, loading, error, reload } = useRandomSongs(30)
-  const playTrack = usePlayerStore(s => s.playTrack)
+const CHANNELS: Array<{ source: DiscoverySource; label: string }> = [
+  { source: 'tx', label: 'QQ 音乐' },
+  { source: 'wy', label: '网易云' },
+  { source: 'kw', label: '酷我音乐' },
+  { source: 'kg', label: '酷狗音乐' },
+  { source: 'mg', label: '咪咕音乐' },
+]
 
-  const tracks = songs.map(s => toTrack({ uid: s.uid, musicInfo: s }))
-  const playAll = () => {
-    if (tracks.length > 0) playTrack(tracks[0], tracks)
-  }
+const PLAYLIST_PAGE_SIZE = 12
+const PLAYLIST_CATEGORIES: Partial<Record<DiscoverySource, Array<{ id: string; name: string }>>> = {
+  tx: [{ id: '', name: '全部分类' }, { id: '3317', name: '官方歌单' }, { id: '59', name: '经典老歌' }, { id: '71', name: '情歌' }, { id: '73', name: '游戏' }, { id: '3202', name: 'ACG' }],
+  wy: [{ id: '', name: '全部分类' }, ...['华语', '欧美', '日语', '流行', '摇滚', '民谣', '电子', '轻音乐', '治愈'].map(name => ({ id: name, name }))],
+  kw: [{ id: '', name: '全部分类' }, { id: '2189-10000', name: '短视频' }, { id: '1265-10000', name: '经典' }, { id: '2200-10000', name: '情歌' }, { id: '2199-10000', name: 'BGM' }, { id: '1877-10000', name: '游戏' }, { id: '155-10000', name: '怀旧' }],
+  kg: [{ id: '', name: '全部分类' }, { id: '9', name: '流行' }, { id: '27', name: '摇滚' }, { id: '33', name: '电子' }, { id: '83', name: '民谣' }, { id: '780', name: '治愈' }, { id: '578', name: '伤感' }],
+  mg: [{ id: '', name: '全部分类' }, { id: '1000001672', name: '流行' }, { id: '1000001674', name: '摇滚' }, { id: '1000001775', name: '民谣' }, { id: '1000001682', name: '电子' }, { id: '1000001795', name: '伤感' }, { id: '1000001762', name: '国语' }],
+}
+const PLAYLIST_SORTS: Record<DiscoverySource, Array<{ id: DiscoveryPlaylistSort; name: string }>> = {
+  tx: [{ id: 'hot', name: '最热' }, { id: 'new', name: '最新' }],
+  wy: [{ id: 'hot', name: '最热' }],
+  kw: [{ id: 'new', name: '最新' }, { id: 'hot', name: '最热' }],
+  kg: [{ id: 'recommend', name: '推荐' }, { id: 'hot', name: '最热' }, { id: 'new', name: '最新' }, { id: 'collect', name: '热藏' }, { id: 'soar', name: '飙升' }],
+  mg: [{ id: 'recommend', name: '推荐' }],
+}
 
-  return (
-    // 手机端收紧留白（max-md:p-4，桌面观感不变）；标题/按钮保持全端统一尺寸
-    <div className="p-6 max-md:p-4">
-      <div className="mb-6 flex items-center justify-between max-md:mb-3">
-        <div>
-          <h1 className="text-2xl font-bold">发现音乐</h1>
-          <p className="text-sm text-muted-foreground">精选好歌随机推荐</p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={playAll}
-            disabled={tracks.length === 0}
-            className="flex items-center gap-1 rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
-          >
-            <Play className="h-4 w-4 fill-current" /> 播放全部
-          </button>
-          <button
-            onClick={reload}
-            className="flex items-center gap-1 rounded-full border border-border px-3 py-2 text-sm hover:bg-accent"
-          >
-            <RefreshCw className="h-4 w-4" /> 换一批
-          </button>
-        </div>
-      </div>
+function formatPlayCount(value: number): string {
+  if (value >= 100_000_000) return `${(value / 100_000_000).toFixed(1).replace('.0', '')}亿`
+  if (value >= 10_000) return `${Math.floor(value / 10_000)}万`
+  return String(value || 0)
+}
 
-      {loading ? (
-        <LoadingSkeleton count={10} />
-      ) : error ? (
-        <EmptyState icon={Shuffle} title="加载失败" description={error} />
-      ) : tracks.length === 0 ? (
-        <EmptyState icon={Shuffle} title="暂无推荐" description="管理员还未添加推荐歌曲" />
-      ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-          {tracks.map(t => (
-            <RecommendCard key={t.uid} track={t} queue={tracks} />
-          ))}
-        </div>
-      )}
-    </div>
+function Cover({ src, icon: Icon }: { src: string; icon: typeof Music }) {
+  return src ? (
+    <RemoteCoverImage src={src} alt="" className="aspect-square w-full rounded-lg object-cover" />
+  ) : (
+    <div className="flex aspect-square w-full items-center justify-center rounded-lg bg-gradient-to-br from-primary/45 to-primary/10"><Icon className="h-8 w-8 text-primary" /></div>
   )
 }
 
-/** 单张推荐卡片：点击播放，"⋯"/右键/长按呼出单曲操作菜单（复用全局 SongContextMenu） */
-function RecommendCard({ track, queue }: { track: Track; queue: Track[] }) {
-  const playTrack = usePlayerStore(s => s.playTrack)
-  const openMenu = useContextMenuStore(s => s.openMenu)
-  const longPress = useLongPress((x, y) => openMenu(track, x, y))
+export function HomePage() {
+  const [toplists, setToplists] = useState<DiscoveryToplist[]>([])
+  const [playlists, setPlaylists] = useState<DiscoveryPlaylist[]>([])
+  const [source, setSource] = useState<DiscoverySource>('tx')
+  const [playlistPage, setPlaylistPage] = useState(1)
+  const [keyword, setKeyword] = useState('')
+  const [category, setCategory] = useState('')
+  const [playlistSort, setPlaylistSort] = useState<DiscoveryPlaylistSort>('hot')
+  const [loadingToplists, setLoadingToplists] = useState(true)
+  const [loadingPlaylists, setLoadingPlaylists] = useState(true)
+  const [toplistsError, setToplistsError] = useState<string | null>(null)
+  const [playlistsError, setPlaylistsError] = useState<string | null>(null)
+  const toplistRequestId = useRef(0)
+  const playlistRequestId = useRef(0)
+
+  const loadToplists = async () => {
+    const requestId = ++toplistRequestId.current
+    setLoadingToplists(true)
+    setToplistsError(null)
+    try {
+      const boardData = await getToplists(source)
+      if (requestId === toplistRequestId.current) setToplists(boardData)
+    } catch (err) {
+      if (requestId === toplistRequestId.current) setToplistsError(err instanceof Error ? err.message : '加载失败')
+    } finally {
+      if (requestId === toplistRequestId.current) setLoadingToplists(false)
+    }
+  }
+
+  const loadPlaylists = async () => {
+    const requestId = ++playlistRequestId.current
+    setLoadingPlaylists(true)
+    setPlaylistsError(null)
+    try {
+      const playlistData = await getRecommendedPlaylists(source, PLAYLIST_PAGE_SIZE, playlistPage, { tag: category || undefined, sort: playlistSort, keyword: keyword || undefined })
+      if (requestId === playlistRequestId.current) setPlaylists(playlistData)
+    } catch (err) {
+      if (requestId === playlistRequestId.current) setPlaylistsError(err instanceof Error ? err.message : '加载失败')
+    } finally {
+      if (requestId === playlistRequestId.current) setLoadingPlaylists(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadToplists()
+    // 渠道变化时才需要重新加载榜单。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source])
+
+  useEffect(() => {
+    void loadPlaylists()
+    // 仅歌单区域响应页码变化。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source, playlistPage, category, playlistSort])
+
+  const isLastPlaylistPage = playlists.length < PLAYLIST_PAGE_SIZE
+  const isLoading = loadingToplists || loadingPlaylists
+
+  const refresh = () => {
+    void Promise.all([loadToplists(), loadPlaylists()])
+  }
 
   return (
-    // 卡片拆两层（按钮嵌按钮非法 HTML）：外层承载右键/长按菜单，内层按钮负责播放
-    <div
-      className="group relative pointer-coarse:select-none pointer-coarse:[-webkit-touch-callout:none]"
-      onContextMenu={e => {
-        e.preventDefault()
-        openMenu(track, e.clientX, e.clientY)
-      }}
-      {...longPress}
-    >
-      <button
-        onClick={() => playTrack(track, queue)}
-        className="flex w-full flex-col gap-2 rounded-lg p-2 text-left hover:bg-accent/40"
-      >
-        <div className="relative">
-          <CoverImage uid={track.uid} className="aspect-square w-full" />
-          <div className="absolute bottom-2 right-2 translate-y-2 rounded-full bg-primary p-2 text-primary-foreground opacity-0 shadow-lg transition group-hover:translate-y-0 group-hover:opacity-100">
-            <Play className="h-4 w-4 fill-current" />
+    <div className="p-6">
+      <div className="mb-6 flex items-center justify-between">
+        <div><h1 className="text-2xl font-bold">发现音乐</h1><p className="text-sm text-muted-foreground">各平台实时榜单与精选歌单</p></div>
+        <button onClick={refresh} className="flex items-center gap-1 rounded-full border border-border px-3 py-2 text-sm hover:bg-accent" disabled={isLoading}><RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /> 刷新</button>
+      </div>
+
+      <div className="mb-6 flex flex-wrap gap-2" role="tablist" aria-label="音乐渠道">
+        {CHANNELS.map(channel => (
+          <button key={channel.source} onClick={() => { setSource(channel.source); setPlaylistPage(1); setCategory(''); setPlaylistSort(PLAYLIST_SORTS[channel.source][0].id); setToplists([]); setPlaylists([]) }} className={`rounded-full px-4 py-2 text-sm transition ${source === channel.source ? 'bg-primary text-primary-foreground' : 'border border-border text-muted-foreground hover:bg-accent hover:text-foreground'}`} role="tab" aria-selected={source === channel.source}>{channel.label}</button>
+        ))}
+      </div>
+      <section className="mb-10">
+        <div className="mb-3 flex items-center gap-2"><Trophy className="h-5 w-5 text-primary" /><h2 className="text-lg font-semibold">排行榜</h2></div>
+        {loadingToplists ? <LoadingSkeleton count={6} /> : toplistsError ? (
+          <EmptyState icon={Music} title="排行榜加载失败" description={toplistsError} />
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+            {toplists.map(item => (
+              <Link key={item.id} to={`/discover/toplists/${item.id}?source=${source}`} className="group rounded-lg p-2 transition hover:bg-accent/50">
+                <Cover src={item.cover} icon={Trophy} />
+                <div className="mt-2 truncate text-sm font-medium group-hover:text-primary">{item.name}</div>
+                <div className="truncate text-xs text-muted-foreground">{item.description}</div>
+              </Link>
+            ))}
           </div>
-        </div>
-        <div className="truncate text-sm font-medium">{track.name}</div>
-        <div className="flex items-center gap-1.5">
-          <span className="truncate text-xs text-muted-foreground">{track.artist}</span>
-          <SourceBadge source={track.source} />
-          {/* 手机端隐藏音质角标：卡片窄，优先保歌手名可读（桌面照常显示） */}
-          <span className="max-md:hidden">
-            <QualityBadge musicInfo={track.musicInfo} />
-          </span>
-        </div>
-      </button>
-      <button
-        onClick={e => {
-          e.stopPropagation()
-          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-          openMenu(track, rect.right, rect.bottom)
-        }}
-        // 手机常显（触屏无 hover，pointer-fine 不匹配即回落 opacity-70），桌面 hover 显现；
-        // 触屏扩大命中区（视觉基本不变，28px→40px）
-        className="absolute right-2 top-2 z-10 rounded-full bg-card/80 p-1.5 text-muted-foreground opacity-70 backdrop-blur transition hover:text-foreground focus-visible:opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-coarse:p-3"
-        aria-label="更多操作"
-        title="更多操作"
-      >
-        <MoreHorizontal className="h-4 w-4" />
-      </button>
+        )}
+      </section>
+
+      <section>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-2"><ListMusic className="h-5 w-5 text-primary" /><h2 className="text-lg font-semibold">推荐歌单</h2></div><div className="flex flex-wrap items-center gap-2"><label className="relative"><Search className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input value={keyword} onChange={event => setKeyword(event.target.value)} placeholder="搜索当前页歌单" className="h-9 w-40 rounded-md border border-border bg-transparent pl-8 pr-2 text-sm outline-none focus:ring-1 focus:ring-primary" /></label><select value={category} onChange={event => { setCategory(event.target.value); setPlaylistPage(1) }} className="h-9 rounded-md border border-border bg-background px-2 text-sm">{PLAYLIST_CATEGORIES[source]?.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select value={playlistSort} onChange={event => { setPlaylistSort(event.target.value as DiscoveryPlaylistSort); setPlaylistPage(1) }} className="h-9 rounded-md border border-border bg-background px-2 text-sm">{PLAYLIST_SORTS[source].map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div></div>
+        {loadingPlaylists && playlists.length === 0 ? <LoadingSkeleton count={PLAYLIST_PAGE_SIZE} /> : playlistsError ? (
+          <EmptyState icon={ListMusic} title="推荐歌单加载失败" description={playlistsError} />
+        ) : playlists.length === 0 ? <EmptyState icon={ListMusic} title="暂无推荐歌单" /> : (
+          <div className={`grid grid-cols-2 gap-3 transition-opacity sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 ${loadingPlaylists ? 'pointer-events-none opacity-50' : ''}`} aria-busy={loadingPlaylists}>
+            {playlists.filter(item => !keyword || `${item.name} ${item.author} ${item.description}`.toLowerCase().includes(keyword.toLowerCase())).map(item => (
+              <Link key={item.id} to={`/discover/playlists/${item.id}?source=${source}`} className="group rounded-lg p-2 transition hover:bg-accent/50">
+                <div className="relative"><Cover src={item.cover} icon={ListMusic} />{item.playCount > 0 && <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-1 text-[11px] text-white"><Play className="h-3 w-3 fill-current" />{formatPlayCount(item.playCount)}</span>}</div>
+                <div className="mt-2 line-clamp-2 text-sm font-medium group-hover:text-primary">{item.name}</div>
+                <div className="truncate text-xs text-muted-foreground">{item.author}{item.songCount && item.songCount > 0 ? ` · ${item.songCount} 首` : ''}</div>
+              </Link>
+            ))}
+          </div>
+        )}
+        {(playlists.length > 0 || playlistPage > 1) && (
+          <div className="mt-6 flex items-center justify-center gap-3">
+            <button onClick={() => setPlaylistPage(page => Math.max(1, page - 1))} disabled={playlistPage === 1 || loadingPlaylists} className="flex items-center gap-1 rounded-full border border-border px-3 py-2 text-sm hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"><ChevronLeft className="h-4 w-4" /> 上一页</button>
+            <span className="text-sm text-muted-foreground">第 {playlistPage} 页</span>
+            <button onClick={() => setPlaylistPage(page => page + 1)} disabled={isLastPlaylistPage || loadingPlaylists} className="flex items-center gap-1 rounded-full border border-border px-3 py-2 text-sm hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50">下一页 <ChevronRight className="h-4 w-4" /></button>
+          </div>
+        )}
+      </section>
     </div>
   )
 }

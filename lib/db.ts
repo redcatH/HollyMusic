@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import crypto from 'crypto'
 import { PrismaClient, Prisma } from './generated/prisma'
+import { logger } from './logger'
 import type { MusicInfo } from './types/music'
 
 export const prisma = new PrismaClient()
@@ -95,6 +96,24 @@ export async function getFirstMusicInfoByAlbumId(albumId: string): Promise<Music
   }
 }
 
+/** 按传统 Subsonic getLyrics 的 artist + title 参数查找已缓存歌曲。 */
+export async function getFirstMusicInfoByArtistAndTitle(artist: string, title: string): Promise<MusicInfo | null> {
+  try {
+    const row = await prisma.musicInfo.findFirst({
+      where: {
+        name: title,
+        singer: artist,
+      },
+      orderBy: { id: 'asc' },
+    })
+    if (!row?.data) return null
+    return JSON.parse(row.data) as MusicInfo
+  } catch (error) {
+    logger.warn('getFirstMusicInfoByArtistAndTitle error', error)
+    return null
+  }
+}
+
 /**
  * 按 albumId 查询整专辑所有歌曲（从 data 列还原原始 MusicInfo），按 id asc 排序。
  * 第一首即代表曲（与 getFirstMusicInfoByAlbumId 一致）。
@@ -129,15 +148,25 @@ export async function getMusicInfoListByAlbumId(albumId: string): Promise<MusicI
 export async function getRandomMusicInfoList(size: number, allowedSources?: string[]): Promise<MusicInfo[]> {
   try {
     const limit = Math.max(1, Math.min(size, 500))
-    // 只从推荐白名单（isRecommended = 1）抽取，避免推荐到垃圾歌曲；
-    // 同时按 allowedSources 过滤为启用音源，保证抽出的歌可播放
-    const rows = allowedSources && allowedSources.length > 0
+    // 优先从推荐白名单抽取；尚未配置推荐时回退所有已入库歌曲，
+    // 避免 getRandomSongs 等入口因空白名单而始终返回空列表。
+    // 两种查询都按 allowedSources 过滤为启用音源，保证抽出的歌可播放。
+    let rows = allowedSources && allowedSources.length > 0
       ? await prisma.$queryRaw<{ data: string | null }[]>`
           SELECT data FROM MusicInfo WHERE source IN (${Prisma.join(allowedSources)}) AND isRecommended = 1 ORDER BY RANDOM() LIMIT ${limit}
         `
       : await prisma.$queryRaw<{ data: string | null }[]>`
           SELECT data FROM MusicInfo WHERE isRecommended = 1 ORDER BY RANDOM() LIMIT ${limit}
         `
+    if (rows.length === 0) {
+      rows = allowedSources && allowedSources.length > 0
+        ? await prisma.$queryRaw<{ data: string | null }[]>`
+            SELECT data FROM MusicInfo WHERE source IN (${Prisma.join(allowedSources)}) ORDER BY RANDOM() LIMIT ${limit}
+          `
+        : await prisma.$queryRaw<{ data: string | null }[]>`
+            SELECT data FROM MusicInfo ORDER BY RANDOM() LIMIT ${limit}
+          `
+    }
     const list: MusicInfo[] = []
     for (const row of rows) {
       if (!row.data) continue
@@ -419,6 +448,7 @@ export async function upsertMusicInfo(mi: MusicInfo): Promise<{ action: 'insert'
 const dbAPI = {
   getMusicInfo,
   getFirstMusicInfoByAlbumId,
+  getFirstMusicInfoByArtistAndTitle,
   getMusicInfoListByAlbumId,
   getRandomMusicInfoList,
   upsertMusicInfo,

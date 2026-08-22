@@ -74,7 +74,7 @@ export function SongRow({ track, queue, index }: SongRowProps) {
       </div>
 
       <button onClick={handlePlay} className="shrink-0">
-        <CoverImage uid={track.uid} className="h-10 w-10" />
+        <CoverImage uid={track.uid} cacheKey={track.musicInfo.img} className="h-10 w-10" />
       </button>
 
       <button onClick={handlePlay} className="min-w-0 flex-1 text-left">

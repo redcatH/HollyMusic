@@ -1,15 +1,20 @@
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { buildCoverUrl } from '@/lib/api/music'
 import { Music2 } from 'lucide-react'
 
 interface CoverImageProps {
   uid: string
+  cacheKey?: string | null
   className?: string
 }
 
-export function CoverImage({ uid, className = '' }: CoverImageProps) {
+export function CoverImage({ uid, cacheKey, className = '' }: CoverImageProps) {
   const [error, setError] = useState(false)
+
+  useEffect(() => {
+    setError(false)
+  }, [uid, cacheKey])
 
   if (error || !uid) {
     return (
@@ -21,7 +26,7 @@ export function CoverImage({ uid, className = '' }: CoverImageProps) {
 
   return (
     <img
-      src={buildCoverUrl(uid)}
+      src={buildCoverUrl(uid, cacheKey)}
       onError={() => setError(true)}
       alt=""
       loading="lazy"
