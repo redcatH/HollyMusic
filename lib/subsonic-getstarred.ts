@@ -44,7 +44,13 @@ function formatDate(date: any): string {
   }
 }
 
-export async function handleGetStarred(request: NextRequest, authRes: AuthResult): Promise<Response> {
+type StarredResponseTag = 'starred' | 'starred2'
+
+export async function handleGetStarred(
+  request: NextRequest,
+  authRes: AuthResult,
+  responseTag: StarredResponseTag = 'starred'
+): Promise<Response> {
   try {
     if (!authRes.user) {
       return subsonicError(request, 40, 'Authentication required')
@@ -147,12 +153,17 @@ export async function handleGetStarred(request: NextRequest, authRes: AuthResult
 
     logger.debug('[getStarred] Returning', artists.length, 'artists,', albums.length, 'albums,', songs.length, 'songs')
     return respond(request, {
-      starred: { artist: artists, album: albums, song: songs },
+      [responseTag]: { artist: artists, album: albums, song: songs },
     })
   } catch (err) {
     logger.error('[getStarred] Error:', err)
     return subsonicError(request, 0, err instanceof Error ? err.message : 'Internal error')
   }
+}
+
+/** OpenSubsonic 收藏列表：沿用上游响应渲染器，确保 XML/JSON 集合均保留数组结构。 */
+export async function handleGetStarred2(request: NextRequest, authRes: AuthResult): Promise<Response> {
+  return handleGetStarred(request, authRes, 'starred2')
 }
 
 /** 查不到 MusicInfo 时的兜底 song 节点（无真实音质数据，相关字段省略不编造） */

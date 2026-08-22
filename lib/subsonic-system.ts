@@ -2,6 +2,8 @@ import { NextRequest } from 'next/server'
 import { respond, subsonicError, TEXT_KEY, type SubsonicPayload } from './subsonic'
 import { type AuthResult } from './auth'
 import { PrismaClient } from './generated/prisma'
+import { resolveMusicInfoById } from './db'
+import { reportPlay } from './services/history-service'
 import { logger } from './logger'
 
 const prisma = new PrismaClient()
@@ -251,10 +253,28 @@ export async function handleGetAlbumList2(request: NextRequest, authRes: AuthRes
 }
 
 /**
- * 处理 scrobble 请求 — 听歌统计暂不落库，返回 ok 避免 Musiver 报错。
+ * 处理 scrobble 请求：将客户端确认播放的歌曲写入当前用户播放历史。
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function handleScrobble(request: NextRequest, authRes: AuthResult): Promise<Response> {
+  const username = authRes.user?.username
+  const songIds = new URL(request.url).searchParams.getAll('id').filter(Boolean)
+
+  if (username && songIds.length > 0) {
+    await Promise.all(songIds.map(async songId => {
+      try {
+        const musicInfo = await resolveMusicInfoById(songId)
+        if (!musicInfo) {
+          logger.warn('[scrobble] Song not found:', songId)
+          return
+        }
+        await reportPlay(username, musicInfo)
+      } catch (err) {
+        // 一首歌曲写入失败不应让客户端播放失败，其余 id 仍继续处理。
+        logger.warn('[scrobble] Failed to record play:', songId, err)
+      }
+    }))
+  }
+
   return respond(request, null)
 }
 

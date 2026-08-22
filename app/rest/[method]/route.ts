@@ -5,7 +5,7 @@ import { handleStar, handleUnstar } from '@/lib/subsonic-favorites'
 import { handleCoverArtAsync, handleGetLyricsAsync, handleGetLyricsBySongIdAsync, handleGetAlbumAsync } from '@/lib/subsonic-metadata'
 import { handleGetSongAsync } from '@/lib/subsonic-song'
 import { handleGetRandomSongs } from '@/lib/subsonic-random'
-import { handleGetStarred } from '@/lib/subsonic-getstarred'
+import { handleGetStarred, handleGetStarred2 } from '@/lib/subsonic-getstarred'
 import { handleGetPlaylists, handleGetPlaylist, handleCreatePlaylist, handleDeletePlaylist, handleUpdatePlaylist } from '@/lib/subsonic-playlist'
 import { respond, subsonicError } from '@/lib/subsonic'
 import { handleGetOpenSubsonicExtensions, handleGetUser, handleGetAlbumList2, handleScrobble, handleGetSimilarSongs } from '@/lib/subsonic-system'
@@ -93,7 +93,7 @@ async function handleMethod(request: NextRequest, method: string) {
     case 'ping':
       return handlePing(request)
     case 'search3':
-      return handleSearch(request)
+      return handleSearch(request, authRes)
     case 'stream':
       return handleStream(request)
     case 'star':
@@ -117,6 +117,8 @@ async function handleMethod(request: NextRequest, method: string) {
       return handleGetAlbumAsync(request, authRes)
     case 'getStarred':
       return handleGetStarred(request, authRes)
+    case 'getStarred2':
+      return handleGetStarred2(request, authRes)
     case 'getPlaylists':
       return handleGetPlaylists(request, authRes)
     case 'getPlaylist':

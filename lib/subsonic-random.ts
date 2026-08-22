@@ -24,7 +24,8 @@ function parseDuration(interval: string | undefined): number {
  */
 export async function handleGetRandomSongs(request: NextRequest): Promise<Response> {
   const url = new URL(request.url)
-  const parsed = parseInt(url.searchParams.get('size') ?? '10', 10)
+  // 标准协议使用 size；部分客户端使用 songCount，缺少 size 时兼容该参数。
+  const parsed = parseInt(url.searchParams.get('size') ?? url.searchParams.get('songCount') ?? '10', 10)
   const size = Number.isNaN(parsed) ? 10 : Math.max(1, Math.min(parsed, 500))
 
   try {

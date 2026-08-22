@@ -142,6 +142,30 @@ export async function handleGetPlaylist(request: NextRequest, authRes: AuthResul
             }
         }).filter((e): e is NonNullable<typeof e> => e !== null)
 
+        // 歌单条目同样需要携带当前用户的喜爱状态。客户端通常不再额外调用
+        // getStarred，因此在这里批量查询并合并，避免逐首请求造成 N+1 查询。
+        const starredBySongId = new Map<string, Date>()
+        if (authRes.user && entryNodes.length > 0) {
+            const favorites = await prisma.favorite.findMany({
+                where: {
+                    userId: authRes.user.id,
+                    itemType: 'song',
+                    itemId: { in: entryNodes.map(entry => entry.id) },
+                },
+                select: { itemId: true, createdAt: true },
+            })
+            for (const favorite of favorites) {
+                starredBySongId.set(favorite.itemId, favorite.createdAt)
+            }
+        }
+
+        const entriesWithStarred = entryNodes.map(entry => {
+            const starredAt = starredBySongId.get(entry.id)
+            return starredAt
+                ? { ...entry, starred: starredAt.toISOString().substring(0, 19) }
+                : entry
+        })
+
         return respond(request, {
             playlist: {
                 id: String(playlist.id),
@@ -154,7 +178,7 @@ export async function handleGetPlaylist(request: NextRequest, authRes: AuthResul
                 created: createdStr,
                 coverArt: playlist.coverArt || `pl-${playlist.id}`,
                 allowedUser: playlist.allowedUsers.map(au => au.username),
-                entry: entryNodes,
+                entry: entriesWithStarred,
             },
         }, {
             // 保留 navidrome 兼容标记（部分客户端据此启用 Navidrome 专属行为）

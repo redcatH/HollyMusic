@@ -14,6 +14,10 @@ import { getRandomMusicInfoList } from './db'
 import { searchCache } from './cache-manager'
 import { getSearchSources } from './search-config'
 
+vi.mock('./services/history-service', () => ({
+  listHistory: vi.fn(async () => ({ list: [], total: 0 })),
+}))
+
 vi.mock('./db', () => ({
   upsertMusicInfo: vi.fn(async () => ({})),
   getStorageSongmidForMusicInfo: vi.fn((mi: { songmid: string }) => mi.songmid),
