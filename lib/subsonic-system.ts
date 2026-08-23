@@ -257,7 +257,11 @@ export async function handleGetAlbumList2(request: NextRequest, authRes: AuthRes
  */
 export async function handleScrobble(request: NextRequest, authRes: AuthResult): Promise<Response> {
   const username = authRes.user?.username
-  const songIds = new URL(request.url).searchParams.getAll('id').filter(Boolean)
+  const url = new URL(request.url)
+  const songIds = url.searchParams.getAll('id').filter(Boolean)
+  // 协议规定 submission=false 是「正在播放」通知（起播即发一次），true（缺省值）才是
+  // 播放完成的正式上报；两者都记录会把一首歌唱成两条播放历史。
+  if (url.searchParams.get('submission') === 'false') return respond(request, null)
 
   if (username && songIds.length > 0) {
     await Promise.all(songIds.map(async songId => {
