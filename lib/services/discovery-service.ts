@@ -590,8 +590,29 @@ async function getRecommendedPlaylistRecords(limit: number, page = 1, filter: Di
       songIds: item.song_ids || [],
     }))
   searchCache.set(cacheKey, records, CACHE_TTL)
-  records.forEach(record => searchCache.set(`discovery:tx:playlist-record:${record.id}`, record, CACHE_TTL))
   return records
+}
+
+/** 与 lx-music tx/songList.js 同一歌单详情端点：按 disstid 直取，不依赖列表页缓存。 */
+async function getTxPlaylistDetail(id: string): Promise<DiscoveryCollectionDetail | null> {
+  const query = new URLSearchParams({
+    type: '1', json: '1', utf8: '1', onlysong: '0', new_format: '1',
+    disstid: id, loginUin: '0', hostUin: '0', format: 'json',
+    inCharset: 'utf8', outCharset: 'utf-8', notice: '0', platform: 'yqq.json', needNewCode: '0',
+  })
+  const payload = await fetchJson<{ cdlist?: Array<{ dissname?: string; logo?: string; desc?: string; nickname?: string; songlist?: QQSong[] }> }>(
+    `https://c.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?${query}`
+  )
+  const cd = payload.cdlist?.[0]
+  if (!cd || !Array.isArray(cd.songlist) || cd.songlist.length === 0) return null
+  return {
+    id,
+    name: cd.dissname || 'QQ 推荐歌单',
+    description: cd.desc || '',
+    cover: normalizeCover(cd.logo),
+    author: cd.nickname || 'QQ 音乐',
+    tracks: await enrichSongs(cd.songlist),
+  }
 }
 
 async function getWyRecommendedPlaylists(limit: number, page: number, filter: DiscoveryPlaylistFilter): Promise<DiscoveryPlaylist[]> {
@@ -854,17 +875,7 @@ export async function getRecommendedPlaylistDetail(source: DiscoverySource, id: 
     if (detail) searchCache.set(cacheKey, detail, CACHE_TTL)
     return detail
   }
-  const record = getCached<PlaylistRecord>(`discovery:tx:playlist-record:${id}`)
-    || (await getRecommendedPlaylistRecords(30)).find(item => item.id === id)
-  if (!record || record.songIds.length === 0) return null
-  const detail: DiscoveryCollectionDetail = {
-    id,
-    name: record.name,
-    description: record.description,
-    cover: record.cover,
-    author: record.author,
-    tracks: await getSongsByIds(record.songIds),
-  }
-  searchCache.set(cacheKey, detail, CACHE_TTL)
+  const detail = await getTxPlaylistDetail(id)
+  if (detail) searchCache.set(cacheKey, detail, CACHE_TTL)
   return detail
 }
