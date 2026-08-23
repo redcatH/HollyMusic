@@ -337,6 +337,15 @@ export function getStorageSongmidForMusicInfo(mi: MusicInfo): string {
 type MusicInfoWriteClient = Pick<PrismaClient, 'musicInfo'>
 type UpsertMusicInfoAction = { action: 'insert' | 'update' | 'noop' }
 
+function isUniqueConstraintError(error: unknown): boolean {
+  return Boolean(
+    error
+    && typeof error === 'object'
+    && 'code' in error
+    && (error as { code?: string }).code === 'P2002'
+  )
+}
+
 async function upsertMusicInfoWithClient(
   client: MusicInfoWriteClient,
   mi: MusicInfo,
@@ -346,7 +355,7 @@ async function upsertMusicInfoWithClient(
   // 存储键：kg 用 FileHash，其他源用原 songmid（详见 getStorageSongmid）
   const storageSongmid = getStorageSongmid(mi)
 
-  const existing = await client.musicInfo.findUnique({
+  let existing = await client.musicInfo.findUnique({
       where: {
         source_songmid: {
           source: mi.source,
@@ -364,7 +373,8 @@ async function upsertMusicInfoWithClient(
         return Number.isNaN(n) ? null : n
     })()
 
-    await client.musicInfo.create({
+    try {
+      await client.musicInfo.create({
         data: {
           source: mi.source,
           songmid: storageSongmid,
@@ -396,8 +406,25 @@ async function upsertMusicInfoWithClient(
           mrcUrl: (mi as any).mrcUrl || null,
           trcUrl: (mi as any).trcUrl || null,
         },
-    })
-    return { action: 'insert' }
+      })
+      return { action: 'insert' }
+    } catch (error) {
+      // findUnique 与 create 之间，另一条请求可能已插入同一首歌。
+      // P2002 不是业务失败，重新读取后按正常 checksum 逻辑处理即可。
+      if (!isUniqueConstraintError(error)) throw error
+      existing = await client.musicInfo.findUnique({
+        where: {
+          source_songmid: {
+            source: mi.source,
+            songmid: storageSongmid,
+          },
+        },
+        select: {
+          checksum: true,
+        },
+      })
+      if (!existing) throw error
+    }
   }
 
   if (existing.checksum === checksum) {
@@ -450,7 +477,7 @@ export async function upsertMusicInfo(mi: MusicInfo): Promise<UpsertMusicInfoAct
   try {
     return await upsertMusicInfoWithClient(prisma, mi)
   } catch (e) {
-    console.error('upsertMusicInfo error', e)
+    logger.error('upsertMusicInfo error', e)
     return { action: 'noop' }
   }
 }
