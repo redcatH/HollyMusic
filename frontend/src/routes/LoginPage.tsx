@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@/hooks/useAuth'
 import { Music2, LogIn, Eye, EyeOff } from 'lucide-react'
 
 export function LoginPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const login = useAuthStore(s => s.login)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -22,8 +23,13 @@ export function LoginPage() {
     setSubmitting(true)
     try {
       await login(username.trim(), password)
-      // 改密守卫会在 App.tsx 中根据 mustChangePassword 自动跳转
-      navigate('/', { replace: true })
+      // 改密守卫会在 App.tsx 中根据 mustChangePassword 自动跳转。
+      // 登录成功后回到来源页（全局守卫拦截时携带 redirect）；仅接受站内路径，防 open redirect。
+      const raw = new URLSearchParams(location.search).get('redirect')
+      const target = raw && raw.startsWith('/') && !raw.startsWith('//') && !raw.startsWith('/login')
+        ? raw
+        : '/'
+      navigate(target, { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : '登录失败')
     } finally {
@@ -90,10 +96,6 @@ export function LoginPage() {
             {submitting ? '登录中...' : '登录'}
           </button>
         </form>
-
-        <p className="mt-6 text-center text-xs text-muted-foreground">
-          匿名用户仍可搜索与播放
-        </p>
       </div>
     </div>
   )

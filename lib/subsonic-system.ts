@@ -2,9 +2,21 @@ import { NextRequest } from 'next/server'
 import { respond, subsonicError, TEXT_KEY, type SubsonicPayload } from './subsonic'
 import { type AuthResult } from './auth'
 import { PrismaClient } from './generated/prisma'
+import { resolveMusicInfoById } from './db'
+import { reportPlay } from './services/history-service'
 import { logger } from './logger'
 
 const prisma = new PrismaClient()
+
+/**
+ * 返回许可证状态。
+ *
+ * 部分传统 Subsonic 客户端会在 ping 成功后立即调用 getLicense；即使服务端
+ * 不采用商业许可证模式，仍须返回 valid=true，否则客户端会将连接判定为失败。
+ */
+export function handleGetLicense(request: NextRequest): Response {
+  return respond(request, { license: { valid: true } })
+}
 
 /**
  * 返回支持的 OpenSubsonic 扩展列表（静态/可配置）
@@ -251,10 +263,31 @@ export async function handleGetAlbumList2(request: NextRequest, authRes: AuthRes
 }
 
 /**
- * 处理 scrobble 请求 — 听歌统计暂不落库，返回 ok 避免 Musiver 报错。
+ * 处理 scrobble 请求：将客户端确认播放的歌曲写入当前用户播放历史。
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function handleScrobble(request: NextRequest, authRes: AuthResult): Promise<Response> {
+  const username = authRes.user?.username
+  const searchParams = new URL(request.url).searchParams
+  const songIds = searchParams.getAll('id').filter(Boolean)
+  // Subsonic 约定 submission 缺省为 true；false 仅表示“正在播放”，不计入播放历史。
+  const isSubmission = searchParams.get('submission')?.toLowerCase() !== 'false'
+
+  if (isSubmission && username && songIds.length > 0) {
+    await Promise.all(songIds.map(async songId => {
+      try {
+        const musicInfo = await resolveMusicInfoById(songId)
+        if (!musicInfo) {
+          logger.warn('[scrobble] Song not found:', songId)
+          return
+        }
+        await reportPlay(username, musicInfo)
+      } catch (err) {
+        // 一首歌曲写入失败不应让客户端播放失败，其余 id 仍继续处理。
+        logger.warn('[scrobble] Failed to record play:', songId, err)
+      }
+    }))
+  }
+
   return respond(request, null)
 }
 

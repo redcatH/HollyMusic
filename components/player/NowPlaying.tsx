@@ -32,7 +32,7 @@ export function NowPlaying() {
   return (
     <div className="flex min-w-0 flex-1 items-center gap-3 md:w-[30%] md:flex-none">
       <button onClick={toggleLyrics} className="shrink-0" aria-label="查看歌词" title="查看歌词">
-        <CoverImage uid={track.uid} className="h-10 w-10 md:h-14 md:w-14" />
+        <CoverImage uid={track.uid} cacheKey={track.musicInfo.img} className="h-10 w-10 md:h-14 md:w-14" />
       </button>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">

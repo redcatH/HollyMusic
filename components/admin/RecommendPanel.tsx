@@ -494,7 +494,7 @@ export function RecommendPanel() {
           推荐管理
         </h2>
         <p className="text-sm text-muted-foreground">
-          搜索歌曲加入推荐白名单，首页「发现音乐」只从白名单中随机推荐
+          搜索歌曲加入推荐白名单；推荐页面会优先展示白名单歌曲，未设置时随机推荐曲库中的已有音乐
         </p>
       </div>
 

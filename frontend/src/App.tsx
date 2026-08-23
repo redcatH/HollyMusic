@@ -20,6 +20,8 @@ import { usePlayerStore } from '@/lib/store/player-store'
 import { useSearchStore } from '@/lib/store/search-store'
 import { useAuthStore } from '@/hooks/useAuth'
 import { HomePage } from './routes/HomePage'
+import { DiscoveryCollectionPage } from './routes/DiscoveryCollectionPage'
+import { RecommendedMusicPage } from './routes/RecommendedMusicPage'
 import { SearchPage } from './routes/SearchPage'
 import { FavoritesPage } from './routes/FavoritesPage'
 import { PlaylistsPage } from './routes/PlaylistsPage'
@@ -30,8 +32,6 @@ import { LoginPage } from './routes/LoginPage'
 import { ChangePasswordPage } from './routes/ChangePasswordPage'
 import { AdminPage, AdminUsersPage, AdminSourcesPage, AdminRecommendPage } from './routes/AdminPage'
 
-const PROTECTED_PREFIXES = ['/favorites', '/playlists', '/history', '/admin', '/search']
-
 export function App() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -41,6 +41,8 @@ export function App() {
   const loadFavorites = useFavoritesStore(s => s.load)
   const playByUid = usePlayerStore(s => s.playByUid)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  // 播放引擎只创建一张原生 Audio；传给底栏与歌词详情共用同一分析对象。
+  const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null)
 
   // 启动时获取会话状态
   useEffect(() => {
@@ -64,36 +66,35 @@ export function App() {
     useSearchStore.getState().reset()
   }, [authenticated])
 
-  // 分享链接 ?uid= 自动播放（仅初始加载触发一次）
+  // 分享链接 ?uid= 自动播放 / ?playlist= 跳歌单详情（各只触发一次）。
+  // 等登录完成后由 location 驱动：未登录时守卫会先拦去登录页（携带 redirect），
+  // 登录回跳后 location 变化，在此接续——提前触发只会静默 401，且 ref 置位会导致回跳后不再播放。
   const autoPlayRef = useRef(false)
-  useEffect(() => {
-    if (autoPlayRef.current) return
-    const uid = new URLSearchParams(window.location.search).get('uid')
-    if (!uid) return
-    autoPlayRef.current = true
-    void playByUid(uid).catch(() => {})
-  }, [playByUid])
-
-  // 分享链接 ?playlist= 跳转歌单详情（仅初始加载触发一次）
   const playlistRef = useRef(false)
   useEffect(() => {
-    if (playlistRef.current) return
-    const pid = new URLSearchParams(window.location.search).get('playlist')
-    if (!pid) return
-    playlistRef.current = true
-    navigate(`/playlists/${pid}`, { replace: true })
-  }, [navigate])
+    if (authenticated !== true) return
+    const params = new URLSearchParams(location.search)
+    const uid = params.get('uid')
+    if (uid && !autoPlayRef.current) {
+      autoPlayRef.current = true
+      void playByUid(uid).catch(() => {})
+    }
+    const pid = params.get('playlist')
+    if (pid && !playlistRef.current) {
+      playlistRef.current = true
+      navigate(`/playlists/${pid}`, { replace: true })
+    }
+  }, [authenticated, location, playByUid, navigate])
 
-  // 路由守卫：未登录访问受保护页面 → 跳登录
+  // 全局路由守卫：除登录页外，所有页面都必须有有效会话。
+  // 携带原地址（含查询参数）作为 redirect，登录成功后回到来源页（分享链接 ?uid=/?playlist= 场景）。
   useEffect(() => {
     if (authenticated === null) return
-    if (authenticated === false) {
-      const isProtected = PROTECTED_PREFIXES.some(p => location.pathname.startsWith(p))
-      if (isProtected) {
-        navigate('/login', { replace: true })
-      }
+    if (authenticated === false && location.pathname !== '/login') {
+      const from = location.pathname + location.search
+      navigate(`/login?redirect=${encodeURIComponent(from)}`, { replace: true })
     }
-  }, [authenticated, location.pathname, navigate])
+  }, [authenticated, location.pathname, location.search, navigate])
 
   // 强制改密守卫：已登录但 mustChangePassword=true 时，除改密页外一律拦截到改密页
   useEffect(() => {
@@ -122,16 +123,24 @@ export function App() {
     }
   }, [drawerOpen])
 
-  // 登录页 / 改密页：独立全屏
-  if (location.pathname === '/login' || location.pathname === '/change-password') {
+  // 登录页无需已有会话；其余路由在校验完成前不渲染业务内容，避免未登录闪屏。
+  if (location.pathname === '/login') {
     return (
       <div className="min-h-screen bg-background text-foreground">
         <Routes>
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/change-password" element={<ChangePasswordPage />} />
         </Routes>
       </div>
     )
+  }
+
+  if (authenticated === null) return <div className="min-h-screen bg-background" />
+  if (authenticated === false) return null
+  if (mustChangePassword && location.pathname !== '/change-password') return <Navigate to="/change-password" replace />
+
+  // 改密页同样必须已登录，但保持独立全屏布局。
+  if (location.pathname === '/change-password') {
+    return <div className="min-h-screen bg-background text-foreground"><ChangePasswordPage /></div>
   }
 
   return (
@@ -143,6 +152,9 @@ export function App() {
         <main className="flex-1 overflow-y-auto">
           <Routes>
             <Route path="/" element={<HomePage />} />
+            <Route path="/recommend" element={<RecommendedMusicPage />} />
+            <Route path="/discover/toplists/:id" element={<DiscoveryCollectionPage kind="toplists" />} />
+            <Route path="/discover/playlists/:id" element={<DiscoveryCollectionPage kind="playlists" />} />
             <Route path="/search" element={<SearchPage />} />
             <Route path="/favorites" element={<FavoritesPage />} />
             <Route path="/playlists" element={<PlaylistsPage />} />
@@ -158,10 +170,10 @@ export function App() {
           </Routes>
         </main>
       </div>
-      <PlayerBar />
+      <PlayerBar audio={audioElement} onAudioElement={setAudioElement} />
       <MobileSidebar open={drawerOpen} onClose={() => setDrawerOpen(false)} />
       <QueuePanel />
-      <LyricsPanel />
+      <LyricsPanel audio={audioElement} />
       <SongContextMenu />
       <ToastContainer />
     </div>

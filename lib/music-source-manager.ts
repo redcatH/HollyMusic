@@ -11,6 +11,7 @@ import type { MusicInfo, QualityType, HealthStatus, SourceInfo } from './types/m
 import { ConfigValidator } from './config-validator'
 import { logger } from './logger'
 import { decodeLyricEntities } from './server/lyric-decode'
+import { normalizeStructuredLyricText } from './server/lyric-normalize'
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const LXEnvironmentSimulator = require('./music-core/index')
@@ -55,14 +56,14 @@ function extractLyric(result: unknown): { lyric: string; tlyric: string | null }
   if (!result) return null
   if (typeof result === 'string') {
     // 部分音源返回 HTML 实体编码歌词（&#x660E; 等），归一化时统一解码
-    const s = decodeLyricEntities(result.trim())
+    const s = normalizeStructuredLyricText(decodeLyricEntities(result.trim()))
     return s ? { lyric: s, tlyric: null } : null
   }
   if (typeof result === 'object') {
     const obj = result as Record<string, unknown>
-    const lyric = obj.lyric != null ? decodeLyricEntities(String(obj.lyric).trim()) : ''
+    const lyric = obj.lyric != null ? normalizeStructuredLyricText(decodeLyricEntities(String(obj.lyric).trim())) : ''
     if (!lyric) return null
-    const tlyricRaw = obj.tlyric != null ? decodeLyricEntities(String(obj.tlyric).trim()) : ''
+    const tlyricRaw = obj.tlyric != null ? normalizeStructuredLyricText(decodeLyricEntities(String(obj.tlyric).trim())) : ''
     return { lyric, tlyric: tlyricRaw || null }
   }
   return null

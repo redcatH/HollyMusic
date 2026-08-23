@@ -8,6 +8,8 @@ import { logger } from '@/lib/logger'
 import { buildSubsonicSearchCacheKey } from '@/lib/cache-key'
 import { getSearchCacheTTL } from '@/lib/cache-config'
 import { getSearchSources } from '@/lib/search-config'
+import type { AuthResult } from '@/lib/auth'
+import { listHistory } from '@/lib/services/history-service'
 // song id 统一使用 `source-songmid` 复合格式，保证跨源唯一
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -34,7 +36,7 @@ function parseDuration(interval: string | undefined) {
 }
 
 /** song 节点构造（空 query 随机分支用；与 getRandomSongs 端点同规则） */
-function buildRandomSongNode(s: MusicInfo, idx: number): SubsonicSongNode {
+function buildSongNode(s: MusicInfo, idx: number, created?: string): SubsonicSongNode {
   const songId = `${s.source}-${getStorageSongmidForMusicInfo(s) || s.songId || idx}`
   const meta = resolveSubsonicMediaMeta(s)
   return {
@@ -55,14 +57,38 @@ function buildRandomSongNode(s: MusicInfo, idx: number): SubsonicSongNode {
     albumId: songId,
     artistId: '',
     type: 'music',
+    ...(created ? { created } : {}),
   }
 }
 
-export async function handleSearch(request: NextRequest) {
+async function handleRecentSearch(
+  request: NextRequest,
+  username: string | undefined,
+  count: number,
+  offset: number
+): Promise<Response> {
+  const history = username ? await listHistory(username, { limit: count, offset }) : { list: [] }
+  const songs = history.list.flatMap((entry, index) => entry.musicInfo
+    ? [buildSongNode(entry.musicInfo, index, entry.playedAt)]
+    : [])
+  return respond(request, { searchResult3: { song: songs } })
+}
+
+export async function handleSearch(request: NextRequest, authRes?: AuthResult) {
   const url = new URL(request.url)
   const q = (url.searchParams.get('query') || url.searchParams.get('q') || '').trim()
   const songCount = parseSongCount(url.searchParams.get('songCount'))
   const songOffset = parseOffset(url.searchParams.get('songOffset') ?? undefined)
+
+  // 部分客户端以空 query + order=playDate 读取最近播放，不能误返回随机推荐。
+  if (!q && url.searchParams.get('order')?.toLowerCase() === 'playdate') {
+    try {
+      return await handleRecentSearch(request, authRes?.user?.username, songCount, songOffset)
+    } catch (err) {
+      logger.error('[subsonic-search] failed to list recent plays', err)
+      return subsonicError(request, 0, 'Failed to list recent plays')
+    }
+  }
 
   // 空 query：客户端（如箭头音乐）打开 App 时的「随便听听」预加载（artistCount/albumCount 也为 0）。
   // 与 PC 首页「发现音乐」同源：从推荐白名单随机抽取（getRandomMusicInfoList），
@@ -71,7 +97,7 @@ export async function handleSearch(request: NextRequest) {
     try {
       const allowedSources = getSearchSources()
       const songs = await getRandomMusicInfoList(songCount, allowedSources)
-      const songNodes = songs.map((s, idx) => buildRandomSongNode(s, idx))
+      const songNodes = songs.map((s, idx) => buildSongNode(s, idx))
       logger.debug('[subsonic-search] empty query -> random from recommended pool:', songNodes.length)
       return respond(request, { searchResult3: { song: songNodes } })
     } catch (err) {

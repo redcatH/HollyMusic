@@ -3,9 +3,14 @@ import { useEffect, useRef } from 'react'
 import { usePlayerStore } from '@/lib/store/player-store'
 import { useLyrics } from '@/hooks/useLyrics'
 import { CoverImage } from '@/components/shared/CoverImage'
+import { AudioSpectrum } from './AudioSpectrum'
 import { ChevronDown, Play, Pause, SkipBack, SkipForward, Loader2 } from 'lucide-react'
 
-export function LyricsPanel() {
+interface LyricsPanelProps {
+  audio: HTMLAudioElement | null
+}
+
+export function LyricsPanel({ audio }: LyricsPanelProps) {
   const isOpen = usePlayerStore(s => s.isLyricsOpen)
   const setLyricsOpen = usePlayerStore(s => s.setLyricsOpen)
   const track = usePlayerStore(s => s.currentTrack)
@@ -97,12 +102,18 @@ export function LyricsPanel() {
       {/* 底部：迷你播放条（封面+歌名/歌手+控制+关闭），safe-area-bottom 避开手势条 */}
       <div className="safe-area-bottom shrink-0 border-t border-border bg-card px-3 py-2">
         {/* 歌曲信息 */}
-        <div className="mb-2 flex min-w-0 items-center gap-3">
-          <CoverImage uid={track.uid} className="h-10 w-10 shrink-0" />
-          <div className="min-w-0 flex-1">
+        <div className="relative mb-2 flex min-w-0 items-center gap-3">
+          <CoverImage uid={track.uid} cacheKey={track.musicInfo.img} className="h-10 w-10 shrink-0" />
+          <div className="min-w-0 w-32 shrink-0 sm:w-52 md:w-64">
             <div className="truncate text-sm font-medium">{track.name}</div>
             <div className="truncate text-xs text-muted-foreground">{track.artist}</div>
           </div>
+          {/* 宽屏时以视口中央对齐；窄屏退回弹性布局，确保不裁切。 */}
+          <AudioSpectrum
+            audio={audio}
+            isPlaying={isPlaying}
+            className="h-7 min-w-0 flex-1 xl:absolute xl:left-1/2 xl:w-[min(48vw,52rem)] xl:-translate-x-1/2"
+          />
         </div>
         {/* 进度条（细线）+ 时间 */}
         <div className="mb-2 flex items-center gap-2 text-[10px] tabular-nums text-muted-foreground">

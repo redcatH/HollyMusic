@@ -5,10 +5,10 @@ import { handleStar, handleUnstar } from '@/lib/subsonic-favorites'
 import { handleCoverArtAsync, handleGetLyricsAsync, handleGetLyricsBySongIdAsync, handleGetAlbumAsync } from '@/lib/subsonic-metadata'
 import { handleGetSongAsync } from '@/lib/subsonic-song'
 import { handleGetRandomSongs } from '@/lib/subsonic-random'
-import { handleGetStarred } from '@/lib/subsonic-getstarred'
+import { handleGetStarred, handleGetStarred2 } from '@/lib/subsonic-getstarred'
 import { handleGetPlaylists, handleGetPlaylist, handleCreatePlaylist, handleDeletePlaylist, handleUpdatePlaylist } from '@/lib/subsonic-playlist'
 import { respond, subsonicError } from '@/lib/subsonic'
-import { handleGetOpenSubsonicExtensions, handleGetUser, handleGetAlbumList2, handleScrobble, handleGetSimilarSongs } from '@/lib/subsonic-system'
+import { handleGetLicense, handleGetOpenSubsonicExtensions, handleGetUser, handleGetAlbumList2, handleScrobble, handleGetSimilarSongs } from '@/lib/subsonic-system'
 import { handleStream } from '@/lib/subsonic-stream'
 import auth, { type AuthResult } from '@/lib/auth'
 import configSync from '@/lib/config-sync'
@@ -92,8 +92,11 @@ async function handleMethod(request: NextRequest, method: string) {
   switch (method) {
     case 'ping':
       return handlePing(request)
+    case 'getLicense':
+      // 传统 Subsonic 客户端的连接握手步骤；本服务不使用商业许可证。
+      return handleGetLicense(request)
     case 'search3':
-      return handleSearch(request)
+      return handleSearch(request, authRes)
     case 'stream':
       return handleStream(request)
     case 'star':
@@ -117,6 +120,8 @@ async function handleMethod(request: NextRequest, method: string) {
       return handleGetAlbumAsync(request, authRes)
     case 'getStarred':
       return handleGetStarred(request, authRes)
+    case 'getStarred2':
+      return handleGetStarred2(request, authRes)
     case 'getPlaylists':
       return handleGetPlaylists(request, authRes)
     case 'getPlaylist':

@@ -8,12 +8,15 @@ import { NowPlaying } from './NowPlaying'
 import { PlayerControls } from './PlayerControls'
 import { PlayerTools } from './PlayerTools'
 import { PlayerButton } from './PlayerButton'
-import { TransportButtons } from './TransportButtons'
-import { SeekBar } from './SeekBar'
 import { MobilePlayerMenu } from './MobilePlayerMenu'
 import { Mic2, ListMusic } from 'lucide-react'
 
-export function PlayerBar() {
+interface PlayerBarProps {
+  audio: HTMLAudioElement | null
+  onAudioElement: (audio: HTMLAudioElement | null) => void
+}
+
+export function PlayerBar({ audio, onAudioElement }: PlayerBarProps) {
   const streamUrl = usePlayerStore(s => s.streamUrl)
   const isPlaying = usePlayerStore(s => s.isPlaying)
   const volume = usePlayerStore(s => s.volume)
@@ -31,6 +34,7 @@ export function PlayerBar() {
   const skipNextPlayPauseRef = useRef(false)
 
   const { isReady, load, play, pause, seek, setVolume, setMuted } = useAudioPlayer({
+    onAudioElement,
     onTimeUpdate: t => usePlayerStore.getState().setCurrentTime(t),
     onDuration: d => usePlayerStore.getState().setDuration(d),
     onPlayState: p => usePlayerStore.getState().setIsPlaying(p),
@@ -58,10 +62,13 @@ export function PlayerBar() {
       skipNextPlayPauseRef.current = false
       return
     }
-    // 音频未 ready 时不主动调 play/pause（Howler 会排队，可能叠加）
-    if (!isReady) return
-    if (isPlaying) play()
-    else pause()
+    // 播放需等待就绪；暂停不能等待。否则用户在加载/缓冲期间点击暂停，
+    // 后续 play()/playing 事件仍可能把音频拉起。
+    if (!isPlaying) {
+      void pause()
+      return
+    }
+    if (isReady) void play()
   }, [isPlaying, isReady, play, pause])
 
   useEffect(() => {
@@ -79,31 +86,18 @@ export function PlayerBar() {
   }, [seekNonce, seek])
 
   return (
-    <>
-      {/* 桌面：单行三栏 */}
-      <footer className="safe-area-bottom hidden items-center justify-between gap-4 border-t border-border bg-card px-4 py-3 md:flex">
+    <footer className="safe-area-bottom flex flex-col gap-2 border-t border-border bg-card px-3 py-3 md:min-h-[136px] md:flex-row md:items-center md:justify-between md:gap-4 md:px-4">
+      {/* 单一 DOM 布局：桌面端横排三栏，移动端纵向排列。频谱只保留一张 canvas。 */}
+      <div className="flex items-center gap-1 md:contents">
         <NowPlaying />
-        <PlayerControls />
-        <PlayerTools />
-      </footer>
-
-      {/* 手机：两行（行1 信息+入口，行2 传输+进度） */}
-      <footer className="safe-area-bottom flex flex-col gap-2 border-t border-border bg-card px-3 py-2 md:hidden">
-        <div className="flex items-center gap-1">
-          <NowPlaying />
-          <div className="flex items-center">
-            <PlayerButton icon={Mic2} label="歌词" onClick={toggleLyrics} size="sm" />
-            <PlayerButton icon={ListMusic} label="队列" onClick={toggleQueue} size="sm" />
-            <MobilePlayerMenu />
-          </div>
+        <div className="flex items-center md:hidden">
+          <PlayerButton icon={Mic2} label="歌词" onClick={toggleLyrics} size="sm" />
+          <PlayerButton icon={ListMusic} label="队列" onClick={toggleQueue} size="sm" />
+          <MobilePlayerMenu />
         </div>
-        <div className="flex items-center gap-2">
-          <TransportButtons size="sm" />
-          <div className="flex flex-1 items-center gap-2">
-            <SeekBar />
-          </div>
-        </div>
-      </footer>
-    </>
+      </div>
+      <PlayerControls audio={audio} isPlaying={isPlaying} />
+      <PlayerTools />
+    </footer>
   )
 }

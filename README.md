@@ -1,6 +1,6 @@
 # 🎵 Holly Music
 
-> **直接兼容洛雪（LX Music）自定义音源** · 多源聚合 · 自部署 · PWA
+> **直接兼容洛雪（LX Music）自定义音源** · 多源聚合与发现 · 自部署 · PWA
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Docker](https://img.shields.io/badge/Docker-ghcr.io-blue?logo=docker)](https://github.com/redcatH/HollyMusic/pkgs/container/hollymusic)
@@ -11,14 +11,14 @@
 
 **聚合网络上的一切公开资源，让好音乐触手可及。**
 
-Holly Music 是一个纯自部署的在线音乐聚合播放器。内置 `lx-env-simulator` 兼容层，**可直接加载洛雪音乐（LX Music Desktop）的自定义音源脚本**——你手头已有的洛雪音源 `.js` 丢进来就能用，无需改造。同时聚合 QQ / 网易 / 酷我 / 酷狗 / 咪咕等平台，一个搜索框同时检索，质量自动回退（`flac24bit → flac → 320k → 128k`），提供搜索、播放、收藏、歌单、歌词、下载的一站式体验。
+Holly Music 是一个纯自部署的在线音乐聚合播放器。内置 `lx-env-simulator` 兼容层，**可直接加载洛雪音乐（LX Music Desktop）的自定义音源脚本**——你手头已有的洛雪音源 `.js` 丢进来就能用，无需改造。它可聚合多个公开音乐服务的内容，一个搜索框同时检索，质量自动回退（`flac24bit → flac → 320k → 128k`）；发现页还可浏览排行榜与推荐歌单。搜索、播放、收藏、歌单、歌词、下载均在同一套自托管服务中完成。
 
 **🎯 项目初衷**
 
 需求其实很简单：找个能听歌、能随手分享给家人朋友的地方。Holly Music 就是为这件事做的：
 
 - **支持洛雪音源**——洛雪（LX Music）社区有海量现成音源脚本，直接拿来用，不必重新造轮子
-- **尽可能不存储**——只做聚合与流式代理，不囤积音频源文件；服务端只保留收藏 / 歌单 / 历史这些必要数据
+- **缓存可控、数据自管**——不保存上游播放地址；可选的音频磁盘缓存用于 Range 播放与断点跳转，并按配额自动清理；收藏 / 歌单 / 历史等用户数据均保存在自己的服务器
 - **分享给家人朋友**——一次部署，多人共用，账号各自隔离，互不干扰
 - **浏览器打开就能听**——不装客户端、不挑系统，有网就有歌
 
@@ -26,8 +26,9 @@ Holly Music 是一个纯自部署的在线音乐聚合播放器。内置 `lx-env
 
 **为什么选 Holly Music？**
 
-- 🧩 **洛雪音源生态即插即用**——兼容 LX Music 自定义源 API 2.0.0，社区海量音源脚本直接复用，admin 后台拖拽上传、热重载生效
+- 🧩 **洛雪音源生态即插即用**——兼容 LX Music 自定义源 API 2.0.0，社区海量音源脚本直接复用；admin 可上传脚本，或粘贴在线订阅链接导入并手动更新，热重载即时生效
 - 🚀 **服务端磁盘缓存 + 边下边播**——音频落盘支持 HTTP Range，seek / 暂停 / 恢复丝滑，多用户共享缓存，LRU 自动清理
+- 🌍 **多平台发现内容**——排行榜、推荐歌单与详情页可直接浏览、播放或加入歌单
 - 📱 **PWA + 锁屏控制**——安装到主屏像原生 App，断网仍能打开 App Shell，锁屏 / 通知栏 / 耳机线控显示封面与播放控制
 - 🔐 **多用户隔离 + 自托管**——收藏、歌单、播放历史按用户隔离，数据在你自己的服务器，签名 Cookie 鉴权
 - 🤖 **AI 加持**——管理员可批量跑 AI 推荐任务，用户侧可用自然语言描述需求让 AI 协助建歌单
@@ -59,9 +60,15 @@ Holly Music 是一个纯自部署的在线音乐聚合播放器。内置 `lx-env
 ### 🎧 播放体验
 - **多源聚合**：一个搜索框，同时检索多个音源，质量回退（`flac24bit → flac → 320k → 128k`）
 - **服务端磁盘缓存 + 边下边播**：音频在服务端落盘并支持 HTTP Range，浏览器原生 seek / 暂停 / 恢复；多用户共享缓存，LRU 自动清理；上游不支持 Range 也能正常跳转
+- **原生 HTML5 播放引擎**：播放、暂停和切歌带平滑音量渐变；支持的浏览器会在底栏与全屏歌词播放详情显示实时频谱，无法提供 Web Audio 分析数据的浏览器自动保持为空
+- **本地精确歌词缓存**：音频完整缓存后，优先按歌曲所属音源的唯一标识获取原生歌词；缓存为与音频同级的 `.lrc`（翻译为 `.tlyric.lrc`），同一歌曲只保存一份，后续优先从本地读取
 - **失败自动跳歌**：某首拉取 500 / 解码失败时自动跳下一首，连续失败保护防止死循环
 - **音源热重载**：`config/music-sources.json` 变更自动检测 MD5，无需重启
 - **一键分享**：当前播放曲目、歌单详情页、歌曲右键菜单均可分享；移动端调起系统原生分享面板（Web Share API），桌面端自动降级为复制链接，打开链接即自动播放 / 加载歌单
+
+### 🌍 多源发现
+- **平台切换**：在发现页切换不同公开音乐服务，不依赖已配置的自定义搜索音源
+- **排行榜与推荐歌单**：查看各音源榜单、推荐歌单与曲目详情；可直接播放、加入播放队列或保存到自己的歌单
 
 ### 📱 移动端 & PWA
 - **响应式布局**：大屏侧边栏常驻，小屏自动切换顶部导航栏 + 抽屉式菜单
@@ -82,7 +89,7 @@ Holly Music 是一个纯自部署的在线音乐聚合播放器。内置 `lx-env
 
 ### 🔧 工程能力
 - **内存缓存**：搜索结果与播放 URL 缓存（默认 TTL 210 分钟）
-- **Subsonic 协议兼容**：通过 `/rest/[method]` 作为 Subsonic 服务端被外部客户端访问
+- **Subsonic 协议兼容**：通过 `/rest/[method]` 作为 Subsonic 服务端被外部客户端访问，覆盖搜索、随机歌曲、最近播放、收藏、歌单及歌单曲目等常用能力
 - **Docker 一键部署**：多阶段构建（前端 SPA + Next.js API + nginx 运行时），含 Prisma 自动迁移
 
 ---
@@ -107,7 +114,7 @@ Holly Music 是一个纯自部署的在线音乐聚合播放器。内置 `lx-env
 | 后端 | Next.js 16 (App Router, 仅 API 路由) |
 | 样式 | Tailwind CSS v4 |
 | 状态 | Zustand |
-| 音频 | Howler.js (html5 模式) + 服务端 Range 代理 |
+| 音频 | HTML5 Audio + Web Audio API（频谱）+ 服务端 Range 代理 |
 | 数据库 | Prisma + SQLite |
 | PWA | Service Worker + Web App Manifest + Media Session API |
 | 部署 | Docker / Docker Compose（nginx 托管 SPA + 反代 API） |
@@ -119,13 +126,14 @@ Holly Music 是一个纯自部署的在线音乐聚合播放器。内置 `lx-env
 ```
 ├── app/                        # Next.js 后端（仅 API，无页面）
 │   ├── api/                    # REST API（auth/audio/music-url/lyrics/admin...）
-│   │   ├── admin/              # admin 专属（users / login-locks / sources / cache）
+│   │   ├── admin/              # admin 专属（users / login-locks / sources / cache；含在线音源订阅）
 │   │   ├── audio/              # 音频流 serve（磁盘缓存 + Range）
 │   │   ├── auth/               # 登录/登出/会话/改密
 │   │   ├── cover/[id]/         # 封面代理
 │   │   ├── download/           # 下载代理（需登录）
 │   │   ├── favorites/          # 收藏（含 /check）
 │   │   ├── health/             # 健康检查
+│   │   ├── discover/           # 多平台排行榜、推荐歌单与详情
 │   │   ├── history/            # 播放历史
 │   │   ├── lyrics/             # 歌词
 │   │   ├── music-url/          # 获取播放地址
@@ -145,11 +153,11 @@ Holly Music 是一个纯自部署的在线音乐聚合播放器。内置 `lx-env
 │   └── package.json
 ├── components/                 # 共享 UI 组件（前端通过 @/ 引用）
 │   ├── layout/                 # 布局（AppShell/Sidebar/MobileHeader）
-│   ├── player/                 # 播放器（PlayerBar/PlayerControls/LyricsPanel/QueuePanel）
+│   ├── player/                 # 播放器（含 AudioSpectrum 实时频谱）
 │   ├── shared/                 # 通用组件（CoverImage/SongRow/LoadingSkeleton...）
 │   └── playlists/              # 歌单管理弹窗
 ├── hooks/                      # React Hooks（前端通过 @/ 引用）
-│   ├── useAudioPlayer.ts       # Howler 引擎封装（服务端 Range 代理）
+│   ├── useAudioPlayer.ts       # 原生 HTML5 Audio 引擎（服务端 Range 代理）
 │   ├── useMediaSession.ts      # 锁屏媒体控制
 │   ├── useDownload.ts          # 下载（带进度）
 │   ├── useSearch.ts            # 搜索
@@ -160,11 +168,12 @@ Holly Music 是一个纯自部署的在线音乐聚合播放器。内置 `lx-env
 │   ├── usePlayHistory.ts       # 播放历史
 │   └── useAuth.ts              # 鉴权
 ├── lib/                        # 业务核心
-│   ├── services/               # 服务层（auth/user-service/playlist-service...）
+│   ├── services/               # 服务层（auth/user-service/playlist-service/discovery/lyrics...）
 │   ├── store/                  # Zustand stores（player/favorites/discover/search）
 │   ├── api/                    # 前端 API 客户端
 │   ├── music-source-manager.ts # 音源管理与热重载
 │   ├── cache-manager.ts        # 内存缓存
+│   ├── server/lyric-cache.ts   # 音频同级 .lrc 歌词边车文件
 │   ├── subsonic*.ts            # Subsonic 协议实现
 │   └── logger.ts               # 日志
 ├── custom-sources/             # 自定义音源脚本（见下文）
@@ -408,7 +417,10 @@ docker compose up -d       # 重新创建容器（数据通过 volume 保留）
 
 admin 登录后，侧边栏头像下拉 →「音源管理」：
 - 上传 `.js` 脚本（自动预校验 + 注册到 `music-sources.json`）
+- 粘贴洛雪在线脚本链接导入订阅（自动下载、校验并保存脚本）；订阅源可在列表中手动「更新」以重新拉取原链接
 - 启停 / 编辑优先级 / 配置支持平台 / 删除（含关联脚本文件）
+
+> 订阅的链接与最近更新时间写入对应的 `config/music-sources.json` 条目；脚本内容仍保存在 `custom-sources/`，因此即使上游临时不可用，已导入的版本仍可继续使用。
 
 **方式二：手动编辑文件**
 
@@ -430,7 +442,7 @@ admin 登录后，侧边栏头像下拉 →「音源管理」：
 后端为 Next.js App Router，所有接口前缀 `/api`（Subsonic 协议走 `/rest`）。
 
 - **统一响应格式**：`{ success: boolean, data?: T, error?: { code, message } }`
-- **鉴权**：签名 Cookie（`holly_user` + `holly_sig`），分「公开 / 需登录 / 仅 admin」三级
+- **鉴权**：签名 Cookie（`holly_user` + `holly_sig`）。除分享落地页链路（`share` / `audio` / `cover`）与 `auth`、`health` 外，其余 `/api/*` 均需登录；`/rest/*` 为 Subsonic token 独立认证
 
 ### 对外接口
 
@@ -438,11 +450,11 @@ admin 登录后，侧边栏头像下拉 →「音源管理」：
 
 | 路径 | 方法 | 说明 |
 |------|------|------|
-| `/rest/[method]` | GET/POST | Subsonic 协议入口，外部客户端（DSub / Ultrasonic 等）接入点 |
-| `/api/share` | GET | 分享落地页（服务端渲染 HTML，`?uid=` 单曲试听，含 og 卡片） |
-| `/api/track` | GET | 曲目元数据反查（`?uid=`，分享链接自动播放用） |
-| `/api/audio` | GET/HEAD | 音频流（磁盘缓存 + Range，可被外部直接 GET） |
-| `/api/cover/[id]` | GET | 封面代理 |
+| `/rest/[method]` | GET/POST | Subsonic 协议入口，外部客户端（DSub / Ultrasonic 等）接入点（token 认证） |
+| `/api/share` | GET | 分享落地页（服务端渲染 HTML，`?uid=` 单曲试听，含 og 卡片；匿名可访问） |
+| `/api/track` | GET | 曲目元数据反查（`?uid=`，分享链接自动播放用；需登录） |
+| `/api/audio` | GET/HEAD | 音频流（磁盘缓存 + Range；分享试听链路，保持匿名可访问） |
+| `/api/cover/[id]` | GET | 封面代理（分享落地页封面来源，匿名可访问） |
 | `/api/download` | GET | 下载代理（需登录） |
 | `/api/health` | GET | 健康检查（Docker / 反代探活） |
 
@@ -451,16 +463,29 @@ admin 登录后，侧边栏头像下拉 →「音源管理」：
 前端 SPA 自用，路径即语义，参数与返回值以 `app/api/` 下各 `route.ts` 源码为准，统一遵循上述响应格式：
 
 - **鉴权** — `app/api/auth/*`：登录 / 登出 / 会话 / 改密 / 心跳
-- **搜索与播放** — `search` / `music-url` / `lyrics` / `random` / `search-sources`
+- **搜索与播放** — `search` / `music-url` / `lyrics` / `random` / `search-sources`（均需登录）
+- **发现内容** — `discover/toplists`、`discover/toplists/[id]`、`discover/playlists`、`discover/playlists/[id]`；通过 `source` 参数选择内容来源
 - **用户数据** — `favorites` / `history` / `playlists/*`（需登录，按用户隔离）
 - **AI 功能** — `playlist-assist/*`（用户侧 AI 建歌单）、`admin/recommend*`（admin 推荐任务）
-- **管理后台** — `app/api/admin/*`：用户 / 音源 / 缓存 / 登录锁定 / 推荐任务（仅 admin）
+- **管理后台** — `app/api/admin/*`：用户 / 音源（含 `sources/subscriptions` 在线订阅导入）/ 缓存 / 登录锁定 / 推荐任务（仅 admin）
+
+### Subsonic 常用兼容项
+
+除 `ping`、`stream`、`getSong`、`getCoverArt`、歌词等基础接口外，已验证常用客户端会调用的以下能力：
+
+- `search3`：普通搜索；空查询配合 `order=playDate` 时返回当前用户的最近播放
+- `getRandomSongs`：从数据库中已入库、当前可用音源的曲目随机抽取
+- `getStarred` / `getStarred2`、`star` / `unstar`：收藏读取与写入
+- `getPlaylists`、`getPlaylist`、`createPlaylist`、`updatePlaylist`、`deletePlaylist`：歌单及歌单曲目管理
+- `getAlbumList2`、`getAlbum`、`getLyricsBySongId`、`getOpenSubsonicExtensions`：专辑、结构化歌词与 OpenSubsonic 客户端兼容
+
+接口支持 XML 与 `f=json` JSON 响应。写操作要求有效的 Subsonic token 认证；具体认证开关见 `REQUIRE_AUTH` 配置与 `app/rest/[method]/route.ts`。
 
 ---
 
 ## 🧹 缓存管理
 
-项目有两层缓存：
+项目有三层缓存：
 
 1. **内存缓存**（`lib/cache-manager.ts`）：搜索结果与播放 URL，默认 TTL 210 分钟（可由 `SEARCH_CACHE_TTL_MS` 调整）。通过 `/api/admin/cache` 清理（需管理员）：
 
@@ -481,6 +506,8 @@ admin 登录后，侧边栏头像下拉 →「音源管理」：
    支持 `search` / `url` / `audio` / `all` / `scan-orphans` / `clean-orphans` 类型。若 nginx 强制 HTTP→HTTPS，请直接用 `https://` 或给 curl 加 `-L`。
 
 2. **音频磁盘缓存**（服务端落盘，`ENABLE_FILE_CACHE=true` 时启用）：LRU 自动清理，admin 可通过 `/api/admin/cache` 查询/清理。
+
+3. **歌词边车缓存**：音源精确歌词会以 `.lrc` 保存在某一份已缓存音频的同级目录，翻译歌词为 `.tlyric.lrc`。同一首歌只缓存一份；读取时会遍历该歌曲各音质的缓存记录查找，找到即直接使用。音频缓存被 LRU 清理时，关联边车文件会一同清理。
 
 ---
 

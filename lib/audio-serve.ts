@@ -27,6 +27,11 @@ import { EventEmitter } from 'events'
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { checkTrialAudio } from '@/lib/server/audio-integrity'
+import {
+  getLyricSidecarPath,
+  getTranslationLyricSidecarPath,
+  isLyricSidecarPath,
+} from '@/lib/server/lyric-cache'
 
 // ============================================================================
 // 配置
@@ -222,6 +227,8 @@ class AudioServe {
     rangeHeader: string | null
     isHead: boolean
     intervalSec: number
+    /** 音频完整写入缓存后触发的后台任务；失败不影响音频交付。 */
+    onCached?: () => Promise<void>
   }): Promise<Response> {
     const cfg = getAudioServeConfig()
 
@@ -238,13 +245,21 @@ class AudioServe {
       opts.isHead,
       opts.intervalSec
     )
-    if (complete) return complete
+    if (complete) {
+      this.runPostCacheTask(opts.cacheKey, opts.onCached)
+      return complete
+    }
 
     // 2. 进行中 → attach 到现有 entry
     // 3. miss    → 创建 entry 并启动后台下载
     let entry = this.inflight.get(opts.cacheKey)
     if (!entry) {
-      entry = await this.startDownload(opts.cacheKey, opts.upstreamUrlResolver, opts.intervalSec)
+      entry = await this.startDownload(
+        opts.cacheKey,
+        opts.upstreamUrlResolver,
+        opts.intervalSec,
+        opts.onCached
+      )
     }
 
     // 4. 等待 size 已知（fetch header 返回）—— 上游 hang 时这里有上限
@@ -349,7 +364,7 @@ class AudioServe {
           )
           await prisma.audioCache.delete({ where: { cacheKey } }).catch(() => {})
           // Windows 下文件被并发读者占用时删除失败 → 成为孤儿，由孤儿扫描回收
-          await fsp.unlink(filePath).catch(() => {})
+          await removeAudioCacheFiles(filePath)
           return null
         }
         this.rememberVerifiedKey(cacheKey)
@@ -384,7 +399,8 @@ class AudioServe {
   private async startDownload(
     cacheKey: string,
     upstreamUrlResolver: () => Promise<string>,
-    intervalSec: number
+    intervalSec: number,
+    onCached?: () => Promise<void>
   ): Promise<InflightEntry> {
     // 同步占位，保证并发请求只创建一个 entry（多用户去重核心）
     const entry: InflightEntry = {
@@ -399,7 +415,7 @@ class AudioServe {
     this.inflight.set(cacheKey, entry)
 
     // 后台异步执行（不阻塞调用方）
-    void this.runDownload(cacheKey, entry, upstreamUrlResolver, intervalSec).catch(e => {
+    void this.runDownload(cacheKey, entry, upstreamUrlResolver, intervalSec, onCached).catch(e => {
       // 防御纵深：runDownload 内部已 catch，正常不会到这里；
       // 但 emit('error') 在无监听者时会同步抛出（EventEmitter 语义），
       // 避免演变为 unhandled rejection 崩溃进程
@@ -416,7 +432,8 @@ class AudioServe {
     cacheKey: string,
     entry: InflightEntry,
     upstreamUrlResolver: () => Promise<string>,
-    intervalSec: number
+    intervalSec: number,
+    onCached?: () => Promise<void>
   ): Promise<void> {
     let stallTimer: NodeJS.Timeout | null = null
     try {
@@ -532,6 +549,7 @@ class AudioServe {
             lastAccessAt: new Date(),
           },
         })
+        this.runPostCacheTask(cacheKey, onCached)
       }
 
       entry.done = true
@@ -550,6 +568,14 @@ class AudioServe {
       this.inflight.delete(cacheKey)
       entry.emitter.removeAllListeners()
     }
+  }
+
+  /** 后台执行缓存关联任务（如精确歌词落盘），不阻塞音频响应。 */
+  private runPostCacheTask(cacheKey: string, task?: () => Promise<void>): void {
+    if (!task) return
+    void task().catch(error => {
+      logger.warn(`[AudioServe] 缓存后任务失败 ${cacheKey}:`, error)
+    })
   }
 
   // --------------------------------------------------------------------------
@@ -712,7 +738,7 @@ class AudioServe {
 
       for (const row of batch) {
         const filePath = path.join(cfg.cacheDir, row.filePath)
-        await fsp.unlink(filePath).catch(() => {})
+        await removeAudioCacheFiles(filePath)
         await prisma.audioCache.delete({ where: { cacheKey: row.cacheKey } }).catch(() => {})
         deleted++
         bytesFreed += row.size ?? 0
@@ -1035,6 +1061,15 @@ async function fileExists(p: string): Promise<boolean> {
   }
 }
 
+/** 删除音频缓存及其同目录的歌词边车文件。 */
+async function removeAudioCacheFiles(audioFilePath: string): Promise<void> {
+  await Promise.all([
+    fsp.unlink(audioFilePath).catch(() => {}),
+    fsp.unlink(getLyricSidecarPath(audioFilePath)).catch(() => {}),
+    fsp.unlink(getTranslationLyricSidecarPath(audioFilePath)).catch(() => {}),
+  ])
+}
+
 // ============================================================================
 // 全局单例
 // ============================================================================
@@ -1073,7 +1108,7 @@ export async function clearAllAudioCache(): Promise<{ count: number; bytes: numb
     let bytes = 0
     for (const row of all) {
       const fp = path.join(cfg.cacheDir, row.filePath)
-      await fsp.unlink(fp).catch(() => {})
+      await removeAudioCacheFiles(fp)
       bytes += row.size ?? 0
     }
     const result = await prisma.audioCache.deleteMany({})
@@ -1115,6 +1150,7 @@ export async function scanOrphanFiles(): Promise<{ count: number; bytes: number;
         await walk(full)
       } else if (e.isFile()) {
         const rel = path.relative(cfg.cacheDir, full).split(path.sep).join('/')
+        if (isLyricSidecarPath(rel)) continue
         if (!known.has(rel)) {
           try {
             const stat = await fsp.stat(full)

@@ -12,6 +12,8 @@
 import fs from 'fs'
 import fsp from 'fs/promises'
 import path from 'path'
+import dns from 'dns/promises'
+import net from 'net'
 import { logger } from '@/lib/logger'
 import { sanitizeFilename } from '@/lib/server/download-utils'
 import type { MusicSourcesConfig, SourceConfig } from '@/lib/types/music'
@@ -22,6 +24,15 @@ const SCRIPTS_DIR = path.resolve(process.cwd(), 'custom-sources')
 
 const VALID_PLATFORMS = ['tx', 'wy', 'kw', 'kg', 'mg'] as const
 const MAX_SCRIPT_SIZE = 5 * 1024 * 1024 // 5MB
+const SUBSCRIPTION_REQUEST_TIMEOUT_MS = 15_000
+const MAX_SUBSCRIPTION_REDIRECTS = 3
+
+export class SourceSubscriptionError extends Error {
+  constructor(message: string, public readonly status: number = 422) {
+    super(message)
+    this.name = 'SourceSubscriptionError'
+  }
+}
 
 /**
  * 通知 MusicSourceManager 重建实例，使配置改动立即生效。
@@ -164,6 +175,141 @@ export async function saveScript(originalName: string, content: string): Promise
   return rel
 }
 
+/** 将已存在的 custom-sources 脚本原子替换为新内容。 */
+async function replaceScript(relativePath: string, content: string): Promise<void> {
+  const target = path.resolve(process.cwd(), relativePath)
+  const relativeToScriptsDir = path.relative(SCRIPTS_DIR, target)
+  if (
+    !relativeToScriptsDir ||
+    relativeToScriptsDir.startsWith('..') ||
+    path.isAbsolute(relativeToScriptsDir) ||
+    path.extname(target).toLowerCase() !== '.js'
+  ) {
+    throw new SourceSubscriptionError('订阅脚本必须位于 custom-sources 目录且为 .js 文件', 400)
+  }
+
+  const tempPath = `${target}.tmp-${process.pid}-${Date.now()}`
+  await fsp.writeFile(tempPath, content, 'utf-8')
+  try {
+    await fsp.rename(tempPath, target)
+  } catch (err) {
+    await fsp.unlink(tempPath).catch(() => {})
+    throw err
+  }
+}
+
+function isPublicIp(address: string): boolean {
+  const version = net.isIP(address)
+  if (version === 4) {
+    const [first, second] = address.split('.').map(Number)
+    return !(
+      first === 0 ||
+      first === 10 ||
+      first === 127 ||
+      first >= 224 ||
+      (first === 100 && second >= 64 && second <= 127) ||
+      (first === 169 && second === 254) ||
+      (first === 172 && second >= 16 && second <= 31) ||
+      (first === 192 && second === 168) ||
+      (first === 198 && (second === 18 || second === 19))
+    )
+  }
+  if (version === 6) {
+    const normalized = address.toLowerCase()
+    if (normalized.startsWith('::ffff:')) return isPublicIp(normalized.slice('::ffff:'.length))
+    return !(
+      normalized === '::1' ||
+      normalized === '::' ||
+      normalized.startsWith('fc') ||
+      normalized.startsWith('fd') ||
+      normalized.startsWith('fe8') ||
+      normalized.startsWith('fe9') ||
+      normalized.startsWith('fea') ||
+      normalized.startsWith('feb')
+    )
+  }
+  return false
+}
+
+/** 校验远程订阅地址，拒绝本机及私网地址，避免管理员接口成为 SSRF 入口。 */
+async function validateSubscriptionUrl(value: string): Promise<URL> {
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    throw new SourceSubscriptionError('请输入有效的在线脚本链接', 400)
+  }
+
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    throw new SourceSubscriptionError('订阅链接仅支持 HTTP 或 HTTPS', 400)
+  }
+  if (url.username || url.password) {
+    throw new SourceSubscriptionError('订阅链接不能包含账号信息', 400)
+  }
+  if (url.hostname.toLowerCase() === 'localhost') {
+    throw new SourceSubscriptionError('不允许访问本机或内网订阅地址', 400)
+  }
+
+  const addresses = net.isIP(url.hostname)
+    ? [{ address: url.hostname }]
+    : await dns.lookup(url.hostname, { all: true, verbatim: true }).catch(() => [])
+  if (addresses.length === 0 || addresses.some(({ address }) => !isPublicIp(address))) {
+    throw new SourceSubscriptionError('不允许访问本机、内网或无法解析的订阅地址', 400)
+  }
+  return url
+}
+
+function getSubscriptionFilename(url: URL): string {
+  const filename = path.basename(decodeURIComponent(url.pathname))
+  return filename && filename !== '/' ? filename : 'lx-subscription.js'
+}
+
+/** 下载在线洛雪脚本，处理超时、大小限制和重定向。 */
+async function fetchSubscriptionScript(subscriptionUrl: string): Promise<{ content: string; filename: string }> {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), SUBSCRIPTION_REQUEST_TIMEOUT_MS)
+  try {
+    let url = await validateSubscriptionUrl(subscriptionUrl.trim())
+    const filename = getSubscriptionFilename(url)
+
+    for (let redirectCount = 0; redirectCount <= MAX_SUBSCRIPTION_REDIRECTS; redirectCount++) {
+      const response = await fetch(url, {
+        redirect: 'manual',
+        signal: controller.signal,
+        headers: { 'User-Agent': 'HollyMusic Source Subscription' },
+      })
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get('location')
+        if (!location) throw new SourceSubscriptionError('订阅链接重定向地址无效')
+        url = await validateSubscriptionUrl(new URL(location, url).toString())
+        continue
+      }
+      if (!response.ok) {
+        throw new SourceSubscriptionError(`下载订阅脚本失败：HTTP ${response.status}`)
+      }
+
+      const contentLength = Number(response.headers.get('content-length'))
+      if (Number.isFinite(contentLength) && contentLength > MAX_SCRIPT_SIZE) {
+        throw new SourceSubscriptionError(`订阅脚本过大，上限 ${MAX_SCRIPT_SIZE / 1024 / 1024}MB`)
+      }
+      const content = await response.text()
+      if (Buffer.byteLength(content, 'utf-8') > MAX_SCRIPT_SIZE) {
+        throw new SourceSubscriptionError(`订阅脚本过大，上限 ${MAX_SCRIPT_SIZE / 1024 / 1024}MB`)
+      }
+      return { content, filename }
+    }
+    throw new SourceSubscriptionError('订阅链接重定向次数过多')
+  } catch (err) {
+    if (err instanceof SourceSubscriptionError) throw err
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new SourceSubscriptionError('下载订阅脚本超时，请稍后重试')
+    }
+    throw new SourceSubscriptionError(`下载订阅脚本失败：${err instanceof Error ? err.message : '未知错误'}`)
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
 /** 删除脚本文件（忽略不存在） */
 export async function deleteScript(relativePath: string): Promise<void> {
   const abs = path.resolve(process.cwd(), relativePath)
@@ -201,6 +347,7 @@ export async function addSource(opts: {
   timeout?: number
   enabled?: boolean
   pt?: string[]
+  subscription?: SourceConfig['subscription']
 }): Promise<SourceConfig> {
   const config = await readConfig()
 
@@ -223,12 +370,71 @@ export async function addSource(opts: {
   if (opts.pt && opts.pt.length > 0) {
     newSource.pt = opts.pt.filter(p => (VALID_PLATFORMS as readonly string[]).includes(p))
   }
+  if (opts.subscription) newSource.subscription = opts.subscription
 
   config.sources.push(newSource)
   await writeConfig(config)
   await notifyReload()
   logger.info(`[source-manager-service] 新增源: ${newSource.path}`)
   return newSource
+}
+
+/** 从在线链接导入洛雪脚本，校验通过后自动注册为可更新订阅。 */
+export async function importSubscription(subscriptionUrl: string): Promise<SourceConfig> {
+  const normalizedUrl = subscriptionUrl.trim()
+  const { content, filename } = await fetchSubscriptionScript(normalizedUrl)
+  const validation = await validateScriptContent(content)
+  if (!validation.ok) {
+    throw new SourceSubscriptionError(`脚本校验失败：${validation.error || '未知错误'}`)
+  }
+
+  const relativePath = await saveScript(filename, content)
+  try {
+    const sourceInfo = validation.sourceInfo as { name?: string; description?: string } | undefined
+    const source = await addSource({
+      path: relativePath,
+      name: sourceInfo?.name || filename.replace(/\.js$/i, ''),
+      description: sourceInfo?.description,
+      enabled: true,
+      pt: extractPlatforms(validation.sourceInfo),
+      subscription: { url: normalizedUrl, updatedAt: new Date().toISOString() },
+    })
+    logger.info(`[source-manager-service] 已导入订阅脚本: ${normalizedUrl} → ${relativePath}`)
+    return source
+  } catch (err) {
+    await deleteScript(relativePath)
+    throw err
+  }
+}
+
+/** 手动拉取并更新一个已订阅的洛雪脚本。 */
+export async function updateSubscribedSource(sourcePath: string): Promise<SourceConfig> {
+  const config = await readConfig()
+  const index = config.sources.findIndex(source => source.path === sourcePath)
+  if (index < 0) throw new SourceSubscriptionError(`找不到源配置: ${sourcePath}`, 404)
+
+  const source = config.sources[index]
+  if (!source.subscription?.url) {
+    throw new SourceSubscriptionError('该音源不是在线订阅，无法更新', 400)
+  }
+
+  const { content } = await fetchSubscriptionScript(source.subscription.url)
+  const validation = await validateScriptContent(content)
+  if (!validation.ok) {
+    throw new SourceSubscriptionError(`脚本校验失败：${validation.error || '未知错误'}`)
+  }
+
+  await replaceScript(source.path, content)
+  const updated: SourceConfig = {
+    ...source,
+    pt: extractPlatforms(validation.sourceInfo),
+    subscription: { ...source.subscription, updatedAt: new Date().toISOString() },
+  }
+  config.sources[index] = updated
+  await writeConfig(config)
+  await notifyReload()
+  logger.info(`[source-manager-service] 已更新订阅脚本: ${source.subscription.url} → ${source.path}`)
+  return updated
 }
 
 /** 更新一条源配置（按 path 定位） */
@@ -291,4 +497,5 @@ export const SOURCE_MANAGER_CONSTANTS = {
   VALID_PLATFORMS,
   SCRIPTS_DIR,
   CONFIG_PATH,
+  SUBSCRIPTION_REQUEST_TIMEOUT_MS,
 }

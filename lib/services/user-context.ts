@@ -1,22 +1,16 @@
 /**
  * 请求用户上下文解析
  *
- * 提供两套入口：
- * - getAuthState / requireUser：基于签名 cookie 的鉴权，用于受保护路由（收藏/歌单/历史/下载）。
- * - getRequestUser：兼容旧逻辑，匿名也能解析出默认 admin，仅用于公开路由或过渡。
- *
- * 用户持久化复用 favorites.getOrCreateUserByName（与 config/users.json 的 admin 兼容）。
+ * 入口：getAuthState / requireUser / requireAdmin，基于签名 cookie 的鉴权，
+ * 用于受保护路由。公开路由（分享落地页链路、auth、health）不解析用户。
  */
 
 import { NextRequest } from 'next/server'
 import { PrismaClient } from '../generated/prisma'
-import { getOrCreateUserByName } from '../favorites'
 import { verifySession } from './auth'
 import { logger } from '../logger'
 
 const prisma = new PrismaClient()
-
-const DEFAULT_USERNAME = process.env.DEFAULT_USERNAME || 'admin'
 
 export interface RequestUser {
   id: number
@@ -118,19 +112,5 @@ export async function requireAdmin(request: NextRequest): Promise<RequestUser> {
   return user
 }
 
-/**
- * 兼容入口：解析当前请求的用户，未登录时回落到默认 admin。
- * 仅用于公开路由（搜索/播放等不需要隔离的场景）。
- *
- * 优先级：签名 cookie（已登录）> 默认 admin
- */
-export async function getRequestUser(request: NextRequest): Promise<RequestUser> {
-  const session = verifySession(request)
-  const username = (session.username || DEFAULT_USERNAME).trim()
-  const user = await getOrCreateUserByName(username)
-  logger.debug(`[user-context] resolved user: ${user.username} (${user.id})`)
-  return { id: user.id, username: user.username }
-}
-
-const userContextApi = { getAuthState, requireUser, requireAdmin, isAdmin, getRequestUser, AuthError, ForbiddenError }
+const userContextApi = { getAuthState, requireUser, requireAdmin, isAdmin, AuthError, ForbiddenError }
 export default userContextApi
