@@ -165,5 +165,10 @@ jobs:
           else
             git commit -m "chore(release): 同步 ${{ steps.rel.outputs.tag }} 更新日志与版本号"
             git pull --rebase origin main
-            git push origin main
+            # main 已启用分支保护（required check: CI），GITHUB_TOKEN 直推会被拒绝。
+            # 回写失败仅告警不挂 job：Release 与镜像此时已交付，cliff 按区间全量幂等
+            # 生成 CHANGELOG，下次成功回写时自动补齐；彻底解决需换 PAT / GitHub App 令牌。
+            if ! git push origin main; then
+              echo "::warning::CHANGELOG 回写被 main 分支保护拒绝（预期内），版本号与日志待下次回写补齐"
+            fi
           fi
