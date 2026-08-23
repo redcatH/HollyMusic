@@ -334,14 +334,19 @@ export function getStorageSongmidForMusicInfo(mi: MusicInfo): string {
   return getStorageSongmid(mi)
 }
 
-export async function upsertMusicInfo(mi: MusicInfo): Promise<{ action: 'insert' | 'update' | 'noop' }> {
-  try {
-    const checksum = computeChecksum(mi)
-    const dataJson = JSON.stringify(mi)
-    // 存储键：kg 用 FileHash，其他源用原 songmid（详见 getStorageSongmid）
-    const storageSongmid = getStorageSongmid(mi)
+type MusicInfoWriteClient = Pick<PrismaClient, 'musicInfo'>
+type UpsertMusicInfoAction = { action: 'insert' | 'update' | 'noop' }
 
-    const existing = await prisma.musicInfo.findUnique({
+async function upsertMusicInfoWithClient(
+  client: MusicInfoWriteClient,
+  mi: MusicInfo,
+): Promise<UpsertMusicInfoAction> {
+  const checksum = computeChecksum(mi)
+  const dataJson = JSON.stringify(mi)
+  // 存储键：kg 用 FileHash，其他源用原 songmid（详见 getStorageSongmid）
+  const storageSongmid = getStorageSongmid(mi)
+
+  const existing = await client.musicInfo.findUnique({
       where: {
         source_songmid: {
           source: mi.source,
@@ -353,13 +358,13 @@ export async function upsertMusicInfo(mi: MusicInfo): Promise<{ action: 'insert'
       },
     })
 
-    if (!existing) {
-      const durationSeconds = (() => {
+  if (!existing) {
+    const durationSeconds = (() => {
         const n = Number(mi.interval)
         return Number.isNaN(n) ? null : n
-      })()
+    })()
 
-      await prisma.musicInfo.create({
+    await client.musicInfo.create({
         data: {
           source: mi.source,
           songmid: storageSongmid,
@@ -391,20 +396,20 @@ export async function upsertMusicInfo(mi: MusicInfo): Promise<{ action: 'insert'
           mrcUrl: (mi as any).mrcUrl || null,
           trcUrl: (mi as any).trcUrl || null,
         },
-      })
-      return { action: 'insert' }
-    }
+    })
+    return { action: 'insert' }
+  }
 
-    if (existing.checksum === checksum) {
-      return { action: 'noop' }
-    }
+  if (existing.checksum === checksum) {
+    return { action: 'noop' }
+  }
 
-    const durationSeconds = (() => {
-      const n = Number(mi.interval)
-      return Number.isNaN(n) ? null : n
-    })()
+  const durationSeconds = (() => {
+    const n = Number(mi.interval)
+    return Number.isNaN(n) ? null : n
+  })()
 
-    await prisma.musicInfo.update({
+  await client.musicInfo.update({
       where: {
         source_songmid: {
           source: mi.source,
@@ -437,12 +442,32 @@ export async function upsertMusicInfo(mi: MusicInfo): Promise<{ action: 'insert'
         mrcUrl: (mi as any).mrcUrl || null,
         trcUrl: (mi as any).trcUrl || null,
       },
-    })
-    return { action: 'update' }
+  })
+  return { action: 'update' }
+}
+
+export async function upsertMusicInfo(mi: MusicInfo): Promise<UpsertMusicInfoAction> {
+  try {
+    return await upsertMusicInfoWithClient(prisma, mi)
   } catch (e) {
     console.error('upsertMusicInfo error', e)
     return { action: 'noop' }
   }
+}
+
+/**
+ * 将一批歌曲作为同一个 SQLite 事务入库，避免每首歌曲各自提交造成大量磁盘同步与写锁竞争。
+ * 任一写入失败会回滚整批，由调用方决定是否降级继续返回业务数据。
+ */
+export async function upsertMusicInfosInTransaction(musicInfos: MusicInfo[]): Promise<UpsertMusicInfoAction[]> {
+  if (musicInfos.length === 0) return []
+  return prisma.$transaction(async tx => {
+    const actions: UpsertMusicInfoAction[] = []
+    for (const musicInfo of musicInfos) {
+      actions.push(await upsertMusicInfoWithClient(tx, musicInfo))
+    }
+    return actions
+  }, { maxWait: 10_000, timeout: 30_000 })
 }
 
 const dbAPI = {
@@ -452,6 +477,7 @@ const dbAPI = {
   getMusicInfoListByAlbumId,
   getRandomMusicInfoList,
   upsertMusicInfo,
+  upsertMusicInfosInTransaction,
   resolveMusicInfoById,
   listRecommendedMusicInfo,
   setRecommendedStatus,

@@ -1,5 +1,5 @@
 import { searchCache } from '@/lib/cache-manager'
-import { getStorageSongmidForMusicInfo, upsertMusicInfo } from '@/lib/db'
+import { getStorageSongmidForMusicInfo, upsertMusicInfosInTransaction } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import type { MusicInfo, QualityInfo, QualityType, Song } from '@/lib/types/music'
 
@@ -67,6 +67,7 @@ type QQSong = {
   interval?: number
   file?: QQFile
 }
+
 // 与 lxserver 的 tx/leaderboard.js 保持同一批常用榜单；列表固定可用，详情实时请求。
 const TX_TOPLISTS: DiscoveryToplist[] = [
   { id: '4', name: '流行指数榜', description: 'QQ 音乐流行指数', cover: '', source: 'tx' },
@@ -198,9 +199,11 @@ async function enrichSongs(rawSongs: QQSong[]): Promise<Song[]> {
 }
 
 async function enrichMusicInfos(musicInfos: MusicInfo[]): Promise<Song[]> {
-  return Promise.all(musicInfos.map(async musicInfo => {
-    await upsertMusicInfo(musicInfo).catch(error => logger.warn('[discovery] song upsert failed', error))
-    return { ...musicInfo, uid: `${musicInfo.source}-${getStorageSongmidForMusicInfo(musicInfo)}` }
+  // 事务失败时直接向上抛出：不能把未入库、无法播放的歌曲缓存为成功详情。
+  await upsertMusicInfosInTransaction(musicInfos)
+  return musicInfos.map(musicInfo => ({
+    ...musicInfo,
+    uid: `${musicInfo.source}-${getStorageSongmidForMusicInfo(musicInfo)}`,
   }))
 }
 

@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { get, set, getStorageSongmidForMusicInfo, upsertMusicInfo } = vi.hoisted(() => ({
+const { get, set, getStorageSongmidForMusicInfo, upsertMusicInfosInTransaction } = vi.hoisted(() => ({
   get: vi.fn(),
   set: vi.fn(),
   getStorageSongmidForMusicInfo: vi.fn((musicInfo: { songmid: string }) => musicInfo.songmid),
-  upsertMusicInfo: vi.fn(),
+  upsertMusicInfosInTransaction: vi.fn(),
 }))
 
 vi.mock('@/lib/cache-manager', () => ({ searchCache: { get, set } }))
-vi.mock('@/lib/db', () => ({ getStorageSongmidForMusicInfo, upsertMusicInfo }))
+vi.mock('@/lib/db', () => ({ getStorageSongmidForMusicInfo, upsertMusicInfosInTransaction }))
 vi.mock('@/lib/logger', () => ({ logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 
 const { getRecommendedPlaylistDetail } = await import('./discovery-service')
@@ -21,7 +21,7 @@ describe('getRecommendedPlaylistDetail', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     get.mockReturnValue(undefined)
-    upsertMusicInfo.mockResolvedValue(undefined)
+    upsertMusicInfosInTransaction.mockResolvedValue(undefined)
   })
 
   it('TX 歌单详情缓存未命中时，按歌单 ID 直接请求详情而非回退到列表页', async () => {
@@ -57,5 +57,46 @@ describe('getRecommendedPlaylistDetail', () => {
       Origin: 'https://y.qq.com',
       Referer: 'https://y.qq.com/n/yqq/playsquare/deep-page-playlist.html',
     })
+  })
+
+  it('将歌单歌曲作为单个事务批量入库', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        code: 0,
+        cdlist: [{
+          songlist: [
+            { id: 1, mid: 'song-mid-1', name: '歌曲一', singer: [{ name: '歌手' }], album: { mid: 'album-mid', name: '专辑' }, interval: 180, file: { media_mid: 'media-mid-1', size_128mp3: 1024 } },
+            { id: 2, mid: 'song-mid-2', name: '歌曲二', singer: [{ name: '歌手' }], album: { mid: 'album-mid', name: '专辑' }, interval: 180, file: { media_mid: 'media-mid-2', size_128mp3: 1024 } },
+          ],
+        }],
+      }),
+    }))
+
+    await getRecommendedPlaylistDetail('tx', 'serial-write-playlist')
+
+    expect(upsertMusicInfosInTransaction).toHaveBeenCalledTimes(1)
+    expect(upsertMusicInfosInTransaction.mock.calls[0]?.[0]).toHaveLength(2)
+  })
+
+  it('批量入库失败时不返回或缓存不可播放的歌单详情', async () => {
+    const databaseError = Object.assign(new Error('database timeout'), { code: 'P1008' })
+    upsertMusicInfosInTransaction.mockRejectedValueOnce(databaseError)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        code: 0,
+        cdlist: [{
+          songlist: [{
+            id: 1, mid: 'song-mid', name: '测试歌曲', singer: [{ name: '测试歌手' }],
+            album: { mid: 'album-mid', name: '测试专辑' }, interval: 180,
+            file: { media_mid: 'media-mid', size_128mp3: 1024 },
+          }],
+        }],
+      }),
+    }))
+
+    await expect(getRecommendedPlaylistDetail('tx', 'failed-transaction-playlist')).rejects.toBe(databaseError)
+    expect(set).not.toHaveBeenCalled()
   })
 })
