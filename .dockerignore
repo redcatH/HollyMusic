@@ -11,6 +11,8 @@ dist
 frontend/dist
 
 # Development
+# .env 不进构建上下文：防止本地构建把开发者的密钥/数据库路径带进 builder 阶段
+.env
 .env.local
 .env.*.local
 .vscode
