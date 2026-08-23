@@ -9,13 +9,11 @@
 import { NextRequest } from 'next/server'
 import { createSuccessResponse, createErrorResponse, ErrorCodes } from '@/lib/api-response'
 import { searchCache } from '@/lib/cache-manager'
-import { upsertMusicInfo, getStorageSongmidForMusicInfo } from '@/lib/db'
+import { upsertMusicInfosInTransaction, getStorageSongmidForMusicInfo } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { requireUser, AuthError } from '@/lib/services/user-context'
 import type { SearchResult, SourceType, Song } from '@/lib/types/music'
-
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const musicSearch = require('@/lib/music-core/music-search')
+import * as musicSearch from '@/lib/music-core/music-search'
 
 // 搜索缓存时间：210 分钟
 const SEARCH_CACHE_TTL = 210 * 60 * 1000
@@ -63,13 +61,19 @@ export async function GET(request: NextRequest) {
 
     const result: SearchResult = await musicSearch.search(source, keyword, page, limit)
 
-    // 入库（带 checksum 去重）并附加对外 uid
-    const list: Song[] = await Promise.all(
-      result.list.map(async (mi) => {
-        await upsertMusicInfo(mi).catch((e) => logger.warn('search upsert failed', e))
-        return { ...mi, uid: `${mi.source}-${getStorageSongmidForMusicInfo(mi)}` }
-      })
-    )
+    // 整页搜索结果在同一事务内顺序写入，避免 SQLite 多写入并发争抢写锁。
+    // 入库失败时不返回或缓存无法被播放、歌词等接口查询到的 uid。
+    try {
+      await upsertMusicInfosInTransaction(result.list)
+    } catch (error) {
+      logger.error('search music info batch upsert failed', error)
+      return createErrorResponse(ErrorCodes.INTERNAL_ERROR, '搜索结果入库失败', 500)
+    }
+
+    const list: Song[] = result.list.map((mi) => ({
+      ...mi,
+      uid: `${mi.source}-${getStorageSongmidForMusicInfo(mi)}`,
+    }))
     const enriched = { ...result, list }
 
     searchCache.set(cacheKey, enriched, SEARCH_CACHE_TTL)
