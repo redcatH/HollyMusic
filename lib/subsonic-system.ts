@@ -54,11 +54,12 @@ export async function handleGetUser(request: NextRequest, authRes: AuthResult): 
       return subsonicError(request, 10, 'Missing required parameter: username')
     }
 
-    // 构建用户的响应节点。字段名称依赖于你的 Prisma `User` 模型；这里使用了可用字段并提供回退值。
     const username = user.username || ''
-    const email = (user as any).email || ''
-    const adminRole = Boolean((user as any).isAdmin || (user as any).admin)
-    const nickName = (user as any).nickName || (user as any).nick || ''
+    // Prisma User 模型（prisma/schema.prisma）无 email / isAdmin / nickName 字段，
+    // 以下按空值 / 非管理员返回，与原动态访问回退的运行时行为一致
+    const email = ''
+    const adminRole = false
+    const nickName = ''
 
     return respond(request, {
       user: {

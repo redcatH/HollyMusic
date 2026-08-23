@@ -2,6 +2,8 @@
 
 感谢你对 Holly Music 的兴趣！欢迎提交 Issue、Pull Request 或改进音源脚本。
 
+> 📢 **第一次参与开源？** 从带 [`good first issue`](https://github.com/redcatH/HollyMusic/labels/good%20first%20issue) 标签的 Issue 入手，这些是适合新人的任务；使用问题和想法讨论请到 [Discussions](https://github.com/redcatH/HollyMusic/discussions)。
+
 ## 🐛 提交 Issue
 
 - Bug 报告请使用 Bug Report 模板，附上复现步骤、预期/实际行为、环境信息（部署方式 / 浏览器 / 版本）
@@ -12,8 +14,8 @@
 
 ### 环境要求
 
-- Node.js 18+
-- pnpm（推荐）或 npm
+- Node.js 20+（与 CI、Docker 镜像一致）
+- pnpm 10（版本由 `package.json` 的 `packageManager` 字段锁定，`corepack enable` 后自动匹配）
 
 ### 本地启动
 
@@ -38,6 +40,8 @@ pnpm dev:all
 - **测试**：`pnpm test`
 - TypeScript 严格模式，新增代码需通过类型检查
 - 遵循现有代码风格（缩进、命名、注释密度）
+
+PR 提交后 CI 会自动运行 **lint / 类型检查 / 测试 / 构建**（根项目与 `frontend/` 两套），全部通过才能合并。建议本地先跑一遍以上命令，节省往返时间。
 
 ## 🔄 提交与 PR 流程
 
@@ -77,8 +81,14 @@ pnpm dev:all
 1. PR 请使用 Pull Request 模板填写
 2. 一个 PR 只做一件事，保持变更聚焦
 3. 描述清楚「改了什么」「为什么改」「如何测试」
-4. 确保 `pnpm lint` 与 `pnpm typecheck` 通过
+4. 确保本地 `pnpm lint`、`pnpm typecheck`、`pnpm test` 通过（CI 也会自动检查）
 5. 如涉及数据库 schema 变更，请创建新的 Prisma migration
+
+### 合并与署名
+
+- PR 以 **Squash and merge** 方式合入 `main`：一个 PR 对应 `main` 上一个提交，保持线性历史
+- 合并提交的 **author 自动归属 PR 发起者**；其他参与者（包括一起改过代码的维护者）会以 `Co-authored-by` 尾注保留署名，贡献计入 GitHub 贡献图
+- 更新日志由提交标题自动生成（见下方「发布」），请把 PR 标题当作更新日志条目来写：说清楚「改了什么、对用户意味着什么」
 
 ## ⚠️ 注意事项
 
@@ -94,6 +104,8 @@ pnpm dev:all
 - `MAJOR`：不兼容的 API 变更
 - `MINOR`：向后兼容的新功能
 - `PATCH`：向后兼容的 Bug 修复
+
+更新日志（[CHANGELOG.md](CHANGELOG.md) 与 GitHub Release）由 [git-cliff](https://git-cliff.org) 基于合入 `main` 的提交标题自动生成并分组——这也是要求遵循约定式提交的直接原因。发布由维护者打 tag 触发，贡献者无需关心。
 
 ---
 

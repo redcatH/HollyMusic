@@ -539,15 +539,6 @@ admin 登录后，侧边栏头像下拉 →「音源管理」：
 
 ---
 
-## 🤝 贡献指南
-
-- 基于 `main` 分支创建 feature 分支
-- 每次提交专注一项变更，commit message 遵循约定式提交（`feat(scope): xxx` / `fix(scope): xxx`）
-- 提交前运行 linter：`pnpm lint`
-- 不要随意修改 `lx-env-simulator/` 与 `lx-music-desktop-master/` 的核心逻辑
-
----
-
 ## 📜 常见问题
 
 **Q：无法打开数据库（`Error code 14: Unable to open the database file`）？**
@@ -586,6 +577,9 @@ A：Vite dev server 已配置代理 `/api` → `localhost:3000`，确保后端 `
 ## 🤝 贡献
 
 欢迎提交 Issue 和 Pull Request！请阅读 [贡献指南](CONTRIBUTING.md) 与 [行为准则](CODE_OF_CONDUCT.md)。
+
+- 新人可以从 [`good first issue`](https://github.com/redcatH/HollyMusic/labels/good%20first%20issue) 标签的任务入手
+- PR 通过 CI（lint / 类型检查 / 测试 / 构建）后，由维护者以 squash 方式合并，发起者自动作为提交作者署名
 
 ## 📋 更新日志
 

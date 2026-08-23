@@ -1,0 +1,58 @@
+name: CI
+
+# PR 与 main 直推时的代码质量门禁：lint / 类型检查 / 测试 / 构建
+# main 分支保护将本 job 设为 required check，全部通过才允许合并
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      # Prisma Client 实例化即读取 DATABASE_URL；SQLite file: 路径无需真实库文件，
+      # 单测与构建均不做真实连接（与 Docker 多阶段构建行为一致）
+      DATABASE_URL: file:./prisma/data/music.db
+      # 签名密钥缺失仅告警并回退开发 fallback，单测/构建无需真实值
+      AUTH_SECRET: ci-dummy-secret-not-for-production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # pnpm 版本锁定在 package.json 的 packageManager 字段，action 自动读取
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: pnpm
+          # 根目录与 frontend/ 各有一份 lockfile，都纳入缓存 key
+          cache-dependency-path: '**/pnpm-lock.yaml'
+
+      - name: Install dependencies (root + frontend)
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm -C frontend install --frozen-lockfile
+
+      # @prisma/client 为生成式产物，typecheck / test / build 前必须先生成
+      - name: Generate Prisma Client
+        run: pnpm prisma:generate
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: |
+          pnpm test
+          pnpm -C frontend test
+
+      - name: Build
+        run: |
+          pnpm build
+          pnpm -C frontend build

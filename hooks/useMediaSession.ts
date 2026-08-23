@@ -49,7 +49,7 @@ export function useMediaSession() {
     navigator.mediaSession.setActionHandler('previoustrack', () => store.previous())
     // seek 支持（耳机线控/锁屏进度条）
     try {
-      navigator.mediaSession.setActionHandler('seekto', (details: any) => {
+      navigator.mediaSession.setActionHandler('seekto', (details: MediaSessionActionDetails) => {
         if (details.seekTime != null) usePlayerStore.getState().seek(details.seekTime)
       })
     } catch {
