@@ -22,6 +22,12 @@ function generateRandomPassword(length = 16): string {
 }
 
 export async function syncUsersFromConfig(configPath?: string) {
+  // next build（SSG/prerender）期间不执行：此时生成 users.json 会写入构建容器，
+  // 随 Dockerfile 的 COPY config/ 打进镜像分发，且初始密码打印在公开的构建日志中。
+  // 运行时（含用户挂载的 config 卷）首次启动会自行生成并打印在用户自己的日志里。
+  if (process.env.NEXT_PHASE === 'phase-production-build') {
+    return { imported: 0, created: [] as string[] }
+  }
   try {
     const p = resolve(process.cwd(), configPath || process.env.USER_CONFIG_PATH || 'config/users.json')
     // 如果配置文件不存在，则创建默认配置文件（admin + 随机密码）
