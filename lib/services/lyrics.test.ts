@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
 const { findMany, getLyric, fetchNativeLyric, access, readFile, writeFile, rename, unlink } = vi.hoisted(() => ({
@@ -27,6 +28,17 @@ vi.mock('fs/promises', () => {
 
 const { cacheNativeLyricForMusic } = await import('./lyrics')
 
+// 与实现一致地按平台构造期望路径：resolveSidecarPaths 用 path.resolve(cacheDir, relative)，
+// Windows 上分隔符为反斜杠，POSIX 字面量断言会失败。
+const expectedLyricPath = path.resolve('/audio-cache', 'aa/song.lrc')
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+// 实现的临时文件名：`${lyricPath}.tmp-${process.pid}-${Date.now()}`
+const tmpPathPattern = new RegExp(`^${escapeRegExp(expectedLyricPath)}\\.tmp-\\d+-\\d+$`)
+
 describe('cacheNativeLyricForMusic', () => {
   it('原生接口无结果时，将渠道音源脚本返回的歌词写入缓存音频同级 .lrc', async () => {
     findMany.mockResolvedValue([{ filePath: 'aa/song.flac' }])
@@ -44,13 +56,13 @@ describe('cacheNativeLyricForMusic', () => {
 
     expect(getLyric).toHaveBeenCalled()
     expect(writeFile).toHaveBeenCalledWith(
-      expect.stringMatching(/\/audio-cache\/aa\/song\.lrc\.tmp-/),
+      expect.stringMatching(tmpPathPattern),
       '[00:01.00]渠道歌词',
       'utf-8',
     )
     expect(rename).toHaveBeenCalledWith(
-      expect.stringMatching(/\/audio-cache\/aa\/song\.lrc\.tmp-/),
-      '/audio-cache/aa/song.lrc',
+      expect.stringMatching(tmpPathPattern),
+      expectedLyricPath,
     )
   })
 })
