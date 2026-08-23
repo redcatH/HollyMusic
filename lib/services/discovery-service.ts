@@ -296,6 +296,7 @@ type KgSong = {
   album_id?: string | number
   duration?: string | number
   album_sizable_cover?: string
+  trans_param?: { union_cover?: string }
   hash?: string
   filesize?: number
   '320filesize'?: number
@@ -333,7 +334,7 @@ function toKgMusicInfo(raw: KgSong): MusicInfo | null {
     albumId: raw.album_id ? String(raw.album_id) : '',
     albumName: raw.remark || '',
     interval: String(raw.duration || 0),
-    img: normalizeCover(raw.album_sizable_cover?.replace('{size}', '400')) || null,
+    img: normalizeCover((raw.album_sizable_cover || raw.trans_param?.union_cover || '').replace('{size}', '400')) || null,
     hash: raw.hash,
     types,
     _types: qualityMap,
@@ -751,11 +752,127 @@ async function getMgRecommendedPlaylists(limit: number, page: number, filter: Di
   return collectMgRecommendedPlaylists(payload.data?.contents || []).slice(0, limit)
 }
 
-export async function getToplists(source: DiscoverySource = 'tx'): Promise<DiscoveryToplist[]> {
-  return getBoards(source)
+// ===== 榜单封面 =====
+// 榜单封面变化低频，长 TTL 缓存；失败不缓存（下次请求自然重试），取不到的榜单回退前端渐变占位。
+const TOPLIST_COVER_TTL = 60 * 60 * 1000
+/** single-flight：同 key 并发共享同一 Promise，防止缓存过期瞬间多用户击穿上游。 */
+const pendingToplistCovers = new Map<string, Promise<Map<string, string>>>()
+
+async function getWyToplistCovers(): Promise<Map<string, string>> {
+  const payload = await fetchJson<{ list?: Array<{ id?: number; coverImgUrl?: string }> }>('https://music.163.com/api/toplist/detail')
+  const covers = new Map<string, string>()
+  for (const item of payload.list || []) {
+    if (item.id && item.coverImgUrl) covers.set(String(item.id), normalizeCover(item.coverImgUrl))
+  }
+  return covers
 }
 
-export async function getToplistDetail(source: DiscoverySource, id: string): Promise<DiscoveryCollectionDetail | null> {
+async function getKgToplistCovers(): Promise<Map<string, string>> {
+  const payload = await fetchJson<{ data?: { info?: Array<{ rankid?: number | string; imgurl?: string }> } }>('http://mobilecdnbj.kugou.com/api/v5/rank/list?version=9108&plat=0&showtype=2&parentid=0&apiver=6&area_code=1&withsong=1')
+  const covers = new Map<string, string>()
+  for (const item of payload.data?.info || []) {
+    if (item.rankid && item.imgurl) covers.set(String(item.rankid), normalizeCover(item.imgurl.replace('{size}', '240')))
+  }
+  return covers
+}
+
+async function getKwToplistCovers(): Promise<Map<string, string>> {
+  const results = await Promise.allSettled(KW_TOPLISTS.map(async board => {
+    const payload = await fetchJson<{ pic?: string }>(`http://kbangserver.kuwo.cn/ksong.s?from=pc&fmt=json&pn=0&rn=1&type=bang&data=content&id=${encodeURIComponent(board.id)}&show_copyright_off=0&pcmp4=1&isbang=1`)
+    return [board.id, normalizeCover(payload.pic || '')] as const
+  }))
+  const covers = collectCovers(results)
+  // 部分榜单只返回残缺的目录 URL（如 .../BangPic/），下发给前端只会 404，剔除后走占位
+  for (const [id, cover] of covers) {
+    if (cover.endsWith('/')) covers.delete(id)
+  }
+  return covers
+}
+
+async function getTxToplistCovers(): Promise<Map<string, string>> {
+  const results = await Promise.allSettled(TX_TOPLISTS.map(async board => {
+    const payload = await requestMusicu<{ toplist?: { data?: { data?: { headPicUrl?: string } } } }>({
+      toplist: {
+        module: 'musicToplist.ToplistInfoServer',
+        method: 'GetDetail',
+        param: { topid: Number(board.id), num: 1, period: '' },
+      },
+      comm: { uin: 0, format: 'json', ct: 20, cv: 1859 },
+    })
+    return [board.id, normalizeCover(payload.toplist?.data?.data?.headPicUrl || '')] as const
+  }))
+  return collectCovers(results)
+}
+
+type MgRankNode = { rankId?: string | number; imageUrl?: string; imgUrl?: string; image?: string; img?: string; contents?: MgRankNode[] }
+
+function collectMgRankCovers(nodes: MgRankNode[], covers: Map<string, string> = new Map()): Map<string, string> {
+  for (const node of nodes) {
+    if (node.contents) collectMgRankCovers(node.contents, covers)
+    if (!node.rankId) continue
+    const cover = normalizeMgCover(node.imageUrl || node.imgUrl || node.image || node.img || '')
+    if (cover) covers.set(String(node.rankId), cover)
+  }
+  return covers
+}
+
+async function getMgToplistCovers(): Promise<Map<string, string>> {
+  const payload = await fetchJson<{ code?: string; data?: { contents?: MgRankNode[] } }>('https://app.c.nf.migu.cn/pc/bmw/rank/rank-index/v1.0', {
+    headers: {
+      Referer: 'https://app.c.nf.migu.cn/',
+      'User-Agent': 'Mozilla/5.0 (Linux; Android 5.1.1; Nexus 6 Build/LYZ28E) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/59.0.3071.115 Mobile Safari/537.36',
+      channel: '0146921',
+    },
+  })
+  if (payload.code !== '000000') throw new Error('咪咕未返回榜单列表')
+  return collectMgRankCovers(payload.data?.contents || [])
+}
+
+function collectCovers(results: PromiseSettledResult<readonly [string, string]>[]): Map<string, string> {
+  const covers = new Map<string, string>()
+  for (const result of results) {
+    if (result.status !== 'fulfilled') continue // 单项失败不拖垮整批
+    const [id, cover] = result.value
+    if (cover) covers.set(id, cover)
+  }
+  return covers
+}
+
+const toplistCoverFetchers: Record<DiscoverySource, () => Promise<Map<string, string>>> = {
+  wy: getWyToplistCovers,
+  tx: getTxToplistCovers,
+  kw: getKwToplistCovers,
+  kg: getKgToplistCovers,
+  mg: getMgToplistCovers,
+}
+
+async function getToplistCovers(source: DiscoverySource): Promise<Map<string, string>> {
+  const cacheKey = `discovery:v1:${source}:toplist-covers`
+  const cached = getCached<Map<string, string>>(cacheKey)
+  if (cached) return cached
+  const existing = pendingToplistCovers.get(cacheKey)
+  if (existing) return existing
+
+  const pending = toplistCoverFetchers[source]()
+    .then(covers => {
+      searchCache.set(cacheKey, covers, TOPLIST_COVER_TTL)
+      return covers
+    })
+    .catch(error => {
+      logger.warn(`[discovery] fetch ${source} toplist covers failed, fallback to placeholder covers`, error)
+      return new Map<string, string>()
+    })
+    .finally(() => pendingToplistCovers.delete(cacheKey))
+  pendingToplistCovers.set(cacheKey, pending)
+  return pending
+}
+
+export async function getToplists(source: DiscoverySource = 'tx'): Promise<DiscoveryToplist[]> {
+  const covers = await getToplistCovers(source)
+  return getBoards(source).map(board => ({ ...board, cover: covers.get(board.id) || '' }))
+}
+
+async function fetchToplistDetail(source: DiscoverySource, id: string): Promise<DiscoveryCollectionDetail | null> {
   const board = getBoards(source).find(item => item.id === id)
   if (!board) return null
   // v2：网易云公开接口字段已更新，避免复用旧字段映射写入的缓存。
@@ -809,6 +926,13 @@ export async function getToplistDetail(source: DiscoverySource, id: string): Pro
     tracks: await getSongsByIds(songIds),
   }
   searchCache.set(cacheKey, detail, CACHE_TTL)
+  return detail
+}
+
+export async function getToplistDetail(source: DiscoverySource, id: string): Promise<DiscoveryCollectionDetail | null> {
+  const detail = await fetchToplistDetail(source, id)
+  // kg/mg 榜单接口不返回封面，用第一首歌封面兜底
+  if (detail && !detail.cover) detail.cover = normalizeCover(detail.tracks[0]?.img || '')
   return detail
 }
 

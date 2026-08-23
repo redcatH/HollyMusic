@@ -22,6 +22,7 @@ export function RemoteCoverImage({ src, alt, className }: RemoteCoverImageProps)
       alt={alt}
       className={className}
       loading="lazy"
+      referrerPolicy="no-referrer"
       onError={() => {
         if (imageSrc !== FAILED_COVER) setImageSrc(FAILED_COVER)
       }}
