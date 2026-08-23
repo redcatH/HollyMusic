@@ -69,7 +69,8 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
     cancelVolumeFade()
     const from = Math.max(0, Math.min(1, audio.volume))
     const to = Math.max(0, Math.min(1, target))
-    if (duration <= 0 || Math.abs(from - to) < 0.001) {
+    // rAF 在后台标签页会冻结：隐藏时走瞬时路径，保证 load()/pause() 的 await 不悬挂、音量不滞留 0。
+    if (duration <= 0 || document.hidden || Math.abs(from - to) < 0.001) {
       audio.volume = to
       return Promise.resolve()
     }
@@ -157,14 +158,16 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
       startProgress()
     }
     const onPause = () => {
-      // 用自管理 seekingRef 区分：seek 引起的 spurious pause 静默，用户主动暂停正常上报
+      // 用自管理 seekingRef 区分：seek 引起的 spurious pause 静默，用户主动暂停正常上报。
+      // 意图只读：playbackIntentRef 仅由命令（load/play/pause）写入。load() 切歌时内部
+      // audio.pause() 的原生事件在同步代码把意图写回 'playing' 之后才异步到达，若在此
+      // 回写意图，会门控掉随后的 play/playing 事件，新歌被上层 pause() 掐死。
       if (seekingRef.current) return
-      playbackIntentRef.current = 'paused'
+      if (playbackIntentRef.current !== 'paused') return
       optsRef.current.onPlayState?.(false)
       stopProgress()
     }
     const onEnded = () => {
-      playbackIntentRef.current = 'paused'
       optsRef.current.onPlayState?.(false)
       stopProgress()
       optsRef.current.onEnd?.()
@@ -327,13 +330,24 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
           playbackIntentRef.current = 'playing'
           audio.volume = 0
           await audio.play()
-          if (gen !== loadGenRef.current) return
+          if (gen !== loadGenRef.current) {
+            // 已有更新的 load 接管音量；本代不得触碰，否则会打断新歌的淡入。
+            if (audioRef.current === audio) audio.volume = targetVolumeRef.current
+            return
+          }
           void fadeVolume(targetVolumeRef.current, 420)
         } catch (e) {
           // AbortError：play() 被 pause()/load() 打断（快速切歌），浏览器标准行为，忽略
           // gen 校验：过期 load（快速连切）的 play 结果不影响当前歌曲状态，避免状态闪变
           const name = e instanceof Error ? e.name : ''
-          if (name === 'AbortError' || gen !== loadGenRef.current) return
+          if (name === 'AbortError') {
+            // 音量此刻可能停在 0：恢复目标值，避免下次恢复播放时静音。
+            if (gen === loadGenRef.current && audioRef.current === audio) {
+              audio.volume = targetVolumeRef.current
+            }
+            return
+          }
+          if (gen !== loadGenRef.current) return
           audio.volume = targetVolumeRef.current
           console.warn('[useAudioPlayer] autoplay blocked', e)
           // autoplay 被浏览器拦截——同步 UI 状态，避免显示"播放中"但实际没声音

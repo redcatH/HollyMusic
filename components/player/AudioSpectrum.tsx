@@ -1,4 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
+import {
+  attachAnalysisPipeline,
+  getExistingAnalysisPipeline,
+  type AudioAnalysisPipeline,
+} from '@/lib/client/audio-analysis'
 
 interface AudioSpectrumProps {
   audio: HTMLAudioElement | null
@@ -6,45 +11,12 @@ interface AudioSpectrumProps {
   className?: string
 }
 
-interface AudioAnalysisPipeline {
-  context: AudioContext
-  analyser: AnalyserNode
-}
-
-type AudioContextConstructor = new () => AudioContext
-
-/** Safari 旧版仍以 webkitAudioContext 暴露 Web Audio。 */
-function getAudioContextConstructor(): AudioContextConstructor | null {
-  if (typeof window === 'undefined') return null
-  const legacyWindow = window as Window & { webkitAudioContext?: AudioContextConstructor }
-  return window.AudioContext ?? legacyWindow.webkitAudioContext ?? null
-}
-
-// 同一 Audio 元素只能创建一次 MediaElementSource；桌面/移动布局可能同时挂载，
-// 因此按音频元素复用分析管线。
-const pipelines = new WeakMap<HTMLAudioElement, AudioAnalysisPipeline>()
-
-function getPipeline(audio: HTMLAudioElement, AudioContextClass: AudioContextConstructor): AudioAnalysisPipeline {
-  const existing = pipelines.get(audio)
-  if (existing) return existing
-
-  const context = new AudioContextClass()
-  const analyser = context.createAnalyser()
-  analyser.fftSize = 512
-  analyser.smoothingTimeConstant = 0.8
-
-  const source = context.createMediaElementSource(audio)
-  source.connect(analyser)
-  analyser.connect(context.destination)
-
-  const pipeline = { context, analyser }
-  pipelines.set(audio, pipeline)
-  return pipeline
-}
-
 /**
  * 底栏频谱：参考 lxserver 的「全宽细密分块柱状」布局。
  * 播放、暂停之间保留短暂的视觉过渡；画布隐藏后停止绘制，避免后台耗电。
+ *
+ * 管线所有权在 lib/client/audio-analysis.ts：只允许在手势内把元素接入已确认
+ * running 的音频图；本组件拿不到 analyser 时按契约渲染空频谱，播放不受影响。
  */
 export function AudioSpectrum({ audio, isPlaying, className = '' }: AudioSpectrumProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -55,67 +27,58 @@ export function AudioSpectrum({ audio, isPlaying, className = '' }: AudioSpectru
 
   useEffect(() => {
     if (!audio) return
-    const AudioContextClass = getAudioContextConstructor()
-    if (!AudioContextClass) return
 
-    let attachedAnalyser: AnalyserNode | null = null
-    let resuming = false
-    const ensurePipeline = (): AudioAnalysisPipeline | null => {
-      try {
-        const pipeline = getPipeline(audio, AudioContextClass)
-        attachedAnalyser = pipeline.analyser
-        analyserRef.current = pipeline.analyser
-        return pipeline
-      } catch {
-        // 某些 Android 浏览器会拒绝在非用户手势中创建 MediaElementSource；下次手势再重试。
-        return null
-      }
-    }
-
-    const resume = () => {
-      const pipeline = ensurePipeline()
-      if (!pipeline || resuming) return
-      if (pipeline.context.state === 'running') return
-      resuming = true
-      // 必须在 pointer/touch/click 处理期间调用；否则部分移动浏览器会拒绝解锁 AudioContext。
-      void pipeline.context.resume()
-        .then(() => setPlaybackRevision(revision => revision + 1))
-        .catch(() => {})
-        .finally(() => {
-          resuming = false
-        })
-    }
-    const onStart = () => {
-      resume()
-      // store 的 isPlaying 在 audio.play() 前可能已经是 true；用原生事件重启绘制。
+    const bind = (pipeline: AudioAnalysisPipeline | null): boolean => {
+      if (!pipeline) return false
+      analyserRef.current = pipeline.analyser
       setPlaybackRevision(revision => revision + 1)
+      return true
+    }
+
+    // 手势路径：管线创建的唯一入口（模块内部保证仅在 context running 后接管）。
+    const onGesture = () => {
+      void attachAnalysisPipeline(audio).then(pipeline => {
+        if (!pipeline) return
+        bind(pipeline)
+        // 图被系统挂起（罕见）：手势内尝试恢复，失败则保持空频谱。
+        if (pipeline.context.state !== 'running') {
+          void pipeline.context.resume().then(
+            () => setPlaybackRevision(revision => revision + 1),
+            () => {},
+          )
+        }
+      })
+    }
+    // 非手势路径（原生事件、后挂载）：只复用既有管线，绝不创建——
+    // 在事件回调中创建的 context 无法获批运行，接管即冻结播放。
+    const onStart = () => {
+      // store 的 isPlaying 在 audio.play() 前可能已经是 true；用原生事件重启绘制。
+      bind(getExistingAnalysisPipeline(audio))
     }
     const onStop = () => setPlaybackRevision(revision => revision + 1)
+
     audio.addEventListener('play', onStart)
     audio.addEventListener('playing', onStart)
     audio.addEventListener('pause', onStop)
     audio.addEventListener('ended', onStop)
     // capture 阶段早于 React 的播放按钮 click，确保仍处在用户手势上下文中。
-    window.addEventListener('pointerdown', resume, { capture: true, passive: true })
-    window.addEventListener('touchstart', resume, { capture: true, passive: true })
-    window.addEventListener('touchend', resume, { capture: true, passive: true })
-    window.addEventListener('click', resume, { capture: true, passive: true })
-    // 详情页后挂载时复用底栏已初始化的管线，立即开始绘制。
-    if (pipelines.has(audio)) {
-      ensurePipeline()
-    }
-    if (!audio.paused) resume()
+    window.addEventListener('pointerdown', onGesture, { capture: true, passive: true })
+    window.addEventListener('touchstart', onGesture, { capture: true, passive: true })
+    window.addEventListener('touchend', onGesture, { capture: true, passive: true })
+    window.addEventListener('click', onGesture, { capture: true, passive: true })
+    // 详情页后挂载时复用底栏已初始化的管线，立即开始绘制；尚无管线则保持空频谱，等下个手势。
+    bind(getExistingAnalysisPipeline(audio))
 
     return () => {
       audio.removeEventListener('play', onStart)
       audio.removeEventListener('playing', onStart)
       audio.removeEventListener('pause', onStop)
       audio.removeEventListener('ended', onStop)
-      window.removeEventListener('pointerdown', resume, true)
-      window.removeEventListener('touchstart', resume, true)
-      window.removeEventListener('touchend', resume, true)
-      window.removeEventListener('click', resume, true)
-      if (analyserRef.current === attachedAnalyser) analyserRef.current = null
+      window.removeEventListener('pointerdown', onGesture, { capture: true })
+      window.removeEventListener('touchstart', onGesture, { capture: true })
+      window.removeEventListener('touchend', onGesture, { capture: true })
+      window.removeEventListener('click', onGesture, { capture: true })
+      analyserRef.current = null
     }
   }, [audio])
 
