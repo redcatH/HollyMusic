@@ -593,7 +593,13 @@ async function getTxPlaylistDetail(id: string): Promise<DiscoveryCollectionDetai
     inCharset: 'utf8', outCharset: 'utf-8', notice: '0', platform: 'yqq.json', needNewCode: '0',
   })
   const payload = await fetchJson<{ cdlist?: Array<{ dissname?: string; logo?: string; desc?: string; nickname?: string; songlist?: QQSong[] }> }>(
-    `https://c.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?${query}`
+    `https://c.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?${query}`,
+    {
+      headers: {
+        Origin: 'https://y.qq.com',
+        Referer: `https://y.qq.com/n/yqq/playsquare/${encodeURIComponent(id)}.html`,
+      },
+    },
   )
   const cd = payload.cdlist?.[0]
   if (!cd || !Array.isArray(cd.songlist) || cd.songlist.length === 0) return null
