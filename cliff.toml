@@ -42,7 +42,7 @@ body = """
 ### {{ group | striptags | trim }}
 
 {% for commit in commits %}\
-- {% if commit.scope %}**{{ commit.scope }}**：{% endif %}{{ commit.message }}
+- {% if commit.scope %}**{{ commit.scope }}**：{% endif %}{{ commit.message }}{% if commit.remote.pr_number %}（[@{{ commit.remote.username }}](https://github.com/redcatH/HollyMusic/pull/{{ commit.remote.pr_number }})）{% endif %}{% if commit.breaking %} ⚠️ **破坏性变更**：{{ commit.breaking_description | trim }}{% endif %}
 {% endfor %}
 
 {% endfor %}"""

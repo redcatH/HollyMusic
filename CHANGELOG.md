@@ -16,13 +16,28 @@
 
 > v0.17.0 之前的完整提交历史可执行 `git log v0.17.0` 查看。
 
+## v0.22.0（2026-08-23）
+
+**完整对比**：[v0.21.4 → v0.22.0](https://github.com/redcatH/HollyMusic/compare/v0.21.4...v0.22.0)
+
+### ✨ 新增功能
+
+- 完善发现页、在线音源订阅、歌词缓存与播放器体验 (#60)（[@a-ke](https://github.com/redcatH/HollyMusic/pull/60)） ⚠️ **破坏性变更**：匿名调用 /api/music-url、/api/lyrics、/api/track、/api/random 将返回 401，外部直连需先登录获取会话。
+
+
+### 🔧 工程与依赖
+
+- **release**：同步 v0.21.4 更新日志与版本号
+- 新增 PR 质量门禁与贡献指南对齐开源惯例 (#61)（[@redcatH](https://github.com/redcatH/HollyMusic/pull/61)）
+
+
 ## v0.21.4（2026-08-22）
 
 **完整对比**：[v0.21.3 → v0.21.4](https://github.com/redcatH/HollyMusic/compare/v0.21.3...v0.21.4)
 
 ### 🐛 问题修复
 
-- **subsonic**：search3 空 query 与 PC 发现音乐同源（白名单随机），恢复 songCount (#58)
+- **subsonic**：search3 空 query 与 PC 发现音乐同源（白名单随机），恢复 songCount (#58)（[@redcatH](https://github.com/redcatH/HollyMusic/pull/58)）
 
 
 ### 🔧 工程与依赖
@@ -36,12 +51,12 @@
 
 ### 🐛 问题修复
 
-- **subsonic**：歌曲元数据真实化——bitRate/size/suffix 按默认播放音质推断 (#56)
+- **subsonic**：歌曲元数据真实化——bitRate/size/suffix 按默认播放音质推断 (#56)（[@redcatH](https://github.com/redcatH/HollyMusic/pull/56)）
 
 
 ### ⚡ 性能优化
 
-- **cover**：压缩默认 404 封面，2048px/3.6MB → 512px/107KB (#57)
+- **cover**：压缩默认 404 封面，2048px/3.6MB → 512px/107KB (#57)（[@redcatH](https://github.com/redcatH/HollyMusic/pull/57)）
 
 
 ### 🔧 工程与依赖
@@ -56,7 +71,7 @@
 ### ✨ 新增功能
 
 - **ci**：tag 发布自动创建 GitHub Release 并自动维护 CHANGELOG
-- **subsonic**：统一响应构造层，支持 XML/JSON/JSONP 输出 (#55)
+- **subsonic**：统一响应构造层，支持 XML/JSON/JSONP 输出 (#55)（[@redcatH](https://github.com/redcatH/HollyMusic/pull/55)）
 
 
 ### 🐛 问题修复
