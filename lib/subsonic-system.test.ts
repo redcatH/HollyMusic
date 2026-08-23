@@ -12,7 +12,23 @@ vi.mock('./generated/prisma', () => ({
 vi.mock('./db', () => ({ resolveMusicInfoById }))
 vi.mock('./services/history-service', () => ({ reportPlay }))
 
-const { handleScrobble } = await import('./subsonic-system')
+const { handleGetLicense, handleScrobble } = await import('./subsonic-system')
+
+describe('handleGetLicense', () => {
+  it('向传统 Subsonic 客户端声明无需商业许可证', async () => {
+    const response = handleGetLicense(
+      new NextRequest('http://localhost/rest/getLicense.view?f=json'),
+    )
+
+    expect(await response.json()).toEqual({
+      'subsonic-response': {
+        status: 'ok',
+        version: '1.16.1',
+        license: { valid: true },
+      },
+    })
+  })
+})
 
 describe('handleScrobble', () => {
   beforeEach(() => {

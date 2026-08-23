@@ -9,6 +9,16 @@ import { logger } from './logger'
 const prisma = new PrismaClient()
 
 /**
+ * 返回许可证状态。
+ *
+ * 部分传统 Subsonic 客户端会在 ping 成功后立即调用 getLicense；即使服务端
+ * 不采用商业许可证模式，仍须返回 valid=true，否则客户端会将连接判定为失败。
+ */
+export function handleGetLicense(request: NextRequest): Response {
+  return respond(request, { license: { valid: true } })
+}
+
+/**
  * 返回支持的 OpenSubsonic 扩展列表（静态/可配置）
  */
 export async function handleGetOpenSubsonicExtensions(request: NextRequest, authRes: AuthResult): Promise<Response> {
