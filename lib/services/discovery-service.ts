@@ -588,28 +588,30 @@ async function getTxRecommendedPlaylists(limit: number, page = 1, filter: Discov
 /** 与 lx-music tx/songList.js 同一歌单详情端点：按 disstid 直取，不依赖列表页缓存。 */
 async function getTxPlaylistDetail(id: string): Promise<DiscoveryCollectionDetail | null> {
   const query = new URLSearchParams({
-    type: '1', json: '1', utf8: '1', onlysong: '0', new_format: '1',
-    disstid: id, loginUin: '0', hostUin: '0', format: 'json',
-    inCharset: 'utf8', outCharset: 'utf-8', notice: '0', platform: 'yqq.json', needNewCode: '0',
+    type: '1', json: '1', utf8: '1', onlysong: '0', new_format: '1', disstid: id,
+    loginUin: '0', hostUin: '0', format: 'json', inCharset: 'utf8', outCharset: 'utf-8',
+    notice: '0', platform: 'yqq.json', needNewCode: '0',
   })
-  const payload = await fetchJson<{ cdlist?: Array<{ dissname?: string; logo?: string; desc?: string; nickname?: string; songlist?: QQSong[] }> }>(
-    `https://c.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?${query}`,
-    {
-      headers: {
-        Origin: 'https://y.qq.com',
-        Referer: `https://y.qq.com/n/yqq/playsquare/${encodeURIComponent(id)}.html`,
-      },
+  const payload = await fetchJson<{
+    code?: number
+    cdlist?: Array<{ dissname?: string; logo?: string; desc?: string; nickname?: string; songlist?: QQSong[] }>
+  }>(`https://c.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?${query}`, {
+    headers: {
+      Origin: 'https://y.qq.com',
+      Referer: `https://y.qq.com/n/yqq/playsquare/${encodeURIComponent(id)}.html`,
     },
-  )
-  const cd = payload.cdlist?.[0]
-  if (!cd || !Array.isArray(cd.songlist) || cd.songlist.length === 0) return null
+  })
+  const info = payload.cdlist?.[0]
+  const songs = info?.songlist || []
+  if (payload.code !== 0 || songs.length === 0) return null
+
   return {
     id,
-    name: cd.dissname || 'QQ 推荐歌单',
-    description: cd.desc || '',
-    cover: normalizeCover(cd.logo),
-    author: cd.nickname || 'QQ 音乐',
-    tracks: await enrichSongs(cd.songlist),
+    name: info?.dissname || 'QQ 音乐推荐歌单',
+    description: info?.desc || '',
+    cover: normalizeCover(info?.logo),
+    author: info?.nickname || 'QQ 音乐',
+    tracks: await enrichSongs(songs),
   }
 }
 
