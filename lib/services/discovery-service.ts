@@ -67,8 +67,6 @@ type QQSong = {
   interval?: number
   file?: QQFile
 }
-type PlaylistRecord = DiscoveryPlaylist & { songIds: number[] }
-
 // 与 lxserver 的 tx/leaderboard.js 保持同一批常用榜单；列表固定可用，详情实时请求。
 const TX_TOPLISTS: DiscoveryToplist[] = [
   { id: '4', name: '流行指数榜', description: 'QQ 音乐流行指数', cover: '', source: 'tx' },
@@ -542,12 +540,38 @@ async function getSongsByIds(ids: number[]): Promise<Song[]> {
   return songs.sort((a, b) => (order.get(Number(a.songId)) ?? 999) - (order.get(Number(b.songId)) ?? 999))
 }
 
-async function getRecommendedPlaylistRecords(limit: number, page = 1, filter: DiscoveryPlaylistFilter = {}): Promise<PlaylistRecord[]> {
+async function getTxPlaylistDetail(id: string): Promise<DiscoveryCollectionDetail | null> {
+  const query = new URLSearchParams({
+    type: '1', json: '1', utf8: '1', onlysong: '0', new_format: '1', disstid: id,
+    loginUin: '0', hostUin: '0', format: 'json', inCharset: 'utf8', outCharset: 'utf-8',
+    notice: '0', platform: 'yqq.json', needNewCode: '0',
+  })
+  const payload = await fetchJson<{
+    code?: number
+    cdlist?: Array<{ dissname?: string; logo?: string; desc?: string; nickname?: string; songlist?: QQSong[] }>
+  }>(`https://c.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?${query}`, {
+    headers: {
+      Origin: 'https://y.qq.com',
+      Referer: `https://y.qq.com/n/yqq/playsquare/${encodeURIComponent(id)}.html`,
+    },
+  })
+  const info = payload.cdlist?.[0]
+  const songs = info?.songlist || []
+  if (payload.code !== 0 || songs.length === 0) return null
+
+  return {
+    id,
+    name: info?.dissname || 'QQ 音乐推荐歌单',
+    description: info?.desc || '',
+    cover: normalizeCover(info?.logo),
+    author: info?.nickname || 'QQ 音乐',
+    tracks: await enrichSongs(songs),
+  }
+}
+
+async function getTxRecommendedPlaylists(limit: number, page = 1, filter: DiscoveryPlaylistFilter = {}): Promise<DiscoveryPlaylist[]> {
   const safeLimit = Math.max(1, Math.min(limit, 30))
   const safePage = Math.max(1, Math.floor(page))
-  const cacheKey = `discovery:v2:tx:playlists:${safeLimit}:${safePage}:${filter.tag || ''}:${filter.sort || 'recommend'}`
-  const cached = getCached<PlaylistRecord[]>(cacheKey)
-  if (cached) return cached
 
   if (filter.tag) {
     const payload = await requestMusicu<{ playlist?: { code?: number; data?: { content?: { v_item?: Array<{ basic?: { tid?: number; title?: string; creator?: { nick?: string }; desc?: string; cover?: { medium_url?: string; default_url?: string }; play_cnt?: number; song_cnt?: number } }> } } } }>({
@@ -555,9 +579,8 @@ async function getRecommendedPlaylistRecords(limit: number, page = 1, filter: Di
       playlist: { module: 'playlist.PlayListCategoryServer', method: 'get_category_content', param: { titleid: Number(filter.tag), category_id: Number(filter.tag), caller: '0', size: safeLimit, page: safePage - 1, use_page: 1, order: filter.sort === 'hot' ? 5 : 2, sort: filter.sort === 'hot' ? 5 : 2 } },
     })
     const records = payload.playlist?.data?.content?.v_item?.map(item => ({
-      id: String(item.basic?.tid || ''), name: item.basic?.title || '', author: item.basic?.creator?.nick || 'QQ 音乐', description: item.basic?.desc || '', cover: normalizeCover(item.basic?.cover?.medium_url || item.basic?.cover?.default_url), playCount: item.basic?.play_cnt || 0, songCount: item.basic?.song_cnt || 0, source: 'tx' as const, songIds: [],
+      id: String(item.basic?.tid || ''), name: item.basic?.title || '', author: item.basic?.creator?.nick || 'QQ 音乐', description: item.basic?.desc || '', cover: normalizeCover(item.basic?.cover?.medium_url || item.basic?.cover?.default_url), playCount: item.basic?.play_cnt || 0, songCount: item.basic?.song_cnt || 0, source: 'tx' as const,
     })).filter(item => item.id && item.name) || []
-    searchCache.set(cacheKey, records, CACHE_TTL)
     return records
   }
   const payload = await requestMusicu<{
@@ -587,9 +610,7 @@ async function getRecommendedPlaylistRecords(limit: number, page = 1, filter: Di
       playCount: item.access_num || 0,
       songCount: item.song_ids?.length || 0,
       source: 'tx' as const,
-      songIds: item.song_ids || [],
     }))
-  searchCache.set(cacheKey, records, CACHE_TTL)
   return records
 }
 
@@ -836,19 +857,12 @@ export async function getRecommendedPlaylists(source: DiscoverySource = 'tx', li
     searchCache.set(cacheKey, playlists, CACHE_TTL)
     return playlists
   }
-  const records = await getRecommendedPlaylistRecords(safeLimit, safePage, filter)
-  const playlists = records.map(item => ({
-    id: item.id,
-    name: item.name,
-    author: item.author,
-    description: item.description,
-    cover: item.cover,
-    playCount: item.playCount,
-    songCount: item.songCount,
-    source: item.source,
-  }))
-  searchCache.set(cacheKey, playlists, CACHE_TTL)
-  return playlists
+  if (source === 'tx') {
+    const playlists = await getTxRecommendedPlaylists(safeLimit, safePage, filter)
+    searchCache.set(cacheKey, playlists, CACHE_TTL)
+    return playlists
+  }
+  throw new Error('Unsupported discovery source')
 }
 
 export async function getRecommendedPlaylistDetail(source: DiscoverySource, id: string): Promise<DiscoveryCollectionDetail | null> {
@@ -876,6 +890,7 @@ export async function getRecommendedPlaylistDetail(source: DiscoverySource, id: 
     return detail
   }
   const detail = await getTxPlaylistDetail(id)
-  if (detail) searchCache.set(cacheKey, detail, CACHE_TTL)
+  if (!detail) return null
+  searchCache.set(cacheKey, detail, CACHE_TTL)
   return detail
 }
