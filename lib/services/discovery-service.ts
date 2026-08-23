@@ -540,35 +540,6 @@ async function getSongsByIds(ids: number[]): Promise<Song[]> {
   return songs.sort((a, b) => (order.get(Number(a.songId)) ?? 999) - (order.get(Number(b.songId)) ?? 999))
 }
 
-async function getTxPlaylistDetail(id: string): Promise<DiscoveryCollectionDetail | null> {
-  const query = new URLSearchParams({
-    type: '1', json: '1', utf8: '1', onlysong: '0', new_format: '1', disstid: id,
-    loginUin: '0', hostUin: '0', format: 'json', inCharset: 'utf8', outCharset: 'utf-8',
-    notice: '0', platform: 'yqq.json', needNewCode: '0',
-  })
-  const payload = await fetchJson<{
-    code?: number
-    cdlist?: Array<{ dissname?: string; logo?: string; desc?: string; nickname?: string; songlist?: QQSong[] }>
-  }>(`https://c.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?${query}`, {
-    headers: {
-      Origin: 'https://y.qq.com',
-      Referer: `https://y.qq.com/n/yqq/playsquare/${encodeURIComponent(id)}.html`,
-    },
-  })
-  const info = payload.cdlist?.[0]
-  const songs = info?.songlist || []
-  if (payload.code !== 0 || songs.length === 0) return null
-
-  return {
-    id,
-    name: info?.dissname || 'QQ 音乐推荐歌单',
-    description: info?.desc || '',
-    cover: normalizeCover(info?.logo),
-    author: info?.nickname || 'QQ 音乐',
-    tracks: await enrichSongs(songs),
-  }
-}
-
 async function getTxRecommendedPlaylists(limit: number, page = 1, filter: DiscoveryPlaylistFilter = {}): Promise<DiscoveryPlaylist[]> {
   const safeLimit = Math.max(1, Math.min(limit, 30))
   const safePage = Math.max(1, Math.floor(page))
