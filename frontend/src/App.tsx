@@ -66,31 +66,35 @@ export function App() {
     useSearchStore.getState().reset()
   }, [authenticated])
 
-  // 分享链接 ?uid= 自动播放（仅初始加载触发一次）
+  // 分享链接 ?uid= 自动播放 / ?playlist= 跳歌单详情（各只触发一次）。
+  // 等登录完成后由 location 驱动：未登录时守卫会先拦去登录页（携带 redirect），
+  // 登录回跳后 location 变化，在此接续——提前触发只会静默 401，且 ref 置位会导致回跳后不再播放。
   const autoPlayRef = useRef(false)
-  useEffect(() => {
-    if (autoPlayRef.current) return
-    const uid = new URLSearchParams(window.location.search).get('uid')
-    if (!uid) return
-    autoPlayRef.current = true
-    void playByUid(uid).catch(() => {})
-  }, [playByUid])
-
-  // 分享链接 ?playlist= 跳转歌单详情（仅初始加载触发一次）
   const playlistRef = useRef(false)
   useEffect(() => {
-    if (playlistRef.current) return
-    const pid = new URLSearchParams(window.location.search).get('playlist')
-    if (!pid) return
-    playlistRef.current = true
-    navigate(`/playlists/${pid}`, { replace: true })
-  }, [navigate])
+    if (authenticated !== true) return
+    const params = new URLSearchParams(location.search)
+    const uid = params.get('uid')
+    if (uid && !autoPlayRef.current) {
+      autoPlayRef.current = true
+      void playByUid(uid).catch(() => {})
+    }
+    const pid = params.get('playlist')
+    if (pid && !playlistRef.current) {
+      playlistRef.current = true
+      navigate(`/playlists/${pid}`, { replace: true })
+    }
+  }, [authenticated, location, playByUid, navigate])
 
   // 全局路由守卫：除登录页外，所有页面都必须有有效会话。
+  // 携带原地址（含查询参数）作为 redirect，登录成功后回到来源页（分享链接 ?uid=/?playlist= 场景）。
   useEffect(() => {
     if (authenticated === null) return
-    if (authenticated === false && location.pathname !== '/login') navigate('/login', { replace: true })
-  }, [authenticated, location.pathname, navigate])
+    if (authenticated === false && location.pathname !== '/login') {
+      const from = location.pathname + location.search
+      navigate(`/login?redirect=${encodeURIComponent(from)}`, { replace: true })
+    }
+  }, [authenticated, location.pathname, location.search, navigate])
 
   // 强制改密守卫：已登录但 mustChangePassword=true 时，除改密页外一律拦截到改密页
   useEffect(() => {
