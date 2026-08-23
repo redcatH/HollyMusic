@@ -2,6 +2,8 @@
  * 音乐播放 URL 获取 API
  * POST /api/music-url
  * Body: { musicInfo: MusicInfo, quality?: QualityType }
+ *
+ * 需登录（requireUser），未登录返回 401。
  */
 
 import { NextRequest } from 'next/server'
@@ -9,6 +11,7 @@ import { createSuccessResponse, createErrorResponse, ErrorCodes } from '@/lib/ap
 import { urlCache } from '@/lib/cache-manager'
 import { logger } from '@/lib/logger'
 import { musicSourceManager } from '@/lib/music-source-manager'
+import { requireUser, AuthError } from '@/lib/services/user-context'
 import type { MusicInfo, QualityType } from '@/lib/types/music'
 
 // URL 缓存时间：210 分钟
@@ -16,6 +19,8 @@ const URL_CACHE_TTL = 210 * 60 * 1000
 
 export async function POST(request: NextRequest) {
   try {
+    await requireUser(request) // 未登录 → AuthError → 401
+
     const body = await request.json()
     const { musicInfo, quality = '320k' } = body as {
       musicInfo?: MusicInfo
@@ -76,6 +81,9 @@ export async function POST(request: NextRequest) {
 
     return createSuccessResponse({ url })
   } catch (error) {
+    if (error instanceof AuthError) {
+      return createErrorResponse('UNAUTHORIZED', error.message, 401)
+    }
     logger.error('获取播放 URL 失败:', error)
 
     const errorMessage = error instanceof Error ? error.message : '获取播放链接失败'

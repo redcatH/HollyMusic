@@ -442,7 +442,7 @@ admin 登录后，侧边栏头像下拉 →「音源管理」：
 后端为 Next.js App Router，所有接口前缀 `/api`（Subsonic 协议走 `/rest`）。
 
 - **统一响应格式**：`{ success: boolean, data?: T, error?: { code, message } }`
-- **鉴权**：签名 Cookie（`holly_user` + `holly_sig`），分「公开 / 需登录 / 仅 admin」三级
+- **鉴权**：签名 Cookie（`holly_user` + `holly_sig`）。除分享落地页链路（`share` / `audio` / `cover`）与 `auth`、`health` 外，其余 `/api/*` 均需登录；`/rest/*` 为 Subsonic token 独立认证
 
 ### 对外接口
 
@@ -450,11 +450,11 @@ admin 登录后，侧边栏头像下拉 →「音源管理」：
 
 | 路径 | 方法 | 说明 |
 |------|------|------|
-| `/rest/[method]` | GET/POST | Subsonic 协议入口，外部客户端（DSub / Ultrasonic 等）接入点 |
-| `/api/share` | GET | 分享落地页（服务端渲染 HTML，`?uid=` 单曲试听，含 og 卡片） |
-| `/api/track` | GET | 曲目元数据反查（`?uid=`，分享链接自动播放用） |
-| `/api/audio` | GET/HEAD | 音频流（磁盘缓存 + Range，可被外部直接 GET） |
-| `/api/cover/[id]` | GET | 封面代理 |
+| `/rest/[method]` | GET/POST | Subsonic 协议入口，外部客户端（DSub / Ultrasonic 等）接入点（token 认证） |
+| `/api/share` | GET | 分享落地页（服务端渲染 HTML，`?uid=` 单曲试听，含 og 卡片；匿名可访问） |
+| `/api/track` | GET | 曲目元数据反查（`?uid=`，分享链接自动播放用；需登录） |
+| `/api/audio` | GET/HEAD | 音频流（磁盘缓存 + Range；分享试听链路，保持匿名可访问） |
+| `/api/cover/[id]` | GET | 封面代理（分享落地页封面来源，匿名可访问） |
 | `/api/download` | GET | 下载代理（需登录） |
 | `/api/health` | GET | 健康检查（Docker / 反代探活） |
 
@@ -463,7 +463,7 @@ admin 登录后，侧边栏头像下拉 →「音源管理」：
 前端 SPA 自用，路径即语义，参数与返回值以 `app/api/` 下各 `route.ts` 源码为准，统一遵循上述响应格式：
 
 - **鉴权** — `app/api/auth/*`：登录 / 登出 / 会话 / 改密 / 心跳
-- **搜索与播放** — `search` / `music-url` / `lyrics` / `random` / `search-sources`
+- **搜索与播放** — `search` / `music-url` / `lyrics` / `random` / `search-sources`（均需登录）
 - **发现内容** — `discover/toplists`、`discover/toplists/[id]`、`discover/playlists`、`discover/playlists/[id]`；通过 `source` 参数选择内容来源
 - **用户数据** — `favorites` / `history` / `playlists/*`（需登录，按用户隔离）
 - **AI 功能** — `playlist-assist/*`（用户侧 AI 建歌单）、`admin/recommend*`（admin 推荐任务）
