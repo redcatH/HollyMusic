@@ -2,6 +2,12 @@ import { useEffect, useState } from 'react'
 
 const FAILED_COVER = '/icons/404.png'
 
+/** 远程封面统一走同源代理：平台图片域名常被浏览器广告拦截/跟踪防护屏蔽（ERR_BLOCKED_BY_CLIENT）。 */
+function toProxySrc(src: string): string {
+  if (!src || src.startsWith('/')) return src || FAILED_COVER
+  return `/api/image-proxy?url=${encodeURIComponent(src)}`
+}
+
 interface RemoteCoverImageProps {
   src: string
   alt: string
@@ -10,10 +16,10 @@ interface RemoteCoverImageProps {
 
 /** 远程封面请求失败时，统一展示本地失败占位图。 */
 export function RemoteCoverImage({ src, alt, className }: RemoteCoverImageProps) {
-  const [imageSrc, setImageSrc] = useState(src || FAILED_COVER)
+  const [imageSrc, setImageSrc] = useState(() => toProxySrc(src))
 
   useEffect(() => {
-    setImageSrc(src || FAILED_COVER)
+    setImageSrc(toProxySrc(src))
   }, [src])
 
   return (
