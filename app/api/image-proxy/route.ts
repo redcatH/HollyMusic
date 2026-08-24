@@ -13,7 +13,9 @@ import { searchCache } from '@/lib/cache-manager'
 import { logger } from '@/lib/logger'
 
 const ALLOWED_HOST_SUFFIXES = [
-  'y.gtimg.cn', 'qpic.cn', // QQ 音乐
+  'gtimg.cn', // QQ 图片 CDN（y.gtimg.cn / imgcache.gtimg.cn 等）
+  'qpic.cn', // QQ 歌单封面（p.qpic.cn）
+  'qpic.y.qq.com', // QQ 歌单封面另一域名族（生产实测）
   'music.126.net', // 网易云
   'kuwo.cn', // 酷我
   'kugou.com', 'kgimg.com', // 酷狗
