@@ -15,7 +15,7 @@ export function PlaylistsPage() {
   return (
     <div className="p-6">
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">我的歌单</h1>
+        <h1 className="hidden text-2xl font-bold md:block">我的歌单</h1>
         <div className="flex items-center gap-2">
           <button
             onClick={() => navigate('/playlists/ai-create')}

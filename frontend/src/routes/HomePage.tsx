@@ -113,7 +113,7 @@ export function HomePage() {
   return (
     <div className="p-6">
       <div className="mb-6 flex items-center justify-between">
-        <div><h1 className="text-2xl font-bold">发现音乐</h1><p className="text-sm text-muted-foreground">各平台实时榜单与精选歌单</p></div>
+        <div className="hidden md:block"><h1 className="text-2xl font-bold">发现音乐</h1><p className="text-sm text-muted-foreground">各平台实时榜单与精选歌单</p></div>
         <button onClick={refresh} className="flex items-center gap-1 rounded-full border border-border px-3 py-2 text-sm hover:bg-accent" disabled={isLoading}><RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /> 刷新</button>
       </div>
 

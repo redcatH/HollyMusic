@@ -36,7 +36,7 @@ export function FavoritesPage() {
 
   return (
     <div className="p-6">
-      <h1 className="mb-4 text-2xl font-bold">我的收藏</h1>
+      <h1 className="mb-4 hidden text-2xl font-bold md:block">我的收藏</h1>
       {loading ? (
         <LoadingSkeleton />
       ) : tracks.length > 0 ? (

@@ -29,7 +29,7 @@ export function HistoryPage() {
   return (
     <div className="p-6">
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">播放历史</h1>
+        <h1 className="hidden text-2xl font-bold md:block">播放历史</h1>
         {tracks.length > 0 && (
           <button
             onClick={handleClear}
