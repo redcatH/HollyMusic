@@ -14,6 +14,9 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // Windows 下 fswatcher 对 alias 指向的仓库根目录（frontend/ 之外）文件变更
+    // 偶发不触发 HMR，改用轮询保证根目录组件/工具的修改能热更新
+    ...(process.platform === 'win32' ? { watch: { usePolling: true, interval: 1000 } } : {}),
     // 开发时代理 /api 到 Next.js dev server (端口 3000)
     proxy: {
       '/api': {
