@@ -65,14 +65,36 @@ export const useSearchStore = create<SearchStore>((set, get) => ({
       const responses = await Promise.all(
         sources.map(s =>
           search(s, trimmed, 1, 30)
-            .then(r => r.list)
-            .catch(() => [] as Song[])
+            .then(r => ({ ok: true as const, list: r.list }))
+            .catch(err => ({ ok: false as const, err }))
         )
       )
       // 过期请求丢弃
       if (reqId !== get().reqId) return
+      const okLists: Song[][] = []
+      const failErrs: unknown[] = []
+      for (const r of responses) {
+        if (r.ok) okLists.push(r.list)
+        else failErrs.push(r.err)
+      }
+      if (okLists.length === 0) {
+        // 全部源失败：不能伪装成"未找到结果"，用户需要知道是服务/网络问题
+        const raw = failErrs[0] instanceof Error ? failErrs[0].message : ''
+        // fetch/JSON 解析等网络层报错对用户无意义，归一为友好文案；后端业务错误（中文 message）透出
+        const friendly = !raw || /Failed to execute|Network Error|fetch|JSON|ECONN/i.test(raw)
+          ? '网络异常或服务不可用，请稍后重试'
+          : raw
+        set({
+          results: [],
+          loading: false,
+          error: friendly,
+          lastKeyword: trimmed,
+          lastSource: source,
+        })
+        return
+      }
       set({
-        results: responses.flat(),
+        results: okLists.flat(),
         loading: false,
         error: null,
         lastKeyword: trimmed,

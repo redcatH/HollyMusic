@@ -15,6 +15,7 @@ export function useSearch() {
   const loading = useSearchStore(s => s.loading)
   const error = useSearchStore(s => s.error)
   const keyword = useSearchStore(s => s.keyword)
+  const lastKeyword = useSearchStore(s => s.lastKeyword)
   const source = useSearchStore(s => s.source)
   const setKeyword = useSearchStore(s => s.setKeyword)
   const setSource = useSearchStore(s => s.setSource)
@@ -25,5 +26,5 @@ export function useSearch() {
     [runStore]
   )
 
-  return { results, loading, error, keyword, source, setKeyword, setSource, run }
+  return { results, loading, error, keyword, lastKeyword, source, setKeyword, setSource, run }
 }

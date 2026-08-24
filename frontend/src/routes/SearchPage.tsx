@@ -3,7 +3,7 @@ import { useSearch } from '@/hooks/useSearch'
 import { SongList } from '@/components/shared/SongList'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { Search, Music, X } from 'lucide-react'
+import { Search, Music, X, CloudOff } from 'lucide-react'
 import { toTrack } from '@/lib/types/player'
 import type { SourceType } from '@/lib/types/music'
 
@@ -19,7 +19,7 @@ const SOURCES: { value: SourceType | 'all'; label: string }[] = [
 export function SearchPage() {
   // keyword/source/results/loading 全部来自 search-store（外部状态）：
   // 离开搜索页再回来时输入框与结果都保留。
-  const { results, loading, keyword, source, setKeyword, setSource, run } = useSearch()
+  const { results, loading, error, keyword, lastKeyword, source, setKeyword, setSource, run } = useSearch()
   const inputRef = useRef<HTMLInputElement>(null)
 
   const submit = (e: React.FormEvent) => {
@@ -97,10 +97,14 @@ export function SearchPage() {
 
       {loading ? (
         <LoadingSkeleton />
+      ) : error ? (
+        <EmptyState icon={CloudOff} title="搜索服务不可用" description={error} />
       ) : tracks.length > 0 ? (
         <SongList tracks={tracks} />
-      ) : keyword ? (
-        <EmptyState icon={Search} title="未找到结果" />
+      ) : lastKeyword ? (
+        // 用 lastKeyword（最近一次搜索的词）而非输入框实时文本：
+        // 输入过程中/清空再输入时不应显示"未找到结果"
+        <EmptyState icon={Search} title="未找到结果" description={`没有找到与“${lastKeyword}”相关的内容`} />
       ) : (
         <EmptyState icon={Music} title="开始搜索" description="输入歌曲名或歌手名开始探索" />
       )}
