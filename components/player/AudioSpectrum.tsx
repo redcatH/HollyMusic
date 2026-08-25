@@ -4,6 +4,7 @@ import {
   getExistingAnalysisPipeline,
   type AudioAnalysisPipeline,
 } from '@/lib/client/audio-analysis'
+import { spectrumSynth, SPECTRUM_SYNTH_BINS } from '@/lib/client/spectrum-synth'
 
 interface AudioSpectrumProps {
   audio: HTMLAudioElement | null
@@ -16,7 +17,8 @@ interface AudioSpectrumProps {
  * 播放、暂停之间保留短暂的视觉过渡；画布隐藏后停止绘制，避免后台耗电。
  *
  * 管线所有权在 lib/client/audio-analysis.ts：只允许在手势内把元素接入已确认
- * running 的音频图；本组件拿不到 analyser 时按契约渲染空频谱，播放不受影响。
+ * running 的音频图。拿不到 analyser 时（iOS 禁止接管、其他内核接管失败或
+ * 尚未完成）降级为 spectrum-synth 合成动画——纯视觉，不触碰音频链路。
  */
 export function AudioSpectrum({ audio, isPlaying, className = '' }: AudioSpectrumProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -66,7 +68,8 @@ export function AudioSpectrum({ audio, isPlaying, className = '' }: AudioSpectru
     window.addEventListener('touchstart', onGesture, { capture: true, passive: true })
     window.addEventListener('touchend', onGesture, { capture: true, passive: true })
     window.addEventListener('click', onGesture, { capture: true, passive: true })
-    // 详情页后挂载时复用底栏已初始化的管线，立即开始绘制；尚无管线则保持空频谱，等下个手势。
+    // 详情页后挂载时复用底栏已初始化的管线，立即开始绘制；尚无管线则渲染合成动画，
+    // 等下个手势接管（iOS 永远走合成，见 audio-analysis 的禁用说明）。
     bind(getExistingAnalysisPipeline(audio))
 
     return () => {
@@ -84,13 +87,16 @@ export function AudioSpectrum({ audio, isPlaying, className = '' }: AudioSpectru
 
   useEffect(() => {
     const canvas = canvasRef.current
+    if (!canvas) return
+    // null = 尚无/无法接管分析管线（iOS、接管失败的内核、手势前的首帧）→ 合成动画。
     const analyser = analyserRef.current
-    if (!canvas || !analyser) return
 
     const context = canvas.getContext('2d')
     if (!context) return
 
-    const frequencyData = new Uint8Array(analyser.frequencyBinCount)
+    const frequencyData = new Uint8Array(analyser ? analyser.frequencyBinCount : SPECTRUM_SYNTH_BINS)
+    // 合成模式的复用缓冲，避免逐帧分配；lerp 平滑等价 smoothingTimeConstant。
+    const synthTarget = analyser ? null : new Uint8Array(frequencyData.length)
     let frame: number | null = null
     let resizeTimer: ReturnType<typeof setTimeout> | null = null
     let width = 0
@@ -128,7 +134,14 @@ export function AudioSpectrum({ audio, isPlaying, className = '' }: AudioSpectru
       const visualLevel = startLevel + (targetLevel - startLevel) * eased
       visualLevelRef.current = visualLevel
 
-      analyser.getByteFrequencyData(frequencyData)
+      if (analyser) {
+        analyser.getByteFrequencyData(frequencyData)
+      } else if (synthTarget) {
+        spectrumSynth(synthTarget, now)
+        for (let i = 0; i < frequencyData.length; i++) {
+          frequencyData[i] += Math.round((synthTarget[i] - frequencyData[i]) * 0.22)
+        }
+      }
       context.clearRect(0, 0, width, height)
       context.fillStyle = getComputedStyle(canvas).color
 
