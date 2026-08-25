@@ -48,7 +48,7 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
   /** 用户设定的目标音量；淡入淡出只改变 audio.volume，不覆盖该偏好。 */
   const targetVolumeRef = useRef(1)
   /** 当前音量渐变。取消时也要结束旧 Promise，避免暂停流程卡在 await。 */
-  const volumeFadeRef = useRef<{ frame: number | null; resolve: () => void } | null>(null)
+  const volumeFadeRef = useRef<{ frame: number | null; target: number; resolve: () => void } | null>(null)
   /** 用户最后一次明确的播放意图优先于缓冲恢复带来的原生 playing 事件。 */
   const playbackIntentRef = useRef<'playing' | 'paused'>('paused')
   const [isReady, setIsReady] = useState(false)
@@ -76,7 +76,7 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
     }
 
     return new Promise(resolve => {
-      const activeFade = { frame: null as number | null, resolve }
+      const activeFade = { frame: null as number | null, target: to, resolve }
       volumeFadeRef.current = activeFade
       const start = performance.now()
       const tick = (now: number) => {
@@ -125,6 +125,17 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
     }
     window.addEventListener('touchstart', unlock, { once: true })
     window.addEventListener('click', unlock, { once: true })
+
+    // fadeVolume 只在调用时检查 document.hidden；淡入进行中退后台时 rAF 冻结，
+    // 音量会停在 0 附近，后台续播变成无声。隐藏瞬间直接落位到本次淡变的目标值。
+    const onVisibilityChange = () => {
+      if (!document.hidden) return
+      const activeFade = volumeFadeRef.current
+      if (!activeFade) return
+      cancelVolumeFade()
+      audio.volume = activeFade.target
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
 
     // ---- 原生事件绑定 ----
     // generation guard：比较 loadGenRef（每次 load 自增）与 activeGenRef（load 时设置）
@@ -238,6 +249,7 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
     return () => {
       window.removeEventListener('touchstart', unlock)
       window.removeEventListener('click', unlock)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
       audio.removeEventListener('loadedmetadata', onLoadedMetadata)
       audio.removeEventListener('canplay', onCanPlay)
       audio.removeEventListener('play', onPlay)

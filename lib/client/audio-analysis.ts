@@ -1,14 +1,15 @@
 /**
  * 频谱分析管线的所有权模块。
  *
- * 不变式（README 契约：无法提供 Web Audio 分析数据的浏览器频谱自动为空）：
+ * 不变式（无法提供 Web Audio 分析数据的浏览器——iOS、接管失败的内核——
+ * 频谱视觉由 AudioSpectrum 的合成动画兜底，见 lib/client/spectrum-synth.ts）：
  * 媒体元素只允许接入「已确认 running」的 AudioContext。
  *
  * 背景：createMediaElementSource 一旦执行不可撤销。若把元素接进 suspended 的
  * context，Chromium 系内核会冻结媒体时钟——进度停在 0:00、play() Promise
  * 永不 resolve、浏览器停止拉流且不触发任何 error 事件，播放被无声杀死。
  * 因此接管动作只允许发生在真实手势调用链中，且必须等待 context.resume()
- * 确认成功；任一前置失败 → 返回 null，频谱降级为空，下个手势重试。
+ * 确认成功；任一前置失败 → 返回 null，频谱降级为合成动画，下个手势重试。
  */
 
 export interface AudioAnalysisPipeline {
@@ -23,6 +24,19 @@ function getAudioContextConstructor(): AudioContextConstructor | null {
   if (typeof window === 'undefined') return null
   const legacyWindow = window as Window & { webkitAudioContext?: AudioContextConstructor }
   return window.AudioContext ?? legacyWindow.webkitAudioContext ?? null
+}
+
+/**
+ * iOS（含 iPadOS 与主屏 PWA）必须整体禁用频谱接管：元素一旦接入
+ * MediaElementAudioSourceNode，音频就只能经 AudioContext 输出，而 iOS 在
+ * 退后台/锁屏时会挂起 AudioContext——HTML5 本可后台续播的音频被无声杀死。
+ * 接管不可逆，因此唯一正确的做法是 iOS 上从一开始就不接管（频谱为空）。
+ */
+function isAppleMobile(): boolean {
+  if (typeof navigator === 'undefined') return false
+  if (/iPad|iPhone|iPod/.test(navigator.userAgent)) return true
+  // iPadOS 13+ 的 Safari 伪装成桌面 UA：MacIntel 平台 + 多触点即 iPad。
+  return navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1
 }
 
 /** 同一 Audio 元素只能创建一次 MediaElementSource；桌面/移动布局可能同时挂载，按元素复用。 */
@@ -77,6 +91,7 @@ export function attachAnalysisPipeline(audio: HTMLAudioElement): Promise<AudioAn
 async function createPipeline(audio: HTMLAudioElement): Promise<AudioAnalysisPipeline | null> {
   const AudioContextClass = getAudioContextConstructor()
   if (!AudioContextClass) return null
+  if (isAppleMobile()) return null
 
   let context: AudioContext | null = null
   try {
