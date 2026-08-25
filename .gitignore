@@ -75,6 +75,10 @@ next-env.d.ts
 /data/
 /test/
 
+# Next.js dev 日志 & GUI 测试截图（本地产物，不提交）
+.next-dev.log
+/gui-test-screenshots/
+
 # AI / 编辑器工具产物 (本地, 不提交)
 .zcode/
 .playwright-mcp/
