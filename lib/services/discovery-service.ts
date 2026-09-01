@@ -1,3 +1,4 @@
+import { createCipheriv, createHash } from 'node:crypto'
 import { searchCache } from '@/lib/cache-manager'
 import { getStorageSongmidForMusicInfo, upsertMusicInfosInTransaction } from '@/lib/db'
 import { logger } from '@/lib/logger'
@@ -149,12 +150,48 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   }
 }
 
+/**
+ * 酷我歌单搜索接口偶尔返回使用单引号的伪 JSON；lxserver 也对该响应做了兼容处理。
+ */
+async function fetchKwSearchJson<T>(url: string): Promise<T> {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT)
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Referer: 'https://www.kuwo.cn/',
+        'User-Agent': 'Mozilla/5.0',
+      },
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error(`音乐平台请求失败: ${response.status}`)
+    const text = await response.text()
+    try {
+      return JSON.parse(text) as T
+    } catch {
+      // 与 lxserver kw/util.js 的 objStr2JSON 保持同样的单引号字段兼容。
+      return JSON.parse(text.replace(/('(?=(,\s*')))|('(?=:))|((?<=([:,]\s*))')|((?<={)')|('(?=}))/g, '"')) as T
+    }
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
 async function requestMusicu<T>(body: unknown): Promise<T> {
   return fetchJson<T>(QQ_MUSICU_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
+}
+
+/** 使用 lxserver 同款 EAPI 加密请求网易云云搜索接口。 */
+function createWyEapiParams(path: string, body: unknown): string {
+  const text = JSON.stringify(body)
+  const digest = createHash('md5').update(`nobody${path}use${text}md5forencrypt`).digest('hex')
+  const payload = `${path}-36cd479b6b5-${text}-36cd479b6b5-${digest}`
+  const cipher = createCipheriv('aes-128-ecb', Buffer.from('e82ckenh8dichen8'), null)
+  return Buffer.concat([cipher.update(payload, 'utf8'), cipher.final()]).toString('hex').toUpperCase()
 }
 
 function toMusicInfo(song: QQSong): MusicInfo | null {
@@ -589,6 +626,116 @@ async function getTxRecommendedPlaylists(limit: number, page = 1, filter: Discov
   return records
 }
 
+type PlaylistSearchItem = {
+  id?: string | number
+  name?: string
+  author?: string
+  description?: string
+  cover?: string
+  playCount?: string | number
+  songCount?: string | number
+}
+
+function toSearchPlaylist(item: PlaylistSearchItem, source: DiscoverySource): DiscoveryPlaylist | null {
+  if (!item.id || !item.name) return null
+  return {
+    id: String(item.id),
+    name: item.name,
+    author: item.author || (source === 'wy' ? '网易云音乐' : source === 'kw' ? '酷我音乐' : source === 'kg' ? '酷狗音乐' : source === 'mg' ? '咪咕音乐' : 'QQ 音乐'),
+    description: item.description || '',
+    cover: normalizeCover(item.cover),
+    playCount: parseKgCount(item.playCount),
+    ...(Number(item.songCount) > 0 ? { songCount: Number(item.songCount) } : {}),
+    source,
+  }
+}
+
+/**
+ * 按平台实际歌单搜索接口查询，而不是从推荐页的一小段结果中筛选。
+ * 各平台搜索不支持分类/排序参数；keyword 存在时以搜索结果的分页语义为准。
+ */
+async function searchTxPlaylists(keyword: string, limit: number, page: number): Promise<DiscoveryPlaylist[]> {
+  const query = new URLSearchParams({
+    page_no: String(page - 1), num_per_page: String(limit), format: 'json', query: keyword,
+    remoteplace: 'txt.yqq.playlist', inCharset: 'utf8', outCharset: 'utf-8',
+  })
+  const payload = await fetchJson<{ code?: number; data?: { list?: Array<{ dissid?: string | number; dissname?: string; creator?: { name?: string }; introduction?: string; imgurl?: string; listennum?: string | number; song_count?: string | number }> } }>(`https://c.y.qq.com/soso/fcgi-bin/client_music_search_songlist?${query}`, {
+    headers: { Referer: 'https://y.qq.com/portal/search.html' },
+  })
+  if (payload.code !== 0) throw new Error('QQ 音乐未返回歌单搜索结果')
+  return (payload.data?.list || []).map(item => toSearchPlaylist({
+    id: item.dissid, name: item.dissname, author: item.creator?.name, description: item.introduction,
+    cover: item.imgurl, playCount: item.listennum, songCount: item.song_count,
+  }, 'tx')).filter((item): item is DiscoveryPlaylist => item !== null)
+}
+
+async function searchWyPlaylists(keyword: string, limit: number, page: number): Promise<DiscoveryPlaylist[]> {
+  const path = '/api/cloudsearch/pc'
+  const body = new URLSearchParams({
+    params: createWyEapiParams(path, { s: keyword, type: 1000, limit, total: page === 1, offset: limit * (page - 1) }),
+  })
+  const payload = await fetchJson<{ code?: number; result?: { playlists?: Array<{ id?: string | number; name?: string; coverImgUrl?: string; playCount?: number; trackCount?: number; creator?: { nickname?: string } }> } }>('https://interface.music.163.com/eapi/cloudsearch/pc', {
+    method: 'POST',
+    headers: {
+      Origin: 'https://music.163.com',
+      Referer: 'https://music.163.com/',
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body,
+  })
+  if (payload.code !== 200) throw new Error('网易云音乐未返回歌单搜索结果')
+  return (payload.result?.playlists || []).map(item => toSearchPlaylist({
+    id: item.id, name: item.name, author: item.creator?.nickname, cover: item.coverImgUrl,
+    playCount: item.playCount, songCount: item.trackCount,
+  }, 'wy')).filter((item): item is DiscoveryPlaylist => item !== null)
+}
+
+async function searchKwPlaylists(keyword: string, limit: number, page: number): Promise<DiscoveryPlaylist[]> {
+  const query = new URLSearchParams({
+    all: keyword, pn: String(page - 1), rn: String(limit), rformat: 'json', encoding: 'utf8',
+    ver: 'mbox', vipver: 'MUSIC_8.7.7.0_BCS37', plat: 'pc', devid: '28156413', ft: 'playlist', pay: '0', needliveshow: '0',
+  })
+  const payload = await fetchKwSearchJson<{ abslist?: Array<{ playlistid?: string | number; name?: string; nickname?: string; intro?: string; pic?: string; playcnt?: string | number; songnum?: string | number }> }>(`https://search.kuwo.cn/r.s?${query}`)
+  return (payload.abslist || []).map(item => toSearchPlaylist({
+    id: item.playlistid, name: item.name, author: item.nickname, description: item.intro,
+    cover: item.pic, playCount: item.playcnt, songCount: item.songnum,
+  }, 'kw')).filter((item): item is DiscoveryPlaylist => item !== null)
+}
+
+async function searchKgPlaylists(keyword: string, limit: number, page: number): Promise<DiscoveryPlaylist[]> {
+  const query = new URLSearchParams({ keyword, page: String(page), pagesize: String(limit), showtype: '10', filter: '0', version: '7910', sver: '2' })
+  const payload = await fetchJson<{ errcode?: number; data?: { info?: Array<{ specialid?: string | number; specialname?: string; nickname?: string; intro?: string; imgurl?: string; playcount?: string | number; songcount?: string | number }> } }>(`https://msearchretry.kugou.com/api/v3/search/special?${query}`)
+  if (payload.errcode !== 0) throw new Error('酷狗音乐未返回歌单搜索结果')
+  return (payload.data?.info || []).map(item => toSearchPlaylist({
+    id: item.specialid, name: item.specialname, author: item.nickname, description: item.intro,
+    cover: item.imgurl?.replace('{size}', '400'), playCount: item.playcount, songCount: item.songcount,
+  }, 'kg')).filter((item): item is DiscoveryPlaylist => item !== null)
+}
+
+async function searchMgPlaylists(keyword: string, limit: number, page: number): Promise<DiscoveryPlaylist[]> {
+  const timestamp = Date.now().toString()
+  const deviceId = '963B7AA0D21511ED807EE5846EC87D20'
+  const signature = createHash('md5').update(`${keyword}6cdc72a439cef99a3418d2a78aa28c73yyapp2d16148780a1dcc7408e06336b98cfd50${deviceId}${timestamp}`).digest('hex')
+  const searchSwitch = JSON.stringify({ song: 0, album: 0, singer: 0, tagSong: 0, mvSong: 0, bestShow: 0, songlist: 1, lyricSong: 0 })
+  const query = new URLSearchParams({ isCorrect: '1', isCopyright: '1', searchSwitch, pageSize: String(limit), text: keyword, pageNo: String(page), sort: '0', sid: 'USS' })
+  const payload = await fetchJson<{ songListResultData?: { result?: Array<{ id?: string | number; name?: string; userName?: string; musicListPicUrl?: string; playNum?: string | number; musicNum?: string | number }>; totalCount?: string | number } }>(`https://jadeite.migu.cn/music_search/v3/search/searchAll?${query}`, {
+    headers: { uiVersion: 'A_music_3.6.1', deviceId, timestamp, sign: signature, channel: '0146921' },
+  })
+  if (!payload.songListResultData) throw new Error('咪咕音乐未返回歌单搜索结果')
+  return (payload.songListResultData.result || []).map(item => toSearchPlaylist({
+    id: item.id, name: item.name, author: item.userName, cover: item.musicListPicUrl,
+    playCount: item.playNum, songCount: item.musicNum,
+  }, 'mg')).filter((item): item is DiscoveryPlaylist => item !== null)
+}
+
+async function searchPlaylists(source: DiscoverySource, keyword: string, limit: number, page: number): Promise<DiscoveryPlaylist[]> {
+  if (source === 'wy') return searchWyPlaylists(keyword, limit, page)
+  if (source === 'kw') return searchKwPlaylists(keyword, limit, page)
+  if (source === 'kg') return searchKgPlaylists(keyword, limit, page)
+  if (source === 'mg') return searchMgPlaylists(keyword, limit, page)
+  return searchTxPlaylists(keyword, limit, page)
+}
+
 /** 与 lx-music tx/songList.js 同一歌单详情端点：按 disstid 直取，不依赖列表页缓存。 */
 async function getTxPlaylistDetail(id: string): Promise<DiscoveryCollectionDetail | null> {
   const query = new URLSearchParams({
@@ -939,10 +1086,17 @@ export async function getToplistDetail(source: DiscoverySource, id: string): Pro
 export async function getRecommendedPlaylists(source: DiscoverySource = 'tx', limit = 12, page = 1, filter: DiscoveryPlaylistFilter = {}): Promise<DiscoveryPlaylist[]> {
   const safeLimit = Math.max(1, Math.min(limit, 30))
   const safePage = Math.max(1, Math.floor(page))
-  // v7：所有渠道的歌单列表均不再逐项请求详情，避免首页产生 N+1 请求。
-  const cacheKey = `discovery:v7:${source}:playlist-list:${safeLimit}:${safePage}:${filter.tag || ''}:${filter.sort || 'recommend'}:${filter.keyword || ''}`
+  const keyword = filter.keyword?.trim().slice(0, 100) || ''
+  // keyword 存在时使用各音乐平台的搜索接口；空关键词才是歌单广场/推荐列表。
+  const cacheKey = `discovery:v8:${source}:${keyword ? 'playlist-search' : 'playlist-list'}:${safeLimit}:${safePage}:${filter.tag || ''}:${filter.sort || 'recommend'}:${keyword}`
   const cached = getCached<DiscoveryPlaylist[]>(cacheKey)
   if (cached) return cached
+  if (keyword) {
+    const playlists = await searchPlaylists(source, keyword, safeLimit, safePage)
+    searchCache.set(cacheKey, playlists, CACHE_TTL)
+    return playlists
+  }
+  // 列表页不逐项请求详情，避免首页产生 N+1 请求。
   if (source === 'wy') {
     const playlists = await getWyRecommendedPlaylists(safeLimit, safePage, filter)
     searchCache.set(cacheKey, playlists, CACHE_TTL)

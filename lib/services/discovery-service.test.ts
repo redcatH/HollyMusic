@@ -11,7 +11,7 @@ vi.mock('@/lib/cache-manager', () => ({ searchCache: { get, set } }))
 vi.mock('@/lib/db', () => ({ getStorageSongmidForMusicInfo, upsertMusicInfosInTransaction }))
 vi.mock('@/lib/logger', () => ({ logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 
-const { getRecommendedPlaylistDetail } = await import('./discovery-service')
+const { getRecommendedPlaylistDetail, getRecommendedPlaylists } = await import('./discovery-service')
 
 describe('getRecommendedPlaylistDetail', () => {
   afterEach(() => {
@@ -98,5 +98,44 @@ describe('getRecommendedPlaylistDetail', () => {
 
     await expect(getRecommendedPlaylistDetail('tx', 'failed-transaction-playlist')).rejects.toBe(databaseError)
     expect(set).not.toHaveBeenCalled()
+  })
+})
+
+describe('getRecommendedPlaylists', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    get.mockReturnValue(undefined)
+  })
+
+  it('传入关键词时调用 QQ 音乐的歌单搜索接口，而不是推荐歌单列表接口', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        code: 0,
+        data: {
+          list: [{
+            dissid: '123', dissname: '周杰伦精选', creator: { name: '测试用户' },
+            introduction: '搜索接口返回', imgurl: 'http://example.com/cover.jpg', listennum: 12000, song_count: 30,
+          }],
+        },
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const playlists = await getRecommendedPlaylists('tx', 12, 2, { keyword: '周杰伦', tag: '3317', sort: 'hot' })
+
+    expect(playlists).toEqual([expect.objectContaining({
+      id: '123', name: '周杰伦精选', author: '测试用户', source: 'tx', cover: 'https://example.com/cover.jpg', songCount: 30,
+    })])
+    const [url] = fetchMock.mock.calls[0] as [string]
+    const requestUrl = new URL(url)
+    expect(requestUrl.pathname).toBe('/soso/fcgi-bin/client_music_search_songlist')
+    expect(requestUrl.searchParams.get('query')).toBe('周杰伦')
+    expect(requestUrl.searchParams.get('page_no')).toBe('1')
+    expect(requestUrl.searchParams.get('num_per_page')).toBe('12')
   })
 })
