@@ -1,16 +1,43 @@
 import { useState } from 'react'
+import { ListMusic, Plus, Sparkles } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import type { PlaylistSummary } from '@/lib/api/playlists'
+import { useAuthStore } from '@/hooks/useAuth'
 import { usePlaylists } from '@/hooks/usePlaylists'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { CreatePlaylistDialog } from '@@/components/playlists/CreatePlaylistDialog'
+import { DeletePlaylistDialog } from '@@/components/playlists/DeletePlaylistDialog'
+import { EditPlaylistDialog } from '@@/components/playlists/EditPlaylistDialog'
 import { PlaylistGrid } from '@@/components/playlists/PlaylistGrid'
-import { ListMusic, Plus, Sparkles } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
 
 export function PlaylistsPage() {
-  const { playlists, loading, create } = usePlaylists()
+  const { playlists, loading, create, rename, remove } = usePlaylists()
+  const currentUsername = useAuthStore(s => s.username)
   const [showCreate, setShowCreate] = useState(false)
+  const [editingPlaylist, setEditingPlaylist] = useState<PlaylistSummary | null>(null)
+  const [deletingPlaylist, setDeletingPlaylist] = useState<PlaylistSummary | null>(null)
   const navigate = useNavigate()
+
+  const handleRename = async (name: string) => {
+    if (!editingPlaylist) return
+    try {
+      await rename(editingPlaylist.id, name)
+      setEditingPlaylist(null)
+    } catch (error) {
+      alert(error instanceof Error ? error.message : '保存失败')
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!deletingPlaylist) return
+    try {
+      await remove(deletingPlaylist.id)
+      setDeletingPlaylist(null)
+    } catch (error) {
+      alert(error instanceof Error ? error.message : '删除失败')
+    }
+  }
 
   return (
     <div className="p-6">
@@ -35,7 +62,12 @@ export function PlaylistsPage() {
       {loading ? (
         <LoadingSkeleton count={4} />
       ) : playlists.length > 0 ? (
-        <PlaylistGrid playlists={playlists} />
+        <PlaylistGrid
+          playlists={playlists}
+          currentUsername={currentUsername}
+          onEdit={setEditingPlaylist}
+          onDelete={setDeletingPlaylist}
+        />
       ) : (
         <EmptyState icon={ListMusic} title="还没有歌单" description="新建一个歌单开始整理" />
       )}
@@ -47,6 +79,22 @@ export function PlaylistsPage() {
             await create(name)
             setShowCreate(false)
           }}
+        />
+      )}
+
+      {editingPlaylist && (
+        <EditPlaylistDialog
+          initialName={editingPlaylist.name}
+          onClose={() => setEditingPlaylist(null)}
+          onSave={handleRename}
+        />
+      )}
+
+      {deletingPlaylist && (
+        <DeletePlaylistDialog
+          playlistName={deletingPlaylist.name}
+          onClose={() => setDeletingPlaylist(null)}
+          onConfirm={handleDelete}
         />
       )}
     </div>

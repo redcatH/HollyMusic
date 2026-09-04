@@ -1,6 +1,12 @@
 
 import { useCallback, useEffect, useState } from 'react'
-import { listPlaylists, createPlaylist, type PlaylistSummary } from '@/lib/api/playlists'
+import {
+  createPlaylist,
+  deletePlaylist,
+  listPlaylists,
+  updatePlaylist,
+  type PlaylistSummary,
+} from '@/lib/api/playlists'
 
 export function usePlaylists() {
   const [playlists, setPlaylists] = useState<PlaylistSummary[]>([])
@@ -28,9 +34,17 @@ export function usePlaylists() {
     return p
   }, [])
 
-  const remove = useCallback((id: number) => {
+  const rename = useCallback(async (id: number, name: string) => {
+    await updatePlaylist(id, { name })
+    setPlaylists(prev => prev.map(playlist => (
+      playlist.id === id ? { ...playlist, name } : playlist
+    )))
+  }, [])
+
+  const remove = useCallback(async (id: number) => {
+    await deletePlaylist(id)
     setPlaylists(prev => prev.filter(p => p.id !== id))
   }, [])
 
-  return { playlists, loading, reload, create, remove }
+  return { playlists, loading, reload, create, rename, remove }
 }

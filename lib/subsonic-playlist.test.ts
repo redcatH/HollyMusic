@@ -32,6 +32,7 @@ describe('handleGetPlaylists', () => {
         createdAt: new Date('2026-08-22T00:00:00Z'),
         coverArt: null,
         allowedUsers: [],
+        entries: [{ songmid: 'kw-306518865', musicInfo: { source: 'kw', songmid: '306518865' } }],
       },
     ])
 
@@ -45,7 +46,7 @@ describe('handleGetPlaylists', () => {
 
     expect(response.headers.get('content-type')).toContain('application/json')
     expect(payload['subsonic-response'].playlists.playlist).toEqual([
-        expect.objectContaining({ id: '1' }),
+        expect.objectContaining({ id: '1', coverArt: 'pl-1' }),
     ])
   })
 
@@ -93,5 +94,6 @@ describe('handleGetPlaylists', () => {
     expect(payload['subsonic-response'].playlist.entry).toEqual([
       expect.objectContaining({ id: 'tx-song-id', starred: '2026-08-22T01:02:03' }),
     ])
+    expect(payload['subsonic-response'].playlist.coverArt).toBe('pl-1')
   })
 })

@@ -49,7 +49,7 @@ export async function handleGetPlaylists(request: NextRequest, authRes: AuthResu
                 songCount: p.songCount,
                 duration: p.duration || 0,
                 created: createdStr,
-                coverArt: p.coverArt || `pl-${p.id}`,
+                coverArt: `pl-${p.id}`,
             }
             // 只有属于当前用户且有授权用户的歌单才显示 allowedUser 子节点
             if (isOwner && p.allowedUsers.length > 0) {
@@ -176,7 +176,7 @@ export async function handleGetPlaylist(request: NextRequest, authRes: AuthResul
                 songCount: playlist.songCount,
                 duration: playlist.duration || 0,
                 created: createdStr,
-                coverArt: playlist.coverArt || `pl-${playlist.id}`,
+                coverArt: `pl-${playlist.id}`,
                 allowedUser: playlist.allowedUsers.map(au => au.username),
                 entry: entriesWithStarred,
             },

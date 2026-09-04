@@ -20,7 +20,10 @@ export interface PlaylistSummary {
   isPublic: boolean
   songCount: number
   duration: number | null
+  /** 用户自定义封面；当前未提供上传入口，预留给后续封面管理功能。 */
   coverArt: string | null
+  /** 未设置自定义封面时，用于展示歌单第一首歌的封面。 */
+  coverSongUid: string | null
   createdAt: string
 }
 
@@ -37,6 +40,12 @@ export interface PlaylistDetail extends PlaylistSummary {
   allowedUsers: string[]
 }
 
+export interface PlaylistCoverData {
+  coverArt: string | null
+  songId: string | null
+  musicInfo: MusicInfo | null
+}
+
 function toSummary(p: Prisma.PlaylistGetPayload<{ include: { allowedUsers: true } }>): PlaylistSummary {
   return {
     id: p.id,
@@ -48,7 +57,20 @@ function toSummary(p: Prisma.PlaylistGetPayload<{ include: { allowedUsers: true 
     songCount: p.songCount,
     duration: p.duration,
     coverArt: p.coverArt,
+    coverSongUid: null,
     createdAt: p.createdAt.toISOString(),
+  }
+}
+
+function getEntrySongUid(entry: { songmid: string | null; musicInfo?: { data: string | null } | null } | undefined): string | null {
+  if (!entry) return null
+  if (entry.songmid) return entry.songmid
+  if (!entry.musicInfo?.data) return null
+  try {
+    const musicInfo = JSON.parse(entry.musicInfo.data) as MusicInfo
+    return musicInfo.source && musicInfo.songmid ? `${musicInfo.source}-${musicInfo.songmid}` : null
+  } catch {
+    return null
   }
 }
 
@@ -60,10 +82,20 @@ export async function listPlaylistsForUser(username: string): Promise<PlaylistSu
     where: {
       OR: [{ username }, { isPublic: true }, { allowedUsers: { some: { username } } }],
     },
-    include: { allowedUsers: true },
+    include: {
+      allowedUsers: true,
+      entries: {
+        orderBy: { position: 'asc' },
+        take: 1,
+        select: { songmid: true, musicInfo: { select: { data: true } } },
+      },
+    },
     orderBy: { createdAt: 'desc' },
   })
-  return rows.map(toSummary)
+  return rows.map(playlist => ({
+    ...toSummary(playlist),
+    coverSongUid: getEntrySongUid(playlist.entries[0]),
+  }))
 }
 
 /**
@@ -109,8 +141,50 @@ export async function getPlaylistDetail(
 
   return {
     ...toSummary(playlist),
+    coverSongUid: entries[0]?.songId || null,
     entries,
     allowedUsers: playlist.allowedUsers.map(au => au.username),
+  }
+}
+
+/**
+ * 获取歌单封面所需的最小数据。供 Subsonic getCoverArt 使用，避免为一张封面加载整张歌单。
+ */
+export async function getPlaylistCoverForUser(
+  id: number,
+  username: string
+): Promise<PlaylistCoverData | null> {
+  const playlist = await prisma.playlist.findUnique({
+    where: { id },
+    include: {
+      entries: {
+        orderBy: { position: 'asc' },
+        take: 1,
+        include: { musicInfo: true },
+      },
+      allowedUsers: true,
+    },
+  })
+  if (!playlist) return null
+
+  const isOwner = playlist.username === username
+  const isAllowed = playlist.allowedUsers.some(au => au.username === username)
+  if (!playlist.isPublic && !isOwner && !isAllowed) return null
+
+  const entry = playlist.entries[0]
+  let musicInfo: MusicInfo | null = null
+  if (entry?.musicInfo?.data) {
+    try {
+      musicInfo = JSON.parse(entry.musicInfo.data) as MusicInfo
+    } catch {
+      musicInfo = null
+    }
+  }
+
+  return {
+    coverArt: playlist.coverArt,
+    songId: getEntrySongUid(entry),
+    musicInfo,
   }
 }
 
