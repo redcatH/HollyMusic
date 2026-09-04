@@ -59,6 +59,29 @@ describe('getRecommendedPlaylistDetail', () => {
     })
   })
 
+  it('网易云歌单详情通过 Linux API 取得完整曲目 ID，再补全被截断的歌曲详情', async () => {
+    const song = (id: number) => ({ id, name: `测试歌曲${id}`, ar: [{ name: '测试歌手' }], al: { id, name: '测试专辑' } })
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          code: 200,
+          playlist: { name: '网易云歌单', trackIds: [{ id: 1 }, { id: 2 }], tracks: [song(1)] },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ code: 200, songs: [song(1), song(2)] }),
+      })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const detail = await getRecommendedPlaylistDetail('wy', 'wy-playlist')
+
+    expect(detail?.tracks).toHaveLength(2)
+    expect(new URL(fetchMock.mock.calls[0]?.[0]).pathname).toBe('/api/linux/forward')
+    expect(new URL(fetchMock.mock.calls[1]?.[0]).pathname).toBe('/weapi/v3/song/detail')
+  })
+
   it('将歌单歌曲作为单个事务批量入库', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
@@ -98,6 +121,40 @@ describe('getRecommendedPlaylistDetail', () => {
 
     await expect(getRecommendedPlaylistDetail('tx', 'failed-transaction-playlist')).rejects.toBe(databaseError)
     expect(set).not.toHaveBeenCalled()
+  })
+
+  it('按 lxserver 的单次曲目数量请求酷我、酷狗和咪咕歌单', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ result: 'ok', title: '酷我歌单', musiclist: [{ id: 'kw-1', name: '酷我歌曲' }] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { info: [{ audio_id: 'kg-1', songname: '酷狗歌曲', hash: 'hash', filesize: 1 }] } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { specialname: '酷狗歌单' } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ code: '000000', data: { songList: [{ songId: 'mg-1', songName: '咪咕歌曲' }] } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ code: '000000', data: { title: '咪咕歌单' } }),
+      })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await getRecommendedPlaylistDetail('kw', 'kw-playlist')
+    await getRecommendedPlaylistDetail('kg', 'kg-playlist')
+    await getRecommendedPlaylistDetail('mg', 'mg-playlist')
+
+    const requestUrls = fetchMock.mock.calls.map(([url]) => new URL(url as string))
+    expect(requestUrls[0].searchParams.get('rn')).toBe('1000')
+    expect(requestUrls[1].searchParams.get('pagesize')).toBe('10000')
+    expect(requestUrls[3].searchParams.get('pageSize')).toBe('50')
   })
 })
 

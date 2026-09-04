@@ -1,4 +1,4 @@
-import { createCipheriv, createHash } from 'node:crypto'
+import { constants, createCipheriv, createHash, publicEncrypt, randomBytes } from 'node:crypto'
 import { searchCache } from '@/lib/cache-manager'
 import { getStorageSongmidForMusicInfo, upsertMusicInfosInTransaction } from '@/lib/db'
 import { logger } from '@/lib/logger'
@@ -8,6 +8,19 @@ const QQ_MUSICU_URL = 'https://u.y.qq.com/cgi-bin/musicu.fcg'
 const QQ_SINGLE_SONG_URL = 'https://c.y.qq.com/v8/fcg-bin/fcg_play_single_song.fcg'
 const CACHE_TTL = 10 * 60 * 1000
 const REQUEST_TIMEOUT = 8_000
+// 与 lxserver 各音源 songList.limit_song 保持一致。
+const KW_PLAYLIST_TRACK_LIMIT = 1_000
+const KG_PLAYLIST_TRACK_LIMIT = 10_000
+const MG_PLAYLIST_TRACK_LIMIT = 50
+const WY_PLAYLIST_TRACK_LIMIT = 100_000
+const WY_SONG_DETAIL_BATCH_SIZE = 1_000
+const WY_LINUX_API_KEY = Buffer.from('rFgB&h#%2?^eDg:Q')
+const WY_WEAPI_PRESET_KEY = Buffer.from('0CoJUm6Qyw8W8jud')
+const WY_WEAPI_IV = Buffer.from('0102030405060708')
+const WY_WEAPI_BASE62 = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+const WY_WEAPI_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
+MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDgtQn2JZ34ZC28NWYpAUd98iZ37BUrX/aKzmFbt7clFSs6sXqHauqKWqdtLkF2KexO40H1YTX8z2lSgBBOAxLsvaklV8k4cBFK9snQXE9/DDaFt6Rr7iVZMldczhC0JNgTz+SHXT6CBHuX3e9SdB1Ua44oncaTWz7OBGLbCiK45wIDAQAB
+-----END PUBLIC KEY-----`
 
 export interface DiscoveryToplist {
   id: string
@@ -192,6 +205,27 @@ function createWyEapiParams(path: string, body: unknown): string {
   const payload = `${path}-36cd479b6b5-${text}-36cd479b6b5-${digest}`
   const cipher = createCipheriv('aes-128-ecb', Buffer.from('e82ckenh8dichen8'), null)
   return Buffer.concat([cipher.update(payload, 'utf8'), cipher.final()]).toString('hex').toUpperCase()
+}
+
+/** 与 lxserver wy/utils/crypto.js 一致的 Linux API 加密载荷。 */
+function createWyLinuxApiParams(body: unknown): URLSearchParams {
+  const cipher = createCipheriv('aes-128-ecb', WY_LINUX_API_KEY, null)
+  const eparams = Buffer.concat([cipher.update(JSON.stringify(body), 'utf8'), cipher.final()]).toString('hex').toUpperCase()
+  return new URLSearchParams({ eparams })
+}
+
+/** 与 lxserver 一致的网易云 WeAPI 歌曲详情加密载荷。 */
+function createWyWeapiParams(body: unknown): URLSearchParams {
+  const secretKey = Buffer.from(randomBytes(16).map(byte => WY_WEAPI_BASE62.charCodeAt(byte % WY_WEAPI_BASE62.length)))
+  const encrypt = (input: Buffer, key: Buffer) => {
+    const cipher = createCipheriv('aes-128-cbc', key, WY_WEAPI_IV)
+    return Buffer.concat([cipher.update(input), cipher.final()])
+  }
+  const firstPass = encrypt(Buffer.from(JSON.stringify(body)), WY_WEAPI_PRESET_KEY).toString('base64')
+  const params = encrypt(Buffer.from(firstPass), secretKey).toString('base64')
+  const paddedKey = Buffer.concat([Buffer.alloc(128 - secretKey.length), Buffer.from(secretKey).reverse()])
+  const encSecKey = publicEncrypt({ key: WY_WEAPI_PUBLIC_KEY, padding: constants.RSA_NO_PADDING }, paddedKey).toString('hex')
+  return new URLSearchParams({ params, encSecKey })
 }
 
 function toMusicInfo(song: QQSong): MusicInfo | null {
@@ -444,22 +478,71 @@ function toMgMusicInfo(raw: MgSong): MusicInfo | null {
   }
 }
 
+type WyPlaylistTrack = Parameters<typeof toWyMusicInfo>[0]
+
+async function getWyTracksByIds(ids: number[]): Promise<WyPlaylistTrack[]> {
+  const uniqueIds = [...new Set(ids.filter(Number.isFinite))]
+  const songs: WyPlaylistTrack[] = []
+  for (let start = 0; start < uniqueIds.length; start += WY_SONG_DETAIL_BATCH_SIZE) {
+    const batch = uniqueIds.slice(start, start + WY_SONG_DETAIL_BATCH_SIZE)
+    const payload = await fetchJson<{ code?: number; songs?: WyPlaylistTrack[] }>('https://music.163.com/weapi/v3/song/detail', {
+      method: 'POST',
+      headers: {
+        Origin: 'https://music.163.com',
+        Referer: 'https://music.163.com/',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: createWyWeapiParams({
+        c: `[${batch.map(songId => `{"id":${songId}}`).join(',')}]`,
+        ids: `[${batch.join(',')}]`,
+      }),
+    })
+    if (payload.code !== 200 || !Array.isArray(payload.songs)) throw new Error('网易云音乐未返回歌曲详情')
+    songs.push(...payload.songs)
+  }
+  const order = new Map(uniqueIds.map((songId, index) => [songId, index]))
+  return songs.sort((a, b) => (order.get(Number(a.id)) ?? Number.MAX_SAFE_INTEGER) - (order.get(Number(b.id)) ?? Number.MAX_SAFE_INTEGER))
+}
+
 async function getWyPlaylistDetail(id: string): Promise<DiscoveryCollectionDetail | null> {
-  const payload = await fetchJson<{ result?: { name?: string; description?: string; coverImgUrl?: string; creator?: { nickname?: string }; tracks?: Parameters<typeof toWyMusicInfo>[0][] } }>(`https://music.163.com/api/playlist/detail?id=${encodeURIComponent(id)}`)
-  const playlist = payload.result
-  if (!playlist?.tracks) return null
+  const payload = await fetchJson<{
+    code?: number
+    playlist?: {
+      name?: string; description?: string; coverImgUrl?: string; creator?: { nickname?: string }
+      tracks?: WyPlaylistTrack[]; trackIds?: Array<{ id?: number }>
+    }
+  }>('https://music.163.com/api/linux/forward', {
+    method: 'POST',
+    headers: {
+      Referer: 'https://music.163.com/',
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36',
+    },
+    body: createWyLinuxApiParams({
+      method: 'POST',
+      url: 'https://music.163.com/api/v3/playlist/detail',
+      params: { id, n: WY_PLAYLIST_TRACK_LIMIT, s: 8 },
+    }),
+  })
+  const playlist = payload.playlist
+  if (payload.code !== 200 || !playlist) return null
+  const trackIds = playlist.trackIds?.map(item => item.id).filter((songId): songId is number => Number.isFinite(songId)) || []
+  const rawTracks = trackIds.length > (playlist.tracks?.length || 0)
+    ? await getWyTracksByIds(trackIds)
+    : playlist.tracks || []
+  if (rawTracks.length === 0) return null
   return {
     id,
     name: playlist.name || '',
     description: playlist.description || '',
     cover: normalizeCover(playlist.coverImgUrl),
     author: playlist.creator?.nickname || '网易云音乐',
-    tracks: await enrichMusicInfos(playlist.tracks.map(toWyMusicInfo).filter((item): item is MusicInfo => item !== null)),
+    tracks: await enrichMusicInfos(rawTracks.map(toWyMusicInfo).filter((item): item is MusicInfo => item !== null)),
   }
 }
 
 async function getKwPlaylistDetail(id: string): Promise<DiscoveryCollectionDetail | null> {
-  const payload = await fetchJson<{ result?: string; title?: string; info?: string; pic?: string; uname?: string; musiclist?: Parameters<typeof toKwMusicInfo>[0][] }>(`http://nplserver.kuwo.cn/pl.svc?op=getlistinfo&pid=${encodeURIComponent(id)}&pn=0&rn=100&encode=utf8&keyset=pl2012&identity=kuwo&pcmp4=1&vipver=MUSIC_9.0.5.0_W1&newver=1`)
+  const payload = await fetchJson<{ result?: string; title?: string; info?: string; pic?: string; uname?: string; musiclist?: Parameters<typeof toKwMusicInfo>[0][] }>(`http://nplserver.kuwo.cn/pl.svc?op=getlistinfo&pid=${encodeURIComponent(id)}&pn=0&rn=${KW_PLAYLIST_TRACK_LIMIT}&encode=utf8&keyset=pl2012&identity=kuwo&pcmp4=1&vipver=MUSIC_9.0.5.0_W1&newver=1`)
   if (payload.result !== 'ok' || !payload.musiclist) return null
   return {
     id,
@@ -532,7 +615,7 @@ type KgPlaylistInfo = {
 
 async function getKgPlaylistDetail(id: string): Promise<DiscoveryCollectionDetail | null> {
   const [songsPayload, infoPayload] = await Promise.all([
-    fetchJson<{ data?: { info?: KgSong[] } }>(`http://mobilecdnbj.kugou.com/api/v3/special/song?version=9108&specialid=${encodeURIComponent(id)}&plat=0&pagesize=100&page=1`),
+    fetchJson<{ data?: { info?: KgSong[] } }>(`http://mobilecdnbj.kugou.com/api/v3/special/song?version=9108&specialid=${encodeURIComponent(id)}&plat=0&pagesize=${KG_PLAYLIST_TRACK_LIMIT}&page=1`),
     fetchJson<{ data?: KgPlaylistInfo }>(`http://mobilecdnbj.kugou.com/api/v5/special/info?specialid=${encodeURIComponent(id)}`).catch(error => {
       logger.warn('[discovery] Kugou playlist metadata request failed', error)
       return null
@@ -554,7 +637,7 @@ async function getKgPlaylistDetail(id: string): Promise<DiscoveryCollectionDetai
 async function getMgPlaylistDetail(id: string): Promise<DiscoveryCollectionDetail | null> {
   const headers = { Referer: 'https://m.music.migu.cn/' }
   const [songsPayload, infoPayload] = await Promise.all([
-    fetchJson<{ code?: string; data?: { songList?: MgSong[] } }>(`https://app.c.nf.migu.cn/MIGUM3.0/resource/playlist/song/v2.0?pageNo=1&pageSize=100&playlistId=${encodeURIComponent(id)}`, { headers }),
+    fetchJson<{ code?: string; data?: { songList?: MgSong[] } }>(`https://app.c.nf.migu.cn/MIGUM3.0/resource/playlist/song/v2.0?pageNo=1&pageSize=${MG_PLAYLIST_TRACK_LIMIT}&playlistId=${encodeURIComponent(id)}`, { headers }),
     fetchJson<{ code?: string; data?: { title?: string; summary?: string; ownerName?: string; imgItem?: { img?: string } } }>(`https://c.musicapp.migu.cn/MIGUM3.0/resource/playlist/v2.0?playlistId=${encodeURIComponent(id)}`, { headers }),
   ])
   const songs = songsPayload.data?.songList || []
