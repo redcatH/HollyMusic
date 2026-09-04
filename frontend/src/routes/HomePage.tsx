@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useDebounce } from 'react-use'
 import { ChevronLeft, ChevronRight, ListMusic, Music, Play, RefreshCw, Search, Trophy } from 'lucide-react'
 import { EmptyState } from '@/components/shared/EmptyState'
@@ -32,6 +32,15 @@ const PLAYLIST_SORTS: Record<DiscoverySource, Array<{ id: DiscoveryPlaylistSort;
   mg: [{ id: 'recommend', name: '推荐' }],
 }
 
+function getDiscoverySource(value: string | null): DiscoverySource {
+  return value === 'wy' || value === 'kw' || value === 'kg' || value === 'mg' ? value : 'tx'
+}
+
+function getPlaylistPage(value: string | null): number {
+  const page = Number.parseInt(value || '', 10)
+  return Number.isSafeInteger(page) && page > 0 ? page : 1
+}
+
 function formatPlayCount(value: number): string {
   if (value >= 100_000_000) return `${(value / 100_000_000).toFixed(1).replace('.0', '')}亿`
   if (value >= 10_000) return `${Math.floor(value / 10_000)}万`
@@ -50,14 +59,19 @@ function Cover({ src, icon: Icon, title }: { src: string; icon: typeof Music; ti
 }
 
 export function HomePage() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const source = getDiscoverySource(searchParams.get('source'))
+  const playlistPage = getPlaylistPage(searchParams.get('page'))
+  const categories = PLAYLIST_CATEGORIES[source] || []
+  const categoryParam = searchParams.get('category') || ''
+  const category = categories.some(item => item.id === categoryParam) ? categoryParam : ''
+  const sorts = PLAYLIST_SORTS[source]
+  const sortParam = searchParams.get('sort')
+  const playlistSort = sorts.some(item => item.id === sortParam) ? sortParam as DiscoveryPlaylistSort : sorts[0].id
+  const keywordParam = searchParams.get('keyword') || ''
   const [toplists, setToplists] = useState<DiscoveryToplist[]>([])
   const [playlists, setPlaylists] = useState<DiscoveryPlaylist[]>([])
-  const [source, setSource] = useState<DiscoverySource>('tx')
-  const [playlistPage, setPlaylistPage] = useState(1)
-  const [keyword, setKeyword] = useState('')
-  const [debouncedKeyword, setDebouncedKeyword] = useState('')
-  const [category, setCategory] = useState('')
-  const [playlistSort, setPlaylistSort] = useState<DiscoveryPlaylistSort>('hot')
+  const [keyword, setKeyword] = useState(keywordParam)
   const [loadingToplists, setLoadingToplists] = useState(true)
   const [loadingPlaylists, setLoadingPlaylists] = useState(true)
   const [toplistsError, setToplistsError] = useState<string | null>(null)
@@ -65,7 +79,26 @@ export function HomePage() {
   const toplistRequestId = useRef(0)
   const playlistRequestId = useRef(0)
 
-  useDebounce(() => setDebouncedKeyword(keyword.trim()), 350, [keyword])
+  useEffect(() => setKeyword(keywordParam), [keywordParam])
+
+  useDebounce(() => {
+    const nextKeyword = keyword.trim()
+    if (nextKeyword === keywordParam) return
+    const nextParams = new URLSearchParams(searchParams)
+    if (nextKeyword) nextParams.set('keyword', nextKeyword)
+    else nextParams.delete('keyword')
+    nextParams.set('page', '1')
+    setSearchParams(nextParams, { replace: true })
+  }, 350, [keyword, keywordParam, searchParams, setSearchParams])
+
+  const updatePlaylistParams = (updates: Record<string, string | undefined>) => {
+    const nextParams = new URLSearchParams(searchParams)
+    for (const [key, value] of Object.entries(updates)) {
+      if (value) nextParams.set(key, value)
+      else nextParams.delete(key)
+    }
+    setSearchParams(nextParams)
+  }
 
   const loadToplists = async () => {
     const requestId = ++toplistRequestId.current
@@ -86,7 +119,7 @@ export function HomePage() {
     setLoadingPlaylists(true)
     setPlaylistsError(null)
     try {
-      const playlistData = await getRecommendedPlaylists(source, PLAYLIST_PAGE_SIZE, playlistPage, { tag: category || undefined, sort: playlistSort, keyword: debouncedKeyword || undefined })
+      const playlistData = await getRecommendedPlaylists(source, PLAYLIST_PAGE_SIZE, playlistPage, { tag: category || undefined, sort: playlistSort, keyword: keywordParam || undefined })
       if (requestId === playlistRequestId.current) setPlaylists(playlistData)
     } catch (err) {
       if (requestId === playlistRequestId.current) setPlaylistsError(err instanceof Error ? err.message : '加载失败')
@@ -105,7 +138,7 @@ export function HomePage() {
     void loadPlaylists()
     // 歌单区域响应翻页、筛选及已防抖的关键字变化；关键字由服务端搜索接口处理。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source, playlistPage, category, playlistSort, debouncedKeyword])
+  }, [source, playlistPage, category, playlistSort, keywordParam])
 
   const isLastPlaylistPage = playlists.length < PLAYLIST_PAGE_SIZE
   const isLoading = loadingToplists || loadingPlaylists
@@ -123,7 +156,7 @@ export function HomePage() {
 
       <div className="mb-6 flex flex-wrap gap-2" role="tablist" aria-label="音乐渠道">
         {CHANNELS.map(channel => (
-          <button key={channel.source} onClick={() => { setSource(channel.source); setPlaylistPage(1); setCategory(''); setPlaylistSort(PLAYLIST_SORTS[channel.source][0].id); setToplists([]); setPlaylists([]) }} className={`rounded-full px-4 py-2 text-sm transition ${source === channel.source ? 'bg-primary text-primary-foreground' : 'border border-border text-muted-foreground hover:bg-accent hover:text-foreground'}`} role="tab" aria-selected={source === channel.source}>{channel.label}</button>
+          <button key={channel.source} onClick={() => { setSearchParams({ source: channel.source }); setToplists([]); setPlaylists([]) }} className={`rounded-full px-4 py-2 text-sm transition ${source === channel.source ? 'bg-primary text-primary-foreground' : 'border border-border text-muted-foreground hover:bg-accent hover:text-foreground'}`} role="tab" aria-selected={source === channel.source}>{channel.label}</button>
         ))}
       </div>
       <section className="mb-10">
@@ -144,7 +177,7 @@ export function HomePage() {
       </section>
 
       <section>
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-2"><ListMusic className="h-5 w-5 text-primary" /><h2 className="text-lg font-semibold">推荐歌单</h2></div><div className="flex flex-wrap items-center gap-2"><label className="relative"><Search className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input value={keyword} onChange={event => { setKeyword(event.target.value); setPlaylistPage(1) }} placeholder="搜索歌单" className="h-9 w-40 rounded-md border border-border bg-transparent pl-8 pr-2 text-sm outline-none focus:ring-1 focus:ring-primary" /></label><select value={category} onChange={event => { setCategory(event.target.value); setPlaylistPage(1) }} className="h-9 rounded-md border border-border bg-background px-2 text-sm">{PLAYLIST_CATEGORIES[source]?.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select value={playlistSort} onChange={event => { setPlaylistSort(event.target.value as DiscoveryPlaylistSort); setPlaylistPage(1) }} className="h-9 rounded-md border border-border bg-background px-2 text-sm">{PLAYLIST_SORTS[source].map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div></div>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-2"><ListMusic className="h-5 w-5 text-primary" /><h2 className="text-lg font-semibold">推荐歌单</h2></div><div className="flex flex-wrap items-center gap-2"><label className="relative"><Search className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input value={keyword} onChange={event => setKeyword(event.target.value)} placeholder="搜索歌单" className="h-9 w-40 rounded-md border border-border bg-transparent pl-8 pr-2 text-sm outline-none focus:ring-1 focus:ring-primary" /></label><select value={category} onChange={event => updatePlaylistParams({ category: event.target.value || undefined, page: '1' })} className="h-9 rounded-md border border-border bg-background px-2 text-sm">{categories.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select value={playlistSort} onChange={event => updatePlaylistParams({ sort: event.target.value, page: '1' })} className="h-9 rounded-md border border-border bg-background px-2 text-sm">{sorts.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div></div>
         {loadingPlaylists && playlists.length === 0 ? <LoadingSkeleton count={PLAYLIST_PAGE_SIZE} /> : playlistsError ? (
           <EmptyState icon={ListMusic} title="推荐歌单加载失败" description={playlistsError} />
         ) : playlists.length === 0 ? <EmptyState icon={ListMusic} title="暂无推荐歌单" /> : (
@@ -160,9 +193,9 @@ export function HomePage() {
         )}
         {(playlists.length > 0 || playlistPage > 1) && (
           <div className="mt-6 flex items-center justify-center gap-3">
-            <button onClick={() => setPlaylistPage(page => Math.max(1, page - 1))} disabled={playlistPage === 1 || loadingPlaylists} className="flex items-center gap-1 rounded-full border border-border px-3 py-2 text-sm hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"><ChevronLeft className="h-4 w-4" /> 上一页</button>
+            <button onClick={() => updatePlaylistParams({ page: String(Math.max(1, playlistPage - 1)) })} disabled={playlistPage === 1 || loadingPlaylists} className="flex items-center gap-1 rounded-full border border-border px-3 py-2 text-sm hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"><ChevronLeft className="h-4 w-4" /> 上一页</button>
             <span className="text-sm text-muted-foreground">第 {playlistPage} 页</span>
-            <button onClick={() => setPlaylistPage(page => page + 1)} disabled={isLastPlaylistPage || loadingPlaylists} className="flex items-center gap-1 rounded-full border border-border px-3 py-2 text-sm hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50">下一页 <ChevronRight className="h-4 w-4" /></button>
+            <button onClick={() => updatePlaylistParams({ page: String(playlistPage + 1) })} disabled={isLastPlaylistPage || loadingPlaylists} className="flex items-center gap-1 rounded-full border border-border px-3 py-2 text-sm hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50">下一页 <ChevronRight className="h-4 w-4" /></button>
           </div>
         )}
       </section>
