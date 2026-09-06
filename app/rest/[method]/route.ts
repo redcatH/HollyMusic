@@ -11,11 +11,7 @@ import { respond, subsonicError } from '@/lib/subsonic'
 import { handleGetLicense, handleGetOpenSubsonicExtensions, handleGetUser, handleGetAlbumList2, handleScrobble, handleGetSimilarSongs } from '@/lib/subsonic-system'
 import { handleStream } from '@/lib/subsonic-stream'
 import auth, { type AuthResult } from '@/lib/auth'
-import configSync from '@/lib/config-sync'
 import { logger } from '@/lib/logger'
-
-// 同步启动配置中的用户（非阻塞）
-configSync.syncUsersFromConfig().then(r => console.info('[startup] config-sync result', r)).catch(e => console.warn('[startup] config-sync error', e))
 
 function normalizeMethod(raw: string | undefined) {
   if (!raw) return ''
