@@ -17,6 +17,16 @@ import { normalizeStructuredLyricText } from './server/lyric-normalize'
 // SOURCE_RUNNER_MODE=inline 可回退主进程直连（等价 P0 行为）
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { getSourceRunner } = require('./music-core/runner-client')
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { blockedNetworkReason } = require('./music-core/sandbox')
+
+/**
+ * 校验音源返回的 URL 必须是公网 http(s) 地址。
+ * 恶意脚本可返回内网 URL 借服务端回源请求（SSRF），此处统一拒绝。
+ */
+function isTrustworthyUrl(url: string): boolean {
+  return blockedNetworkReason(url) === null
+}
 
 /** 音源 slot 代理（子进程或 inline 直连），使用面与 LXEnvironmentSimulator 对齐 */
 interface SourceSlot {
@@ -341,6 +351,13 @@ class MusicSourceManager {
           )
 
           if (url && typeof url === 'string' && url.trim()) {
+            // 回源 SSRF 防护：拒绝私网/非 http(s) 地址
+            if (!isTrustworthyUrl(url)) {
+              logger.warn(
+                `音源 ${instance.config.name} 返回了不可信播放地址，已拒绝并尝试下一源`
+              )
+              continue
+            }
             logger.info(
               `获取成功: ${instance.config.name} - ${quality} - ${musicInfo.name}`
             )
@@ -484,6 +501,11 @@ class MusicSourceManager {
 
               // URL-like
               if (s.startsWith('http://') || s.startsWith('https://') || s.startsWith('//')) {
+                // 回源 SSRF 防护：封面 URL 同样不允许指向内网
+                if (!isTrustworthyUrl(s.startsWith('//') ? `https:${s}` : s)) {
+                  logger.debug(`getPic: ${instance.config.name}.${fnName} 返回不可信地址，跳过`)
+                  continue
+                }
                 this.picCache.set(key, { value: s, expires: Date.now() + this.defaultCacheTtl })
                 logger.info(`getPic: 从 ${instance.config.name}.${fnName} 获取到图片 URL`)
                 return s

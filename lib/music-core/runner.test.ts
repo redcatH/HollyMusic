@@ -13,7 +13,20 @@ import path from 'node:path'
  */
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { SourceRunnerClient } = require('./runner-client')
+const { SourceRunnerClient, buildChildEnv } = require('./runner-client')
+
+describe('buildChildEnv 白名单（防环境变量泄漏）', () => {
+  it('业务机密不进入子进程环境变量', () => {
+    process.env.AUTH_SECRET = 'secret-should-not-leak'
+    process.env.DATABASE_URL = 'file:./secret.db'
+    const childEnv = buildChildEnv({ MARKER: 'extra-ok' })
+    expect(childEnv).not.toHaveProperty('AUTH_SECRET')
+    expect(childEnv).not.toHaveProperty('DATABASE_URL')
+    expect(childEnv.MARKER).toBe('extra-ok')
+    delete process.env.AUTH_SECRET
+    delete process.env.DATABASE_URL
+  })
+})
 
 /** 正常音源脚本：quality 传 'hang' 时永不返回（用于制造 pending 调用） */
 const NORMAL_SCRIPT = `
@@ -57,10 +70,12 @@ describe('SourceRunnerClient 子进程集成', () => {
   const clients: Array<{ shutdown: () => void }> = []
 
   function createClient(options?: Record<string, unknown>) {
-    // 临时脚本写在 os.tmpdir()，permission 加固下需把它加入子进程可读白名单
+    // 临时脚本写在 os.tmpdir()，permission 加固下需把它加入子进程可读白名单；
+    // 网络桥用例请求 127.0.0.1 本地服务器，需放开子进程的私网限制
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const client = new SourceRunnerClient({
       permissionAllowReadDirs: [process.cwd(), os.tmpdir()],
+      extraEnv: { SOURCE_ALLOW_PRIVATE_NET: 'true' },
       ...options,
     } as any)
     clients.push(client)

@@ -1,7 +1,47 @@
 import { describe, it, expect, vi } from 'vitest'
-import { createScriptSandbox } from './sandbox'
+import { createScriptSandbox, blockedNetworkReason } from './sandbox'
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
+describe('blockedNetworkReason（SSRF 防护）', () => {
+  it.each([
+    ['http://192.168.1.1/x', '私网 IPv4'],
+    ['http://10.0.0.5/x', '私网 IPv4'],
+    ['http://172.16.0.1/x', '私网 IPv4'],
+    ['http://172.31.255.1/x', '私网 IPv4'],
+    ['http://169.254.169.254/latest/meta-data', '云 metadata'],
+    ['http://127.0.0.1:3000/x', '回环'],
+    ['http://0.0.0.0/x', '全零地址'],
+    ['http://localhost:8080/x', 'localhost'],
+    ['http://[::1]/x', 'IPv6 回环'],
+    ['http://[fe80::1]/x', 'IPv6 链路本地'],
+    ['http://[fc00::1]/x', 'IPv6 ULA'],
+    ['file:///etc/passwd', '危险协议'],
+    ['ftp://example.com/x', '危险协议'],
+    ['not-a-url', '非法 URL'],
+  ])('%s 被拒绝（%s）', url => {
+    expect(blockedNetworkReason(url)).not.toBeNull()
+  })
+
+  it.each([
+    ['https://music-api.example.com/v1'],
+    ['http://1.2.3.4/x'],
+    ['https://[2001:db8::1]/x'],
+  ])('%s 放行', url => {
+    expect(blockedNetworkReason(url)).toBeNull()
+  })
+
+  it('SOURCE_ALLOW_PRIVATE_NET=true 时放行私网', () => {
+    vi.stubEnv('SOURCE_ALLOW_PRIVATE_NET', 'true')
+    expect(blockedNetworkReason('http://192.168.1.1/x')).toBeNull()
+    expect(blockedNetworkReason('file:///etc/passwd')).not.toBeNull() // 协议检查不受开关影响
+    vi.unstubAllEnvs()
+  })
+
+  it('172.32.x.x（公网段）不误伤', () => {
+    expect(blockedNetworkReason('http://172.32.0.1/x')).toBeNull()
+  })
+})
 
 describe('createScriptSandbox', () => {
   it('脚本不可见任何 Node 全局（require/process/Buffer/global/module）', () => {
@@ -136,6 +176,21 @@ describe('createScriptSandbox', () => {
 
     env.setGlobal('__echo', env.wrapFn((value: unknown) => value))
     expect(env.runScript(`__echo({ a: 1, list: [1, 'x'] }).list[1]`)).toBe('x')
+  })
+
+  it('toHostValue 跳过 __proto__/constructor/prototype 键（原型注入防御）', () => {
+    const env = createScriptSandbox({})
+    const poisoned = env.runScript(`(() => {
+      const obj = {}
+      Object.defineProperty(obj, '__proto__', { value: { evil: true }, enumerable: true, writable: true, configurable: true })
+      Object.defineProperty(obj, 'constructor', { value: 42, enumerable: true, writable: true, configurable: true })
+      obj.normal = 'ok'
+      return obj
+    })()`)
+    const host = env.toHostValue(poisoned)
+    expect(host.normal).toBe('ok')
+    expect(Object.keys(host)).toEqual(['normal'])
+    expect(Object.getPrototypeOf(host)).toBe(Object.prototype)
   })
 
   it('console 转发到 onLog 且截断', () => {

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
 
@@ -40,6 +40,28 @@ ${INITED_KW}
 describe('LXEnvironmentSimulator 沙箱端到端', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
+    // 网络桥用例使用本地 127.0.0.1 测试服务器，需放开私网限制（默认拒绝）
+    vi.stubEnv('SOURCE_ALLOW_PRIVATE_NET', 'true')
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('SSRF 防护：默认拒绝私网/危险协议请求（未放开 SOURCE_ALLOW_PRIVATE_NET 时）', async () => {
+    vi.unstubAllEnvs()
+    const sim = new LXEnvironmentSimulator()
+    await sim.executeScript(`
+      const { EVENT_NAMES, on, send, request } = globalThis.lx
+      on(EVENT_NAMES.request, () => new Promise((resolve, reject) => {
+        request('http://192.168.1.1/admin', {}, (err) => {
+          if (err) reject(new Error('blocked:' + err.message))
+          else reject(new Error('no-error'))
+        })
+      }))
+      ${INITED_KW}
+    `)
+    await expect(sim.getMusicUrl('kw', { songmid: 'x' }, '128k')).rejects.toThrow(/blocked:请求被拒绝/)
   })
 
   it('正常脚本：握手、musicUrl、lyric 全链路', async () => {
