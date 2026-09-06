@@ -10,6 +10,7 @@ import {
   createSource,
   updateSource,
   deleteSource,
+  bulkUpdateSources,
   importSourceSubscription,
   uploadScript,
   updateSourceSubscription,
@@ -17,7 +18,9 @@ import {
 } from '@/lib/api/admin-sources'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { Plus, Pencil, Trash2, Music, X, Loader2, Upload, AlertCircle, CheckCircle2, FileWarning, RefreshCw, Rss } from 'lucide-react'
+import { SourceMatrix } from '@/components/admin/SourceMatrix'
+import { toast } from '@/lib/toast'
+import { Plus, Pencil, Trash2, Music, X, Loader2, Upload, AlertCircle, CheckCircle2, FileWarning, RefreshCw, Rss, LayoutGrid, List } from 'lucide-react'
 
 const PLATFORMS = ['tx', 'wy', 'kw', 'kg', 'mg'] as const
 const PLATFORM_LABELS: Record<string, string> = {
@@ -44,9 +47,12 @@ export function SourcesPanel() {
   const [updatingSubscriptionPath, setUpdatingSubscriptionPath] = useState<string | null>(null)
   const [uploadMsg, setUploadMsg] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [view, setView] = useState<'list' | 'matrix'>('list')
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [bulkBusy, setBulkBusy] = useState(false)
 
-  const reload = useCallback(async () => {
-    setLoading(true)
+  const reload = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true)
     setError(null)
     try {
       const { list } = await listSources()
@@ -54,7 +60,7 @@ export function SourcesPanel() {
     } catch (e) {
       setError(e instanceof Error ? e.message : '加载失败')
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [])
 
@@ -142,9 +148,39 @@ export function SourcesPanel() {
   const toggleEnabled = async (s: AdminSource) => {
     try {
       await updateSource(s.path, { enabled: !s.enabled })
-      await reload()
+      await reload(true)
     } catch (e) {
       alert(e instanceof Error ? e.message : '操作失败')
+    }
+  }
+
+  const allSelected = sources.length > 0 && selected.size === sources.length
+  const toggleSelectAll = () => {
+    setSelected(allSelected ? new Set() : new Set(sources.map(s => s.path)))
+  }
+  const toggleSelect = (path: string) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
+  }
+
+  /** 批量启用/禁用（服务端一次写入 + 一次 reload）。 */
+  const bulkToggle = async (enabled: boolean) => {
+    if (selected.size === 0) return
+    setBulkBusy(true)
+    try {
+      const updates = [...selected].map(path => ({ path, enabled }))
+      const { updated } = await bulkUpdateSources(updates)
+      toast.success(`已${enabled ? '启用' : '禁用'} ${updated} 个音源`)
+      setSelected(new Set())
+      await reload(true)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '批量操作失败')
+    } finally {
+      setBulkBusy(false)
     }
   }
 
@@ -212,29 +248,96 @@ export function SourcesPanel() {
         </div>
       )}
 
+      <div className="mb-4 flex items-center gap-1 rounded-full border border-border p-1 w-fit">
+        <button
+          onClick={() => setView('list')}
+          className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition ${view === 'list' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+        >
+          <List className="h-4 w-4" /> 列表
+        </button>
+        <button
+          onClick={() => setView('matrix')}
+          className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition ${view === 'matrix' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+        >
+          <LayoutGrid className="h-4 w-4" /> 平台矩阵
+        </button>
+      </div>
+
       {loading ? (
         <LoadingSkeleton count={5} />
       ) : error ? (
         <EmptyState icon={Music} title="加载失败" description={error} />
       ) : sources.length === 0 ? (
         <EmptyState icon={Music} title="暂无音源" description="上传脚本或手动添加音源配置" />
+      ) : view === 'matrix' ? (
+        <SourceMatrix sources={sources} reload={() => reload(true)} />
       ) : (
-        <div className="overflow-hidden rounded-lg border border-border">
-          <table className="w-full text-sm">
-            <thead className="bg-accent/40 text-left text-xs uppercase text-muted-foreground">
-              <tr>
-                <th className="px-4 py-3 font-medium">名称</th>
-                <th className="px-4 py-3 font-medium">状态</th>
-                <th className="px-4 py-3 font-medium">优先级</th>
-                <th className="px-4 py-3 font-medium">平台</th>
-                <th className="px-4 py-3 font-medium">脚本路径</th>
-                <th className="px-4 py-3 text-right font-medium">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sources.map(s => (
-                <tr key={s.path} className="border-t border-border hover:bg-accent/20">
-                  <td className="px-4 py-3 font-medium">
+        <>
+          {selected.size > 0 && (
+            <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md bg-accent/40 px-4 py-2 text-sm">
+              <span className="text-muted-foreground">已选 {selected.size} 项</span>
+              <button
+                onClick={() => bulkToggle(true)}
+                disabled={bulkBusy}
+                className="rounded-full bg-green-500/15 px-3 py-1 text-xs font-medium text-green-600 hover:bg-green-500/25 disabled:opacity-50"
+              >
+                批量启用
+              </button>
+              <button
+                onClick={() => bulkToggle(false)}
+                disabled={bulkBusy}
+                className="rounded-full bg-destructive/10 px-3 py-1 text-xs font-medium text-destructive hover:bg-destructive/20 disabled:opacity-50"
+              >
+                批量禁用
+              </button>
+              <button
+                onClick={() => setSelected(new Set())}
+                disabled={bulkBusy}
+                className="ml-auto text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+              >
+                取消选择
+              </button>
+            </div>
+          )}
+          <div className="overflow-hidden rounded-lg border border-border">
+            <table className="w-full text-sm">
+              <thead className="bg-accent/40 text-left text-xs uppercase text-muted-foreground">
+                <tr>
+                  <th className="w-10 px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={toggleSelectAll}
+                      className="h-4 w-4 rounded accent-primary"
+                      aria-label="全选"
+                    />
+                  </th>
+                  <th className="px-4 py-3 font-medium">名称</th>
+                  <th className="px-4 py-3 font-medium">状态</th>
+                  <th className="px-4 py-3 font-medium">
+                    优先级
+                    <span className="ml-1 normal-case text-[10px] font-normal text-muted-foreground/80">
+                      （数字越小越优先）
+                    </span>
+                  </th>
+                  <th className="px-4 py-3 font-medium">平台</th>
+                  <th className="px-4 py-3 font-medium">脚本路径</th>
+                  <th className="px-4 py-3 text-right font-medium">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sources.map(s => (
+                  <tr key={s.path} className="border-t border-border hover:bg-accent/20">
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(s.path)}
+                        onChange={() => toggleSelect(s.path)}
+                        className="h-4 w-4 rounded accent-primary"
+                        aria-label={`选择 ${s.name || s.path}`}
+                      />
+                    </td>
+                    <td className="px-4 py-3 font-medium">
                     {s.name || s.path}
                     {s.subscription && (
                       <span className="ml-2 rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium text-sky-600">
@@ -315,7 +418,8 @@ export function SourcesPanel() {
               ))}
             </tbody>
           </table>
-        </div>
+          </div>
+        </>
       )}
 
       {dialog && (
@@ -526,6 +630,9 @@ function SourceDialog({ mode, onClose, onCreated, onUpdated }: DialogProps) {
                 onChange={e => setPriority(e.target.value)}
                 className="w-full rounded-md bg-background px-3 py-2 text-sm outline-none ring-1 ring-border focus:ring-primary"
               />
+              <span className="mt-1 block text-[10px] text-muted-foreground">
+                数字越小越优先；播放取链时按优先级从低到高依次尝试
+              </span>
             </label>
             <label className="flex-1">
               <span className="mb-1 block text-xs text-muted-foreground">超时(ms)</span>

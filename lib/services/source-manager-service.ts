@@ -478,6 +478,53 @@ export async function updateSource(
   return updated
 }
 
+/**
+ * 批量更新源配置（一次写入 + 一次 reload）。
+ * 供列表批量启停与平台矩阵单元格切换使用——避免逐条调用 updateSource
+ * 造成 N 次全量音源实例销毁重建。
+ * 路径不存在的条目跳过（适配列表拉取后源已被删除的竞态）。
+ */
+export async function updateSourcesBulk(
+  updates: Array<{ path: string; enabled?: boolean; pt?: string[]; priority?: number }>
+): Promise<{ updated: number }> {
+  if (!Array.isArray(updates) || updates.length === 0) {
+    throw new Error('updates 不能为空')
+  }
+
+  const config = await readConfig()
+  const byPath = new Map(config.sources.map((s, i) => [s.path, i]))
+  let count = 0
+
+  for (const update of updates) {
+    const idx = byPath.get(update.path)
+    if (idx === undefined) continue
+
+    const current = config.sources[idx]
+    const next = { ...current }
+    if (update.enabled !== undefined) next.enabled = update.enabled
+    if (update.priority !== undefined) next.priority = update.priority
+    if (update.pt !== undefined) {
+      next.pt = update.pt.filter(p => (VALID_PLATFORMS as readonly string[]).includes(p))
+    }
+    if (
+      next.enabled === current.enabled &&
+      next.pt === current.pt &&
+      next.priority === current.priority
+    )
+      continue
+
+    config.sources[idx] = next
+    count++
+  }
+
+  if (count > 0) {
+    await writeConfig(config)
+    await notifyReload()
+    logger.info(`[source-manager-service] 批量更新 ${count} 条源配置`)
+  }
+  return { updated: count }
+}
+
 /** 删除一条源配置 + 关联脚本文件 */
 export async function removeSource(sourcePath: string): Promise<void> {
   const config = await readConfig()
