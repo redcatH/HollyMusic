@@ -2,7 +2,7 @@
  * 音源管理 API 客户端
  */
 
-import { apiGet, apiPost, apiPut, apiDelete } from './client'
+import { apiGet, apiPost, apiPut, apiPatch, apiDelete } from './client'
 import type { SourceConfig } from '@/lib/types/music'
 
 export interface AdminSource extends SourceConfig {
@@ -37,6 +37,16 @@ export function updateSource(
   }
 ): Promise<SourceConfig> {
   return apiPut<SourceConfig>(`admin/sources/${encodeURIComponent(sourcePath)}`, opts)
+}
+
+/**
+ * 批量更新源配置（服务端一次写入 + 一次 reload）。
+ * 供列表批量启停与平台矩阵单元格切换使用。
+ */
+export function bulkUpdateSources(
+  updates: Array<{ path: string; enabled?: boolean; pt?: string[]; priority?: number }>
+): Promise<{ updated: number }> {
+  return apiPatch<{ updated: number }>('admin/sources', { updates })
 }
 
 export function deleteSource(sourcePath: string): Promise<{ ok: boolean }> {
