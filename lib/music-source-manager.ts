@@ -13,14 +13,22 @@ import { logger } from './logger'
 import { decodeLyricEntities } from './server/lyric-decode'
 import { normalizeStructuredLyricText } from './server/lyric-normalize'
 
+// 音源执行托管在独立子进程（vm 沙箱之上叠加进程隔离，见 lib/music-core/runner-client.js）
+// SOURCE_RUNNER_MODE=inline 可回退主进程直连（等价 P0 行为）
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const LXEnvironmentSimulator = require('./music-core/index')
+const { getSourceRunner } = require('./music-core/runner-client')
 
-// Define the type for the simulator instance
-type SimulatorType = InstanceType<typeof LXEnvironmentSimulator>
+/** 音源 slot 代理（子进程或 inline 直连），使用面与 LXEnvironmentSimulator 对齐 */
+interface SourceSlot {
+  loadScript(scriptPath: string): Promise<SourceInfo>
+  getMusicUrl(source: string, musicInfo: MusicInfo, quality?: string): Promise<string>
+  getLyric(source: string, musicInfo: MusicInfo): Promise<unknown>
+  getPic(...args: unknown[]): Promise<unknown>
+  dispose?(): Promise<void> | void
+}
 
 interface SimulatorInstance {
-  simulator: SimulatorType
+  simulator: SourceSlot
   config: {
     name: string
     priority: number
@@ -119,9 +127,14 @@ class MusicSourceManager {
   }
 
   /**
-   * 重置实例（清空旧实例以便重新初始化）
+   * 重置实例（先释放旧 slot 的沙箱资源避免孤儿定时器，再清空重建）
    */
   private resetInstances(): void {
+    for (const instance of this.instances) {
+      try {
+        instance.simulator.dispose?.()
+      } catch {}
+    }
     this.instances = []
     this.initialized = false
   }
@@ -194,7 +207,7 @@ class MusicSourceManager {
     for (const sourceConfig of enabledSources) {
       const startTime = Date.now()
       const instance: SimulatorInstance = {
-        simulator: new LXEnvironmentSimulator(),
+        simulator: await getSourceRunner().acquireSlot(),
         config: {
           name: sourceConfig.name || sourceConfig.path,
           priority: sourceConfig.priority,

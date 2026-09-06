@@ -121,11 +121,19 @@ export interface ScriptValidationResult {
 }
 
 /**
- * 用 LXEnvironmentSimulator 预校验脚本（同步等待 inited）。
- * - 成功 → { ok: true, sourceInfo }
- * - 失败 → { ok: false, error }
+ * 预校验脚本（同步等待 inited）。
+ * - 默认：在一次性子进程中执行（不可信代码首跑不碰主进程与常驻 runner）
+ * - SOURCE_RUNNER_MODE=inline：与运行时一致在主进程 vm 沙箱内执行
+ * - 成功 → { ok: true, sourceInfo }；失败 → { ok: false, error }
  */
 export async function validateScriptContent(scriptContent: string): Promise<ScriptValidationResult> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const runner = require('../music-core/runner-client').getSourceRunner()
+
+  if (runner.mode !== 'inline') {
+    return runner.validateScript(scriptContent, SUBSCRIPTION_REQUEST_TIMEOUT_MS)
+  }
+
   try {
     const Ctor = await getSimulatorCtor()
     const sim = new Ctor()
