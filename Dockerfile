@@ -56,7 +56,15 @@ WORKDIR /app
 # Prisma 检测系统 OpenSSL 失败后回退 openssl-1.1.x 引擎（schema 未生成该 target），
 # 构建日志刷 PrismaClientInitializationError。装 openssl（连带 libssl3）后检测命中
 # debian-openssl-3.0.x，与运行时镜像（nginx 依赖 libssl3）的环境一致。
-RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
+# APT_MIRROR 与运行时阶段同样支持可选镜像（默认官方源，CI 海外 runner 不受影响；
+# 慢网络/国内自建构建传入 mirrors.aliyun.com 等可显著加速此层的 apt 下载）。
+ARG APT_MIRROR=""
+RUN if [ -n "${APT_MIRROR}" ]; then \
+      sed -i "s|deb.debian.org|${APT_MIRROR}|g; s|security.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources; \
+    fi \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends openssl \
+ && rm -rf /var/lib/apt/lists/*
 
 # 复制源码
 COPY . .
