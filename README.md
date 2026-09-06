@@ -489,6 +489,12 @@ admin 登录后，侧边栏头像下拉 →「音源管理」：
 - `getPlaylists`、`getPlaylist`、`createPlaylist`、`updatePlaylist`、`deletePlaylist`：歌单及歌单曲目管理
 - `getAlbumList2`、`getAlbum`、`getLyricsBySongId`、`getOpenSubsonicExtensions`：专辑、结构化歌词与 OpenSubsonic 客户端兼容
 
+#### 在 Subsonic 客户端指定搜索源
+
+在 Subsonic 客户端的搜索框中，为关键词添加搜索源前缀即可仅搜索对应来源；前缀会自动从实际搜索词中移除。未使用前缀时，仍按当前配置执行原有的多源聚合搜索。
+
+支持的搜索源前缀为 `wy:`、`kg:`、`tx:`、`kw:`、`mg:`。例如，输入 `wy:风说` 时只会在 `wy` 搜索源中检索“风说”。
+
 接口支持 XML 与 `f=json` JSON 响应。写操作要求有效的 Subsonic token 认证；具体认证开关见 `REQUIRE_AUTH` 配置与 `app/rest/[method]/route.ts`。
 
 ---

@@ -14,6 +14,31 @@ import { listHistory } from '@/lib/services/history-service'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+/** Subsonic 搜索前缀所支持的内置渠道。 */
+export const SUBSONIC_SEARCH_SOURCES = ['tx', 'wy', 'kw', 'kg', 'mg'] as const
+
+type SubsonicSearchSource = typeof SUBSONIC_SEARCH_SOURCES[number]
+
+/**
+ * 解析 Subsonic 搜索关键词中的渠道前缀。
+ *
+ * 例如 `tx:风说` 会转换为 QQ 音乐渠道和实际关键词 `风说`。未识别的
+ * 前缀保持原样，继续执行原有的多渠道聚合搜索，避免改变普通歌曲名的行为。
+ */
+export function parseSubsonicSearchQuery(rawQuery: string): {
+  query: string
+  source?: SubsonicSearchSource
+} {
+  const query = rawQuery.trim()
+  const match = query.match(/^(tx|wy|kw|kg|mg)\s*:\s*(.*)$/i)
+  if (!match) return { query }
+
+  return {
+    source: match[1].toLowerCase() as SubsonicSearchSource,
+    query: match[2].trim(),
+  }
+}
+
 function parseOffset(v: string | undefined) {
   if (!v) return 0
   const n = parseInt(v)
@@ -76,7 +101,8 @@ async function handleRecentSearch(
 
 export async function handleSearch(request: NextRequest, authRes?: AuthResult) {
   const url = new URL(request.url)
-  const q = (url.searchParams.get('query') || url.searchParams.get('q') || '').trim()
+  const rawQuery = (url.searchParams.get('query') || url.searchParams.get('q') || '').trim()
+  const { query: q, source: selectedSource } = parseSubsonicSearchQuery(rawQuery)
   const songCount = parseSongCount(url.searchParams.get('songCount'))
   const songOffset = parseOffset(url.searchParams.get('songOffset') ?? undefined)
 
@@ -95,7 +121,7 @@ export async function handleSearch(request: NextRequest, authRes?: AuthResult) {
   // 不触发任何聚合搜索（对音源零请求），结果每次随机故不走缓存。
   if (!q) {
     try {
-      const allowedSources = getSearchSources()
+      const allowedSources = selectedSource ? [selectedSource] : getSearchSources()
       const songs = await getRandomMusicInfoList(songCount, allowedSources)
       const songNodes = songs.map((s, idx) => buildSongNode(s, idx))
       logger.debug('[subsonic-search] empty query -> random from recommended pool:', songNodes.length)
@@ -107,7 +133,7 @@ export async function handleSearch(request: NextRequest, authRes?: AuthResult) {
   }
 
   // aggregate sources used for search (moved outside try so cache key can be computed)
-  const sources = getSearchSources()
+  const sources = selectedSource ? [selectedSource] : getSearchSources()
   const cacheKey = buildSubsonicSearchCacheKey(q, sources, songCount, songOffset)
   // 缓存 payload 对象而非序列化结果，命中后仍可按 f= 参数渲染 XML/JSON
   const cachedPayload = searchCache.get(cacheKey) as SubsonicPayload | null

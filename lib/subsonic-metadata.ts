@@ -7,6 +7,7 @@ import { type AuthResult } from './auth'
 import * as dbAPI from './db'
 import { logger } from './logger'
 import { fetchLyricForMusic } from './services/lyrics'
+import { getPlaylistCoverForUser } from './services/playlist-service'
 import type { MusicInfo } from './types/music'
 
 // 原生封面获取模块（参考 lx-music 各源 pic 实现），替代黑盒脚本与第三方聚合 API
@@ -23,6 +24,11 @@ export async function handleCoverArtAsync(request: NextRequest, authRes: AuthRes
     if (!id) {
       // 如果没有 id，直接返回默认图片
       return serveDefaultCoverArt(request)
+    }
+
+    // 歌单封面仅在 Subsonic 的 getCoverArt 中解析。网页端继续直接走 /api/cover。
+    if (id.startsWith('pl-')) {
+      return servePlaylistCoverArt(request, authRes, id)
     }
 
     // 封面 id 统一为 source-{songmid}；Musiver 会给封面 id 拼 al- 前缀，去掉后按歌曲查。
@@ -61,6 +67,47 @@ export async function handleCoverArtAsync(request: NextRequest, authRes: AuthRes
   }
 }
 
+/** `pl-{id}` 是 Subsonic 歌单封面标识，回退到第一首歌的封面。 */
+async function servePlaylistCoverArt(request: NextRequest, authRes: AuthResult, coverId: string): Promise<Response> {
+  const playlistId = Number(coverId.slice(3))
+  if (!Number.isSafeInteger(playlistId) || playlistId <= 0) return serveDefaultCoverArt(request)
+
+  const username = authRes.user?.username
+  if (!username) return serveDefaultCoverArt(request)
+
+  try {
+    const playlist = await getPlaylistCoverForUser(playlistId, username)
+    if (!playlist) return serveDefaultCoverArt(request)
+
+    if (playlist.coverArt && isHttpUrl(playlist.coverArt)) {
+      const customCover = await fetchImageFromUrl(playlist.coverArt)
+      if (customCover) return customCover
+    }
+
+    let musicInfo = playlist.musicInfo
+    if (!musicInfo && playlist.songId) {
+      musicInfo = await dbAPI.resolveMusicInfoById(playlist.songId)
+    }
+    if (!musicInfo) return serveDefaultCoverArt(request)
+
+    const picUrl = await getPicNative(musicInfo)
+    if (!picUrl) return serveDefaultCoverArt(request)
+    return (await fetchImageFromUrl(picUrl)) ?? serveDefaultCoverArt(request)
+  } catch (err) {
+    logger.warn('[getCoverArt] Failed to resolve playlist cover:', err)
+    return serveDefaultCoverArt(request)
+  }
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
 /**
  * 返回默认封面图片
  */
@@ -89,7 +136,7 @@ function serveDefaultCoverArt(request: NextRequest): Response {
  */
 async function fetchImageFromUrl(imageUrl: string): Promise<Response | null> {
   try {
-    console.log('[fetchImageFromUrl] Fetching image from URL:', imageUrl)
+    logger.debug('[fetchImageFromUrl] Fetching image from URL:', imageUrl)
     
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 5000)
@@ -123,7 +170,7 @@ async function fetchImageFromUrl(imageUrl: string): Promise<Response | null> {
       return null
     }
 
-    console.log('[fetchImageFromUrl] Got image, size:', buffer.byteLength)
+    logger.debug('[fetchImageFromUrl] Got image, size:', buffer.byteLength)
     
     return new Response(buffer, {
       status: 200,

@@ -11,7 +11,7 @@ vi.mock('@/lib/cache-manager', () => ({ searchCache: { get, set } }))
 vi.mock('@/lib/db', () => ({ getStorageSongmidForMusicInfo, upsertMusicInfosInTransaction }))
 vi.mock('@/lib/logger', () => ({ logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 
-const { getRecommendedPlaylistDetail } = await import('./discovery-service')
+const { getRecommendedPlaylistDetail, getRecommendedPlaylists } = await import('./discovery-service')
 
 describe('getRecommendedPlaylistDetail', () => {
   afterEach(() => {
@@ -59,6 +59,29 @@ describe('getRecommendedPlaylistDetail', () => {
     })
   })
 
+  it('网易云歌单详情通过 Linux API 取得完整曲目 ID，再补全被截断的歌曲详情', async () => {
+    const song = (id: number) => ({ id, name: `测试歌曲${id}`, ar: [{ name: '测试歌手' }], al: { id, name: '测试专辑' } })
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          code: 200,
+          playlist: { name: '网易云歌单', trackIds: [{ id: 1 }, { id: 2 }], tracks: [song(1)] },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ code: 200, songs: [song(1), song(2)] }),
+      })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const detail = await getRecommendedPlaylistDetail('wy', 'wy-playlist')
+
+    expect(detail?.tracks).toHaveLength(2)
+    expect(new URL(fetchMock.mock.calls[0]?.[0]).pathname).toBe('/api/linux/forward')
+    expect(new URL(fetchMock.mock.calls[1]?.[0]).pathname).toBe('/weapi/v3/song/detail')
+  })
+
   it('将歌单歌曲作为单个事务批量入库', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
@@ -98,5 +121,78 @@ describe('getRecommendedPlaylistDetail', () => {
 
     await expect(getRecommendedPlaylistDetail('tx', 'failed-transaction-playlist')).rejects.toBe(databaseError)
     expect(set).not.toHaveBeenCalled()
+  })
+
+  it('按 lxserver 的单次曲目数量请求酷我、酷狗和咪咕歌单', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ result: 'ok', title: '酷我歌单', musiclist: [{ id: 'kw-1', name: '酷我歌曲' }] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { info: [{ audio_id: 'kg-1', songname: '酷狗歌曲', hash: 'hash', filesize: 1 }] } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { specialname: '酷狗歌单' } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ code: '000000', data: { songList: [{ songId: 'mg-1', songName: '咪咕歌曲' }] } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ code: '000000', data: { title: '咪咕歌单' } }),
+      })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await getRecommendedPlaylistDetail('kw', 'kw-playlist')
+    await getRecommendedPlaylistDetail('kg', 'kg-playlist')
+    await getRecommendedPlaylistDetail('mg', 'mg-playlist')
+
+    const requestUrls = fetchMock.mock.calls.map(([url]) => new URL(url as string))
+    expect(requestUrls[0].searchParams.get('rn')).toBe('1000')
+    expect(requestUrls[1].searchParams.get('pagesize')).toBe('10000')
+    expect(requestUrls[3].searchParams.get('pageSize')).toBe('50')
+  })
+})
+
+describe('getRecommendedPlaylists', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    get.mockReturnValue(undefined)
+  })
+
+  it('传入关键词时调用 QQ 音乐的歌单搜索接口，而不是推荐歌单列表接口', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        code: 0,
+        data: {
+          list: [{
+            dissid: '123', dissname: '周杰伦精选', creator: { name: '测试用户' },
+            introduction: '搜索接口返回', imgurl: 'http://example.com/cover.jpg', listennum: 12000, song_count: 30,
+          }],
+        },
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const playlists = await getRecommendedPlaylists('tx', 12, 2, { keyword: '周杰伦', tag: '3317', sort: 'hot' })
+
+    expect(playlists).toEqual([expect.objectContaining({
+      id: '123', name: '周杰伦精选', author: '测试用户', source: 'tx', cover: 'https://example.com/cover.jpg', songCount: 30,
+    })])
+    const [url] = fetchMock.mock.calls[0] as [string]
+    const requestUrl = new URL(url)
+    expect(requestUrl.pathname).toBe('/soso/fcgi-bin/client_music_search_songlist')
+    expect(requestUrl.searchParams.get('query')).toBe('周杰伦')
+    expect(requestUrl.searchParams.get('page_no')).toBe('1')
+    expect(requestUrl.searchParams.get('num_per_page')).toBe('12')
   })
 })

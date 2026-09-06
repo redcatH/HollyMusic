@@ -15,6 +15,7 @@ export interface PlaylistSummary {
   songCount: number
   duration: number | null
   coverArt: string | null
+  coverSongUid: string | null
   createdAt: string
 }
 

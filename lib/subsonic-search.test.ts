@@ -9,7 +9,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { NextRequest } from 'next/server'
-import { handleSearch, parseSongCount } from './subsonic-search'
+import { handleSearch, parseSongCount, parseSubsonicSearchQuery } from './subsonic-search'
 import { getRandomMusicInfoList } from './db'
 import { searchCache } from './cache-manager'
 import { getSearchSources } from './search-config'
@@ -79,6 +79,20 @@ describe('parseSongCount', () => {
   })
 })
 
+describe('parseSubsonicSearchQuery', () => {
+  it.each(['tx', 'wy', 'kw', 'kg', 'mg'])('识别 %s: 渠道前缀', source => {
+    expect(parseSubsonicSearchQuery(`${source}:风说`)).toEqual({ source, query: '风说' })
+  })
+
+  it('前缀大小写不敏感，且忽略冒号两侧空白', () => {
+    expect(parseSubsonicSearchQuery(' TX : 风说 ')).toEqual({ source: 'tx', query: '风说' })
+  })
+
+  it('未知前缀不改变原关键词，保持聚合搜索兼容性', () => {
+    expect(parseSubsonicSearchQuery('unknown:风说')).toEqual({ query: 'unknown:风说' })
+  })
+})
+
 describe('handleSearch — 空 query（客户端"随便听听"预加载）', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -121,6 +135,7 @@ describe('handleSearch — 非空 query（聚合搜索，行为保持不变）',
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(getSearchSources).mockReturnValue(['wy', 'kg'])
+    vi.mocked(searchCache.get).mockReturnValue(null)
   })
 
   it('上游请求模式与现状一致：每源 1 次、第 1 页、固定 10 条；结果写缓存', async () => {
@@ -152,5 +167,15 @@ describe('handleSearch — 非空 query（聚合搜索，行为保持不变）',
 
     const { search } = await import('./music-core/music-search')
     expect(search).not.toHaveBeenCalled()
+  })
+
+  it.each(['tx', 'wy', 'kw', 'kg', 'mg'])('`%s:` 仅请求指定渠道，且去掉前缀', async source => {
+    const { search } = await import('./music-core/music-search')
+    vi.mocked(search).mockResolvedValue({ list: [sourceSong('风说')] } as never)
+
+    await handleSearch(req(`?query=${source}%3A%E9%A3%8E%E8%AF%B4&f=json`))
+
+    expect(search).toHaveBeenCalledTimes(1)
+    expect(search).toHaveBeenCalledWith(source, '风说', 1, 10)
   })
 })
