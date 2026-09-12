@@ -103,7 +103,12 @@ export function SongContextMenu() {
       <MenuItem
         icon={Heart}
         label={isFav ? '取消收藏' : '收藏'}
-        onClick={() => { void toggleFav(track.uid).catch(() => {}); close() }}
+        onClick={() => {
+          toggleFav(track.uid).catch(() =>
+            toast.error(isFav ? '取消收藏失败，请重试' : '收藏失败，请重试')
+          )
+          close()
+        }}
       />
       <MenuItem icon={ListMusic} label="加入歌单" onClick={() => { setPlaylistUid(track.uid); close() }} />
       {authenticated && (

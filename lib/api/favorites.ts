@@ -26,7 +26,3 @@ export function starSong(uid: string): Promise<{ starred: boolean }> {
 export function unstarSong(uid: string): Promise<{ starred: boolean }> {
   return apiDelete('favorites', { id: uid })
 }
-
-export function checkStarred(uid: string): Promise<{ starred: boolean }> {
-  return apiGet('favorites/check', { id: uid })
-}
