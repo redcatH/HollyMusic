@@ -28,8 +28,13 @@ const RESYNC_DELAY_MS = 600
  * 队列吞掉前一个任务的错误，保证后续任务不受影响；任务自身的错误仍抛给调用方。
  */
 let queue: Promise<unknown> = Promise.resolve()
-function enqueue<T>(task: () => Promise<T>): Promise<T> {
-  const run = queue.then(task, task)
+let sessionGeneration = 0
+function enqueue(task: (isCurrent: () => boolean) => Promise<void>): Promise<void> {
+  const generation = sessionGeneration
+  const isCurrent = () => generation === sessionGeneration
+  const run = queue.then(() => {
+    if (isCurrent()) return task(isCurrent)
+  })
   queue = run.catch(() => {})
   return run
 }
@@ -52,26 +57,28 @@ export const useFavoritesStore = create<FavoritesStore>((set, get) => ({
   version: 0,
 
   load: () =>
-    enqueue(async () => {
+    enqueue(async isCurrent => {
       try {
         // 分页拉全量：收藏数超过单页上限时，心形状态才不会漏判
         const ids = new Set<string>()
         let offset = 0
         for (;;) {
           const { list } = await listFavorites(SYNC_PAGE_SIZE, offset)
+          if (!isCurrent()) return
           for (const f of list) ids.add(f.songId)
           if (list.length < SYNC_PAGE_SIZE) break
           offset += list.length
         }
         set({ ids })
       } catch (e) {
+        if (!isCurrent()) return
         // 拉取失败保留现有集合（多为网络抖动），不打断 UI
         logger.error('[favorites] load failed', e)
       }
     }),
 
   toggle: (uid) =>
-    enqueue(async () => {
+    enqueue(async isCurrent => {
       // 出队时才读当前集合：连点时每次 toggle 基于上一次结果计算意图
       const wasFav = get().ids.has(uid)
       // 乐观更新（立即反映在 SongRow/PlayerBar 的心形图标上）
@@ -83,11 +90,13 @@ export const useFavoritesStore = create<FavoritesStore>((set, get) => ({
       try {
         if (wasFav) await unstarSong(uid)
         else await starSong(uid)
+        if (!isCurrent()) return
         // DB 已提交：通知订阅者（如收藏列表页）刷新完整数据
         set(s => ({ version: s.version + 1 }))
         // 延迟与服务端对齐（兜底：多端同时操作等乐观更新覆盖不到的场景）
         scheduleResync()
       } catch (e) {
+        if (!isCurrent()) return
         // 回滚
         const rollback = new Set(get().ids)
         if (wasFav) rollback.add(uid)
@@ -100,6 +109,9 @@ export const useFavoritesStore = create<FavoritesStore>((set, get) => ({
   isFavorite: (uid) => get().ids.has(uid),
 
   reset: () => {
+    // 旧请求即使晚返回也不能写状态、继续翻页或向新账号提交排队中的操作。
+    sessionGeneration++
+    queue = Promise.resolve()
     if (resyncTimer !== null) {
       clearTimeout(resyncTimer)
       resyncTimer = null

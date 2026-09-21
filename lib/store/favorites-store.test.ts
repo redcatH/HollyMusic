@@ -7,7 +7,7 @@
  * - 失败回滚、分页全量同步、toggle 成功后的延迟 resync。
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 const { listFavorites, starSong, unstarSong } = vi.hoisted(() => ({
   listFavorites: vi.fn(),
@@ -24,6 +24,15 @@ vi.mock('@/lib/api/favorites', () => ({
 const { useFavoritesStore } = await import('@/lib/store/favorites-store')
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (error: Error) => void
+  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej })
+  return { promise, resolve, reject }
+}
+
+afterEach(() => useFavoritesStore.getState().reset())
 
 /** 生成 n 条收藏响应 */
 function makeList(n: number, prefix = 'kw'): Array<{ songId: string }> {
@@ -140,6 +149,42 @@ describe('load 串行化与分页（P0/P2）', () => {
 })
 
 describe('reset', () => {
+  it('丢弃旧账号排队写操作，且新账号不必等待旧请求', async () => {
+    const oldPage = deferred<{ list: { songId: string }[]; total: number }>()
+    listFavorites.mockReturnValueOnce(oldPage.promise)
+    const load = useFavoritesStore.getState().load()
+    await Promise.resolve()
+    const oldToggle = useFavoritesStore.getState().toggle('kw-old')
+    useFavoritesStore.getState().reset()
+    await useFavoritesStore.getState().toggle('kw-new')
+    oldPage.resolve({ list: makeList(500), total: 600 })
+    await Promise.all([load, oldToggle])
+    expect(starSong.mock.calls).toEqual([['kw-new']])
+    expect(listFavorites).toHaveBeenCalledTimes(1) // 旧账号不得继续翻页
+    expect([...useFavoritesStore.getState().ids]).toEqual(['kw-new'])
+  })
+
+  it.each(['success', 'failure'])('旧账号在途写请求 %s 不覆盖新状态或重新安排同步', async outcome => {
+    vi.useFakeTimers()
+    try {
+      const oldWrite = deferred<void>()
+      starSong.mockReturnValueOnce(oldWrite.promise)
+      const oldToggle = useFavoritesStore.getState().toggle('kw-old')
+      await Promise.resolve()
+      useFavoritesStore.getState().reset()
+      useFavoritesStore.setState({ ids: new Set(['kw-new']), version: 10 })
+      if (outcome === 'success') oldWrite.resolve()
+      else oldWrite.reject(new Error('old session failed'))
+      await oldToggle
+      await vi.advanceTimersByTimeAsync(1000)
+      expect([...useFavoritesStore.getState().ids]).toEqual(['kw-new'])
+      expect(useFavoritesStore.getState().version).toBe(10)
+      expect(listFavorites).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('清空集合并重置 version', () => {
     useFavoritesStore.setState({ ids: new Set(['kw-1']), version: 7 })
     useFavoritesStore.getState().reset()

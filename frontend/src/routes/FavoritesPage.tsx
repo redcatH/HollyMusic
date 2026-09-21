@@ -14,6 +14,7 @@ const PAGE_SIZE = 100
 export function FavoritesPage() {
   const [favorites, setFavorites] = useState<FavoriteSong[]>([])
   const [total, setTotal] = useState(0)
+  const [hasMore, setHasMore] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -21,55 +22,81 @@ export function FavoritesPage() {
   const [retryTick, setRetryTick] = useState(0)
   /** 已加载深度：收藏变更触发刷新时按当前深度整体重拉，避免回退到第一页 */
   const loadedCountRef = useRef(0)
+  const requestGenerationRef = useRef(0)
+  const loadingMoreRef = useRef(false)
 
   // 订阅 favorites version：PlayerBar / SongRow 收藏/取消成功（DB 已提交）后自增，
   // 触发本页重新拉取列表，使收藏列表实时变更。
   const favVersion = useFavoritesStore(s => s.version)
 
   useEffect(() => {
-    let cancelled = false
+    const generation = ++requestGenerationRef.current
+    const isCurrent = () => requestGenerationRef.current === generation && useFavoritesStore.getState().version === favVersion
+    loadingMoreRef.current = false
+    setLoadingMore(false)
     setLoading(true)
     setError(null)
-    const limit = Math.min(Math.max(PAGE_SIZE, loadedCountRef.current), 500)
-    listFavorites(limit, 0)
-      .then(({ list, total }) => {
-        if (cancelled) return
+    const targetCount = Math.max(PAGE_SIZE, loadedCountRef.current)
+    const refresh = async () => {
+      const list: FavoriteSong[] = []
+      let total = 0
+      do {
+        const page = await listFavorites(Math.min(targetCount - list.length, 500), list.length)
+        if (!isCurrent()) return
+        list.push(...page.list)
+        total = page.total
+        if (page.list.length === 0) break
+      } while (list.length < targetCount && list.length < total)
+      return { list, total }
+    }
+    void refresh()
+      .then(result => {
+        if (!result || !isCurrent()) return
+        const { list, total } = result
         setFavorites(list)
         setTotal(total)
+        setHasMore(list.length < total)
         loadedCountRef.current = list.length
       })
       .catch(() => {
         // 失败时明确展示错误态，而不是把故障伪装成"还没有收藏"
-        if (!cancelled) setError('收藏列表加载失败，请检查网络后重试')
+        if (isCurrent()) setError('收藏列表加载失败，请检查网络后重试')
       })
       .finally(() => {
-        if (!cancelled) setLoading(false)
+        if (isCurrent()) setLoading(false)
       })
     return () => {
-      cancelled = true
+      requestGenerationRef.current++
     }
   }, [favVersion, retryTick])
 
-  const hasMore = favorites.length < total
-
   const loadMore = () => {
-    if (loadingMore || !hasMore) return
+    if (loading || loadingMoreRef.current || !hasMore) return
+    const generation = requestGenerationRef.current
+    const isCurrent = () => requestGenerationRef.current === generation && useFavoritesStore.getState().version === favVersion
+    loadingMoreRef.current = true
     setLoadingMore(true)
-    listFavorites(PAGE_SIZE, favorites.length)
+    listFavorites(PAGE_SIZE, loadedCountRef.current)
       .then(({ list, total }) => {
+        if (!isCurrent()) return
+        loadedCountRef.current += list.length
+        setHasMore(list.length > 0 && loadedCountRef.current < total)
         setFavorites(prev => {
           // 按 songId 去重合并：翻页窗口内取消收藏可能造成边界重复
           const seen = new Set(prev.map(f => f.songId))
           const merged = [...prev, ...list.filter(f => !seen.has(f.songId))]
-          loadedCountRef.current = merged.length
           return merged
         })
         setTotal(total)
       })
       .catch(() => {
-        toast.error('加载更多失败，请重试')
+        if (isCurrent()) toast.error('加载更多失败，请重试')
       })
-      .finally(() => setLoadingMore(false))
+      .finally(() => {
+        if (!isCurrent()) return
+        loadingMoreRef.current = false
+        setLoadingMore(false)
+      })
   }
 
   const tracks: Track[] = favorites
