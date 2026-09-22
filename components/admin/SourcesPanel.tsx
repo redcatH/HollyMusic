@@ -49,67 +49,97 @@ export function SourcesPanel() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [view, setView] = useState<'list' | 'matrix'>('list')
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [bulkBusy, setBulkBusy] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const busyRef = useRef(false)
+  const reloadIdRef = useRef(0)
+
+  const setMutationBusy = (value: boolean) => {
+    busyRef.current = value
+    setBusy(value)
+  }
+
+  const runMutation = async (operation: () => Promise<void>) => {
+    if (busyRef.current) return
+    setMutationBusy(true)
+    try {
+      await operation()
+    } finally {
+      setMutationBusy(false)
+    }
+  }
 
   const reload = useCallback(async (silent = false) => {
+    const requestId = ++reloadIdRef.current
     if (!silent) setLoading(true)
     setError(null)
     try {
       const { list } = await listSources()
+      if (requestId !== reloadIdRef.current) return
       setSources(list)
+      setSelected(previous => new Set([...previous].filter(path => list.some(source => source.path === path))))
     } catch (e) {
+      if (requestId !== reloadIdRef.current) return
       setError(e instanceof Error ? e.message : '加载失败')
     } finally {
-      if (!silent) setLoading(false)
+      if (requestId === reloadIdRef.current) setLoading(false)
     }
   }, [])
 
+  const invalidateReload = useCallback(() => { reloadIdRef.current++ }, [])
+
   useEffect(() => {
     reload()
-  }, [reload])
+    return invalidateReload
+  }, [reload, invalidateReload])
 
   const handleUpload = async (file: File) => {
-    setUploading(true)
-    setUploadMsg(null)
-    try {
-      await uploadScript(file)
-      setUploadMsg({ kind: 'success', text: `脚本「${file.name}」上传成功，已自动注册` })
-      await reload()
-    } catch (e) {
-      setUploadMsg({ kind: 'error', text: e instanceof Error ? e.message : '上传失败' })
-    } finally {
-      setUploading(false)
-      if (fileInputRef.current) fileInputRef.current.value = ''
-    }
+    await runMutation(async () => {
+      setUploading(true)
+      setUploadMsg(null)
+      try {
+        await uploadScript(file)
+        setUploadMsg({ kind: 'success', text: `脚本「${file.name}」上传成功，已自动注册` })
+        await reload()
+      } catch (e) {
+        setUploadMsg({ kind: 'error', text: e instanceof Error ? e.message : '上传失败' })
+      } finally {
+        setUploading(false)
+        if (fileInputRef.current) fileInputRef.current.value = ''
+      }
+    })
   }
 
   const handleSubscriptionImport = async (url: string) => {
-    setSubscribing(true)
-    setUploadMsg(null)
-    try {
-      await importSourceSubscription(url)
-      setSubscriptionDialogOpen(false)
-      setUploadMsg({ kind: 'success', text: '订阅导入成功，后续可在列表中手动更新' })
-      await reload()
-    } catch (e) {
-      setUploadMsg({ kind: 'error', text: e instanceof Error ? e.message : '导入订阅失败' })
-    } finally {
-      setSubscribing(false)
-    }
+    await runMutation(async () => {
+      setSubscribing(true)
+      setUploadMsg(null)
+      try {
+        await importSourceSubscription(url)
+        setSubscriptionDialogOpen(false)
+        setUploadMsg({ kind: 'success', text: '订阅导入成功，后续可在列表中手动更新' })
+        await reload()
+      } catch (e) {
+        setUploadMsg({ kind: 'error', text: e instanceof Error ? e.message : '导入订阅失败' })
+      } finally {
+        setSubscribing(false)
+      }
+    })
   }
 
   const handleSubscriptionUpdate = async (source: AdminSource) => {
-    setUpdatingSubscriptionPath(source.path)
-    setUploadMsg(null)
-    try {
-      await updateSourceSubscription(source.path)
-      setUploadMsg({ kind: 'success', text: `订阅「${source.name || source.path}」已更新` })
-      await reload()
-    } catch (e) {
-      setUploadMsg({ kind: 'error', text: e instanceof Error ? e.message : '更新订阅失败' })
-    } finally {
-      setUpdatingSubscriptionPath(null)
-    }
+    await runMutation(async () => {
+      setUpdatingSubscriptionPath(source.path)
+      setUploadMsg(null)
+      try {
+        await updateSourceSubscription(source.path)
+        setUploadMsg({ kind: 'success', text: `订阅「${source.name || source.path}」已更新` })
+        await reload()
+      } catch (e) {
+        setUploadMsg({ kind: 'error', text: e instanceof Error ? e.message : '更新订阅失败' })
+      } finally {
+        setUpdatingSubscriptionPath(null)
+      }
+    })
   }
 
   const handleCreated = async (opts: {
@@ -121,40 +151,49 @@ export function SourcesPanel() {
     enabled?: boolean
     pt?: string[]
   }) => {
-    await createSource(opts)
-    setDialog(null)
-    await reload()
+    await runMutation(async () => {
+      await createSource(opts)
+      setDialog(null)
+      await reload()
+    })
   }
 
   const handleUpdated = async (
     sourcePath: string,
     opts: Parameters<typeof updateSource>[1]
   ) => {
-    await updateSource(sourcePath, opts)
-    setDialog(null)
-    await reload()
+    await runMutation(async () => {
+      await updateSource(sourcePath, opts)
+      setDialog(null)
+      await reload()
+    })
   }
 
   const handleDelete = async (s: AdminSource) => {
-    if (!confirm(`确定删除音源「${s.name || s.path}」？关联的脚本文件也会被删除。`)) return
-    try {
-      await deleteSource(s.path)
-      await reload()
-    } catch (e) {
-      alert(e instanceof Error ? e.message : '删除失败')
-    }
+    await runMutation(async () => {
+      if (!confirm(`确定删除音源「${s.name || s.path}」？关联的脚本文件也会被删除。`)) return
+      try {
+        await deleteSource(s.path)
+        await reload()
+      } catch (e) {
+        alert(e instanceof Error ? e.message : '删除失败')
+      }
+    })
   }
 
   const toggleEnabled = async (s: AdminSource) => {
-    try {
-      await updateSource(s.path, { enabled: !s.enabled })
-      await reload(true)
-    } catch (e) {
-      alert(e instanceof Error ? e.message : '操作失败')
-    }
+    await runMutation(async () => {
+      try {
+        await updateSource(s.path, { enabled: !s.enabled })
+        await reload(true)
+      } catch (e) {
+        alert(e instanceof Error ? e.message : '操作失败')
+      }
+    })
   }
 
-  const allSelected = sources.length > 0 && selected.size === sources.length
+  const selectedSources = sources.filter(source => selected.has(source.path))
+  const allSelected = sources.length > 0 && selectedSources.length === sources.length
   const toggleSelectAll = () => {
     setSelected(allSelected ? new Set() : new Set(sources.map(s => s.path)))
   }
@@ -169,23 +208,23 @@ export function SourcesPanel() {
 
   /** 批量启用/禁用（服务端一次写入 + 一次 reload）。 */
   const bulkToggle = async (enabled: boolean) => {
-    if (selected.size === 0) return
-    setBulkBusy(true)
-    try {
-      const updates = [...selected].map(path => ({ path, enabled }))
-      const { updated } = await bulkUpdateSources(updates)
-      toast.success(`已${enabled ? '启用' : '禁用'} ${updated} 个音源`)
-      setSelected(new Set())
-      await reload(true)
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '批量操作失败')
-    } finally {
-      setBulkBusy(false)
-    }
+    await runMutation(async () => {
+      if (selectedSources.length === 0) return
+      try {
+        const updates = selectedSources.map(({ path }) => ({ path, enabled }))
+        const { updated } = await bulkUpdateSources(updates)
+        toast.success(`已${enabled ? '启用' : '禁用'} ${updated} 个音源`)
+        setSelected(new Set())
+        await reload(true)
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : '批量操作失败')
+        await reload(true)
+      }
+    })
   }
 
   return (
-    <div>
+    <fieldset disabled={busy} className="min-w-0">
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h2 className="flex items-center gap-2 text-xl font-bold">
@@ -266,11 +305,14 @@ export function SourcesPanel() {
       {loading ? (
         <LoadingSkeleton count={5} />
       ) : error ? (
-        <EmptyState icon={Music} title="加载失败" description={error} />
+        <div>
+          <EmptyState icon={Music} title="加载失败" description={error} />
+          <button onClick={() => reload()} className="rounded-full border border-border px-4 py-2 text-sm">重新加载</button>
+        </div>
       ) : sources.length === 0 ? (
         <EmptyState icon={Music} title="暂无音源" description="上传脚本或手动添加音源配置" />
       ) : view === 'matrix' ? (
-        <SourceMatrix sources={sources} reload={() => reload(true)} />
+        <SourceMatrix sources={sources} reload={() => reload(true)} onBusyChange={setMutationBusy} />
       ) : (
         <>
           {selected.size > 0 && (
@@ -278,21 +320,21 @@ export function SourcesPanel() {
               <span className="text-muted-foreground">已选 {selected.size} 项</span>
               <button
                 onClick={() => bulkToggle(true)}
-                disabled={bulkBusy}
+                disabled={busy}
                 className="rounded-full bg-green-500/15 px-3 py-1 text-xs font-medium text-green-600 hover:bg-green-500/25 disabled:opacity-50"
               >
                 批量启用
               </button>
               <button
                 onClick={() => bulkToggle(false)}
-                disabled={bulkBusy}
+                disabled={busy}
                 className="rounded-full bg-destructive/10 px-3 py-1 text-xs font-medium text-destructive hover:bg-destructive/20 disabled:opacity-50"
               >
                 批量禁用
               </button>
               <button
                 onClick={() => setSelected(new Set())}
-                disabled={bulkBusy}
+                disabled={busy}
                 className="ml-auto text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
               >
                 取消选择
@@ -372,7 +414,7 @@ export function SourcesPanel() {
                         </span>
                       ))}
                       {(!s.pt || s.pt.length === 0) && (
-                        <span className="text-xs text-muted-foreground">全部</span>
+                        <span className="text-xs text-muted-foreground">跟随脚本</span>
                       )}
                     </div>
                   </td>
@@ -437,7 +479,7 @@ export function SourcesPanel() {
           onSubmit={handleSubscriptionImport}
         />
       )}
-    </div>
+    </fieldset>
   )
 }
 

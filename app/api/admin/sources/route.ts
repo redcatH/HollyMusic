@@ -2,7 +2,7 @@
  * 音源配置管理 API（仅管理员）
  * GET   /api/admin/sources      列出音源配置 + 脚本状态
  * POST  /api/admin/sources      新增音源配置 { path, name?, description?, priority?, timeout?, enabled?, pt? }
- * PATCH /api/admin/sources      批量更新 { updates: [{ path, enabled?, pt? }] }（一次写入 + 一次 reload）
+ * PATCH /api/admin/sources      批量更新 { updates: [{ path, enabled?, pt?, priority? }] }
  */
 
 import { NextRequest } from 'next/server'
@@ -12,12 +12,15 @@ import {
   AuthError,
   ForbiddenError,
 } from '@/lib/services/user-context'
-import { addSource, listSourcesWithStatus, updateSourcesBulk } from '@/lib/services/source-manager-service'
+import { addSource, listSourcesWithStatus, SourceConfigError, updateSourcesBulk } from '@/lib/services/source-manager-service'
 import { logger } from '@/lib/logger'
 
 function guard(err: unknown) {
   if (err instanceof AuthError) return createErrorResponse('UNAUTHORIZED', err.message, 401)
   if (err instanceof ForbiddenError) return createErrorResponse('FORBIDDEN', err.message, 403)
+  if (err instanceof SourceConfigError) {
+    return createErrorResponse(err.statusCode === 409 ? 'CONFLICT' : 'INVALID_PARAMS', err.message, err.statusCode)
+  }
   if (err instanceof Error && err.message.includes('已存在')) {
     return createErrorResponse('CONFLICT', err.message, 409)
   }
@@ -87,7 +90,7 @@ export async function PATCH(request: NextRequest) {
     ) {
       return createErrorResponse(
         'INVALID_PARAMS',
-        '无效的 updates：需为非空数组，每项含 path 且带 enabled 和/或 pt 字段',
+        '无效的 updates：需为 1–200 项数组，每项含 path 和 enabled、pt、priority 中至少一个字段',
         400
       )
     }

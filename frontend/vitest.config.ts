@@ -18,6 +18,9 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, '..'),
       '@@': path.resolve(__dirname, 'src'),
+      // 共享组件与测试 renderer 必须加载同一份 React。
+      react: path.resolve(__dirname, '../node_modules/react'),
+      'react-dom': path.resolve(__dirname, '../node_modules/react-dom'),
     },
   },
   test: {

@@ -40,10 +40,15 @@ vi.mock('@/lib/services/user-context', () => ({
 
 const updateSourcesBulk = vi.fn(async () => ({ updated: 2 }))
 
+class MockSourceConfigError extends Error {
+  constructor(message: string, public readonly statusCode: 400 | 409) { super(message) }
+}
+
 vi.mock('@/lib/services/source-manager-service', () => ({
   addSource: vi.fn(),
   listSourcesWithStatus: vi.fn(async () => []),
   updateSourcesBulk: (...args: unknown[]) => updateSourcesBulk(...(args as [])),
+  SourceConfigError: MockSourceConfigError,
 }))
 
 const { PATCH } = await import('./route')
@@ -104,5 +109,11 @@ describe('PATCH /api/admin/sources（批量更新）', () => {
     expect(updateSourcesBulk).toHaveBeenCalledTimes(1)
     expect(updateSourcesBulk).toHaveBeenCalledWith(updates)
     expect(json.data).toEqual({ updated: 2 })
+  })
+
+  it.each([400, 409] as const)('将配置校验/冲突错误返回为 %s', async statusCode => {
+    updateSourcesBulk.mockRejectedValueOnce(new MockSourceConfigError('配置已变更', statusCode))
+    const response = await PATCH(req({ updates: [{ path: 'a.js', priority: 1 }] }))
+    expect(response.status).toBe(statusCode)
   })
 })

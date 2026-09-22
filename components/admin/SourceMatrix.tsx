@@ -8,7 +8,7 @@
  * 列头对全部启用源一键全开/全关（需确认）。
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ChevronUp, ChevronDown, Loader2 } from 'lucide-react'
 import { bulkUpdateSources, type AdminSource } from '@/lib/api/admin-sources'
 import { toast } from '@/lib/toast'
@@ -22,7 +22,7 @@ const PLATFORM_LABELS: Record<string, string> = {
   mg: '咪咕',
 }
 
-/** pt 未配置（跟随脚本声明）时按全平台显示，首次点击后固化为显式数组。 */
+/** pt 未配置时允许所有平台；实际可用的平台仍由脚本声明决定。 */
 function effectivePt(s: AdminSource): string[] {
   return s.pt && s.pt.length > 0 ? s.pt : [...PLATFORMS]
 }
@@ -38,19 +38,54 @@ function sortRows(sources: AdminSource[]): AdminSource[] {
 export function SourceMatrix({
   sources,
   reload,
+  onBusyChange,
 }: {
   sources: AdminSource[]
   reload: () => Promise<void>
+  onBusyChange?: (busy: boolean) => void
 }) {
   // 本地乐观态：与 props 同步（父组件静默重拉后合并），点击时先行变更
   const [rows, setRows] = useState<AdminSource[]>(() => sortRows(sources))
   const [busy, setBusy] = useState<string | null>(null)
+  const busyRef = useRef(false)
 
   useEffect(() => {
     setRows(sortRows(sources))
   }, [sources])
 
   const enabledRows = rows.filter(r => r.enabled)
+
+  const saveUpdates = async (
+    key: string,
+    updates: Parameters<typeof bulkUpdateSources>[0],
+    successMessage?: (updated: number) => string,
+  ) => {
+    if (busyRef.current) return
+    busyRef.current = true
+    setBusy(key)
+    onBusyChange?.(true)
+    const previousRows = rows
+    const byPath = new Map(updates.map(update => [update.path, update]))
+    setRows(previous => sortRows(previous.map(row => ({ ...row, ...byPath.get(row.path) }))))
+    try {
+      const { updated } = await bulkUpdateSources(updates)
+      if (successMessage) toast.success(successMessage(updated))
+    } catch (error) {
+      // 即使重拉也失败，仍能恢复操作前状态。
+      setRows(previousRows)
+      toast.error(error instanceof Error ? error.message : '保存失败')
+    } finally {
+      try {
+        await reload()
+      } catch {
+        toast.error('刷新音源列表失败，请重试')
+      } finally {
+        busyRef.current = false
+        setBusy(null)
+        onBusyChange?.(false)
+      }
+    }
+  }
 
   /** 单元格切换：pt 固化为「当前生效集合 ± 平台」后即时保存。 */
   const toggleCell = async (s: AdminSource, platform: string) => {
@@ -59,36 +94,15 @@ export function SourceMatrix({
       ? current.filter(p => p !== platform)
       : [...current, platform]
     if (nextPt.length === 0) {
-      toast.warning('至少保留一个平台；如需整体停用请使用行首开关')
+      toast.warning('至少保留一个平台；如需整体停用请使用启停开关')
       return
     }
-    const key = `${s.path}#${platform}`
-    setBusy(key)
-    setRows(prev => prev.map(r => (r.path === s.path ? { ...r, pt: nextPt } : r)))
-    try {
-      await bulkUpdateSources([{ path: s.path, pt: nextPt }])
-      await reload()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '保存失败')
-      await reload()
-    } finally {
-      setBusy(null)
-    }
+    await saveUpdates(`${s.path}#${platform}`, [{ path: s.path, pt: nextPt }])
   }
 
   /** 行首整体启停。 */
   const toggleRow = async (s: AdminSource) => {
-    setBusy(s.path)
-    setRows(prev => prev.map(r => (r.path === s.path ? { ...r, enabled: !r.enabled } : r)))
-    try {
-      await bulkUpdateSources([{ path: s.path, enabled: !s.enabled }])
-      await reload()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '保存失败')
-      await reload()
-    } finally {
-      setBusy(null)
-    }
+    await saveUpdates(s.path, [{ path: s.path, enabled: !s.enabled }])
   }
 
   /**
@@ -97,54 +111,31 @@ export function SourceMatrix({
    */
   const moveRow = async (index: number, dir: -1 | 1) => {
     const target = index + dir
-    const enabledIdx = enabledRows.map(r => rows.indexOf(r))
-    if (target < 0 || target >= enabledIdx.length) return
+    if (index < 0 || target < 0 || target >= enabledRows.length) return
     const reordered = [...enabledRows]
     const moved = reordered.splice(index, 1)[0]
     reordered.splice(target, 0, moved)
 
     const updates = reordered.map((r, i) => ({ path: r.path, priority: i + 1 }))
-    setBusy(rows[index].path)
-    setRows(prev => sortRows(prev.map(r => {
-      const hit = updates.find(u => u.path === r.path)
-      return hit ? { ...r, priority: hit.priority } : r
-    })))
-    try {
-      await bulkUpdateSources(updates)
-      await reload()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '调整优先级失败')
-      await reload()
-    } finally {
-      setBusy(null)
-    }
+    await saveUpdates(moved.path, updates)
   }
 
   /** 列级批量：混合态 → 全开；全开 → 全关。影响所有启用源，需确认。 */
   const toggleColumn = async (platform: string) => {
+    if (busyRef.current || enabledRows.length === 0) return
     const allOn = enabledRows.length > 0 && enabledRows.every(r => effectivePt(r).includes(platform))
     const verb = allOn ? '关闭' : '开启'
-    if (!confirm(`确定对全部 ${enabledRows.length} 个启用音源${verb}「${PLATFORM_LABELS[platform]}」平台支持？`)) return
-    setBusy(`col#${platform}`)
-    try {
-      const updates = enabledRows.map(r => {
-        const current = effectivePt(r)
-        const nextPt = allOn ? current.filter(p => p !== platform) : [...new Set([...current, platform])]
-        return nextPt.length === 0 ? null : { path: r.path, pt: nextPt }
-      }).filter((u): u is { path: string; pt: string[] } => u !== null)
-      if (updates.length === 0) {
-        toast.warning('全部源关闭后将为空，已跳过')
-        return
-      }
-      await bulkUpdateSources(updates)
-      toast.success(`已${verb} ${updates.length} 个音源的「${PLATFORM_LABELS[platform]}」支持`)
-      await reload()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '批量操作失败')
-      await reload()
-    } finally {
-      setBusy(null)
+    const blocked = allOn ? enabledRows.filter(r => effectivePt(r).length === 1) : []
+    if (blocked.length > 0) {
+      toast.warning(`无法全部关闭：${blocked.map(r => r.name || r.path).join('、')} 仅选择了该平台，请先使用启停开关停用这些音源`)
+      return
     }
+    if (!confirm(`确定对全部 ${enabledRows.length} 个启用音源${verb}「${PLATFORM_LABELS[platform]}」？实际支持以脚本为准。`)) return
+    const updates = enabledRows.map(r => {
+      const current = effectivePt(r)
+      return { path: r.path, pt: allOn ? current.filter(p => p !== platform) : [...new Set([...current, platform])] }
+    })
+    await saveUpdates(`col#${platform}`, updates, updated => `已${verb} ${updated} 个音源的「${PLATFORM_LABELS[platform]}」`)
   }
 
   if (rows.length === 0) {
@@ -189,8 +180,8 @@ export function SourceMatrix({
                     {s.subscription && (
                       <span className="rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium text-sky-600">订阅</span>
                     )}
-                    {s.pt && s.pt.length === 0 && (
-                      <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground" title="未配置平台限制，点击单元格后将固化为你所见的选择">跟随脚本</span>
+                    {!s.pt?.length && (
+                      <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground" title="未限制平台，实际支持以脚本声明为准；点击后仅允许所选平台">跟随脚本</span>
                     )}
                   </div>
                 </td>
@@ -202,13 +193,14 @@ export function SourceMatrix({
                       <button
                         onClick={() => toggleCell(s, p)}
                         disabled={busy !== null}
-                        aria-label={`${s.name || s.path} ${PLATFORM_LABELS[p]} ${on ? '已接管' : '未接管'}`}
+                        aria-label={`${s.name || s.path} ${PLATFORM_LABELS[p]} ${on ? '允许' : '屏蔽'}`}
+                        aria-pressed={on}
                         className={`h-6 w-6 rounded-full border transition disabled:cursor-not-allowed disabled:opacity-60 ${
                           on
                             ? 'border-primary bg-primary text-primary-foreground'
                             : 'border-border bg-muted text-transparent hover:border-primary/50'
                         }`}
-                        title={on ? `已接管${PLATFORM_LABELS[p]}（点击关闭）` : `不管${PLATFORM_LABELS[p]}（点击接管）`}
+                        title={on ? `允许${PLATFORM_LABELS[p]}（实际支持以脚本为准，点击屏蔽）` : `屏蔽${PLATFORM_LABELS[p]}（点击允许）`}
                       >
                         {busy === key ? <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin text-current" /> : '●'}
                       </button>
@@ -252,7 +244,7 @@ export function SourceMatrix({
         </tbody>
       </table>
       <p className="border-t border-border bg-accent/20 px-4 py-2 text-xs text-muted-foreground">
-        行序 = 取链优先级（从上到下依次尝试，可用 ▲▼ 调整）；● 表示该音源接管对应平台的播放取链；点击列名可对该平台一键全开/全关。
+        行序 = 取链优先级（从上到下依次尝试，可用 ▲▼ 调整）；● 表示允许该平台，实际支持以脚本为准。点击列名可批量开启或关闭；只剩一个平台的音源需先整体停用。
       </p>
     </div>
   )

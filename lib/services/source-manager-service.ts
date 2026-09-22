@@ -14,6 +14,7 @@ import fsp from 'fs/promises'
 import path from 'path'
 import dns from 'dns/promises'
 import net from 'net'
+import { randomUUID } from 'crypto'
 import { logger } from '@/lib/logger'
 import { sanitizeFilename } from '@/lib/server/download-utils'
 import type { MusicSourcesConfig, SourceConfig } from '@/lib/types/music'
@@ -26,6 +27,22 @@ const VALID_PLATFORMS = ['tx', 'wy', 'kw', 'kg', 'mg'] as const
 const MAX_SCRIPT_SIZE = 5 * 1024 * 1024 // 5MB
 const SUBSCRIPTION_REQUEST_TIMEOUT_MS = 15_000
 const MAX_SUBSCRIPTION_REDIRECTS = 3
+
+export class SourceConfigError extends Error {
+  constructor(message: string, public readonly statusCode: 400 | 409) {
+    super(message)
+    this.name = 'SourceConfigError'
+  }
+}
+
+// 所有管理入口共享读→修改→写入→重载队列，防止批量操作与单条编辑互相覆盖。
+let configMutation: Promise<void> = Promise.resolve()
+
+function mutateConfig<T>(operation: () => Promise<T>): Promise<T> {
+  const result = configMutation.then(operation)
+  configMutation = result.then(() => {}, () => {})
+  return result
+}
 
 export class SourceSubscriptionError extends Error {
   constructor(message: string, public readonly status: number = 422) {
@@ -62,17 +79,14 @@ async function getSimulatorCtor(): Promise<SimulatorConstructor> {
   return LXEnvironmentSimulatorCtor
 }
 
-/** 读取配置（带缓存校验）。文件不存在时自动初始化空配置并落盘，避免首次部署报 ENOENT。 */
+/** 只读配置；首次保存时再创建文件，避免列表查询与新增操作并发时覆盖配置。 */
 export async function readConfig(): Promise<MusicSourcesConfig> {
   let raw: string
   try {
     raw = await fsp.readFile(CONFIG_PATH, 'utf-8')
   } catch (e) {
     if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') {
-      logger.warn(`[source-manager-service] ${CONFIG_PATH} 不存在，初始化空配置`)
-      const empty: MusicSourcesConfig = { sources: [] }
-      await writeConfig(empty)
-      return empty
+      return { sources: [] }
     }
     throw e
   }
@@ -84,20 +98,20 @@ export async function readConfig(): Promise<MusicSourcesConfig> {
 }
 
 /** 原子写入配置（临时文件 + rename） */
-export async function writeConfig(config: MusicSourcesConfig): Promise<void> {
+async function writeConfig(config: MusicSourcesConfig): Promise<void> {
   // 按 priority 升序排列
   const sorted = {
     ...config,
     sources: [...config.sources].sort((a, b) => a.priority - b.priority),
   }
   const json = JSON.stringify(sorted, null, 2)
-  const tmp = CONFIG_PATH + '.tmp'
-  await fsp.writeFile(tmp, json, 'utf-8')
+  const tmp = `${CONFIG_PATH}.tmp-${process.pid}-${randomUUID()}`
+  await fsp.mkdir(path.dirname(CONFIG_PATH), { recursive: true })
   try {
+    await fsp.writeFile(tmp, json, 'utf-8')
     await fsp.rename(tmp, CONFIG_PATH)
-  } catch {
-    // Windows 下若 CONFIG_PATH 被占用 rename 可能失败，回退直接写
-    await fsp.writeFile(CONFIG_PATH, json, 'utf-8')
+  } finally {
+    // 替换失败时保留旧文件，不回退到可能被读到半截 JSON 的原地写入。
     await fsp.unlink(tmp).catch(() => {})
   }
   logger.debug('[source-manager-service] 配置已写入')
@@ -357,34 +371,36 @@ export async function addSource(opts: {
   pt?: string[]
   subscription?: SourceConfig['subscription']
 }): Promise<SourceConfig> {
-  const config = await readConfig()
+  return mutateConfig(async () => {
+    const config = await readConfig()
 
-  // path 唯一性
-  if (config.sources.some(s => s.path === opts.path)) {
-    throw new Error(`脚本路径已存在: ${opts.path}`)
-  }
+    // path 唯一性
+    if (config.sources.some(s => s.path === opts.path)) {
+      throw new Error(`脚本路径已存在: ${opts.path}`)
+    }
 
-  // priority 默认 = 当前最大 +1
-  const maxPriority = config.sources.reduce((max, s) => Math.max(max, s.priority), 0)
+    // priority 默认 = 当前最大 +1
+    const maxPriority = config.sources.reduce((max, s) => Math.max(max, s.priority), 0)
 
-  const newSource: SourceConfig = {
-    path: opts.path,
-    enabled: opts.enabled ?? true,
-    priority: opts.priority ?? maxPriority + 1,
-  }
-  if (opts.name) newSource.name = opts.name
-  if (opts.description) newSource.description = opts.description
-  if (opts.timeout) newSource.timeout = opts.timeout
-  if (opts.pt && opts.pt.length > 0) {
-    newSource.pt = opts.pt.filter(p => (VALID_PLATFORMS as readonly string[]).includes(p))
-  }
-  if (opts.subscription) newSource.subscription = opts.subscription
+    const newSource: SourceConfig = {
+      path: opts.path,
+      enabled: opts.enabled ?? true,
+      priority: opts.priority ?? maxPriority + 1,
+    }
+    if (opts.name) newSource.name = opts.name
+    if (opts.description) newSource.description = opts.description
+    if (opts.timeout) newSource.timeout = opts.timeout
+    if (opts.pt && opts.pt.length > 0) {
+      newSource.pt = opts.pt.filter(p => (VALID_PLATFORMS as readonly string[]).includes(p))
+    }
+    if (opts.subscription) newSource.subscription = opts.subscription
 
-  config.sources.push(newSource)
-  await writeConfig(config)
-  await notifyReload()
-  logger.info(`[source-manager-service] 新增源: ${newSource.path}`)
-  return newSource
+    config.sources.push(newSource)
+    await writeConfig(config)
+    await notifyReload()
+    logger.info(`[source-manager-service] 新增源: ${newSource.path}`)
+    return newSource
+  })
 }
 
 /** 从在线链接导入洛雪脚本，校验通过后自动注册为可更新订阅。 */
@@ -432,17 +448,26 @@ export async function updateSubscribedSource(sourcePath: string): Promise<Source
     throw new SourceSubscriptionError(`脚本校验失败：${validation.error || '未知错误'}`)
   }
 
-  await replaceScript(source.path, content)
-  const updated: SourceConfig = {
-    ...source,
-    pt: extractPlatforms(validation.sourceInfo),
-    subscription: { ...source.subscription, updatedAt: new Date().toISOString() },
-  }
-  config.sources[index] = updated
-  await writeConfig(config)
-  await notifyReload()
-  logger.info(`[source-manager-service] 已更新订阅脚本: ${source.subscription.url} → ${source.path}`)
-  return updated
+  return mutateConfig(async () => {
+    // 下载和校验期间可能发生平台/启停编辑或删除，必须从最新配置合并。
+    const latest = await readConfig()
+    const latestIndex = latest.sources.findIndex(item => item.path === sourcePath)
+    const current = latest.sources[latestIndex]
+    if (!current?.subscription || current.subscription.url !== source.subscription?.url) {
+      throw new SourceSubscriptionError('音源配置已变更，请刷新后重试', 409)
+    }
+    await replaceScript(current.path, content)
+    const updated: SourceConfig = {
+      ...current,
+      // pt 是管理员的平台筛选，不应被订阅脚本声明的平台覆盖。
+      subscription: { ...current.subscription, updatedAt: new Date().toISOString() },
+    }
+    latest.sources[latestIndex] = updated
+    await writeConfig(latest)
+    await notifyReload()
+    logger.info(`[source-manager-service] 已更新订阅脚本: ${current.subscription.url} → ${current.path}`)
+    return updated
+  })
 }
 
 /** 更新一条源配置（按 path 定位） */
@@ -457,87 +482,115 @@ export async function updateSource(
     pt?: string[]
   }
 ): Promise<SourceConfig> {
-  const config = await readConfig()
-  const idx = config.sources.findIndex(s => s.path === sourcePath)
-  if (idx < 0) throw new Error(`找不到源配置: ${sourcePath}`)
+  return mutateConfig(async () => {
+    const config = await readConfig()
+    const idx = config.sources.findIndex(s => s.path === sourcePath)
+    if (idx < 0) throw new Error(`找不到源配置: ${sourcePath}`)
 
-  const updated = { ...config.sources[idx] }
-  if (opts.name !== undefined) updated.name = opts.name
-  if (opts.description !== undefined) updated.description = opts.description
-  if (opts.priority !== undefined) updated.priority = opts.priority
-  if (opts.timeout !== undefined) updated.timeout = opts.timeout
-  if (opts.enabled !== undefined) updated.enabled = opts.enabled
-  if (opts.pt !== undefined) {
-    updated.pt = opts.pt.filter(p => (VALID_PLATFORMS as readonly string[]).includes(p))
-  }
+    const updated = { ...config.sources[idx] }
+    if (opts.name !== undefined) updated.name = opts.name
+    if (opts.description !== undefined) updated.description = opts.description
+    if (opts.priority !== undefined) updated.priority = opts.priority
+    if (opts.timeout !== undefined) updated.timeout = opts.timeout
+    if (opts.enabled !== undefined) updated.enabled = opts.enabled
+    if (opts.pt !== undefined) {
+      updated.pt = opts.pt.filter(p => (VALID_PLATFORMS as readonly string[]).includes(p))
+    }
 
-  config.sources[idx] = updated
-  await writeConfig(config)
-  await notifyReload()
-  logger.info(`[source-manager-service] 更新源: ${sourcePath}`)
-  return updated
+    config.sources[idx] = updated
+    await writeConfig(config)
+    await notifyReload()
+    logger.info(`[source-manager-service] 更新源: ${sourcePath}`)
+    return updated
+  })
 }
 
 /**
  * 批量更新源配置（一次写入 + 一次 reload）。
  * 供列表批量启停与平台矩阵单元格切换使用——避免逐条调用 updateSource
  * 造成 N 次全量音源实例销毁重建。
- * 路径不存在的条目跳过（适配列表拉取后源已被删除的竞态）。
+ * 列表过期或参数错误时整批拒绝，避免部分成功破坏平台筛选与优先级排序。
  */
 export async function updateSourcesBulk(
   updates: Array<{ path: string; enabled?: boolean; pt?: string[]; priority?: number }>
 ): Promise<{ updated: number }> {
   if (!Array.isArray(updates) || updates.length === 0) {
-    throw new Error('updates 不能为空')
+    throw new SourceConfigError('updates 不能为空', 400)
   }
 
-  const config = await readConfig()
-  const byPath = new Map(config.sources.map((s, i) => [s.path, i]))
-  let count = 0
-
+  const paths = new Set<string>()
   for (const update of updates) {
-    const idx = byPath.get(update.path)
-    if (idx === undefined) continue
-
-    const current = config.sources[idx]
-    const next = { ...current }
-    if (update.enabled !== undefined) next.enabled = update.enabled
-    if (update.priority !== undefined) next.priority = update.priority
-    if (update.pt !== undefined) {
-      next.pt = update.pt.filter(p => (VALID_PLATFORMS as readonly string[]).includes(p))
+    if (!update || typeof update.path !== 'string' || !update.path.trim() || paths.has(update.path)) {
+      throw new SourceConfigError('音源路径不能为空或重复', 400)
     }
+    paths.add(update.path)
     if (
-      next.enabled === current.enabled &&
-      next.pt === current.pt &&
-      next.priority === current.priority
-    )
-      continue
-
-    config.sources[idx] = next
-    count++
+      (update.enabled !== undefined && typeof update.enabled !== 'boolean') ||
+      (update.priority !== undefined && !Number.isFinite(update.priority)) ||
+      (update.pt !== undefined && (!Array.isArray(update.pt) || update.pt.some(p => !(VALID_PLATFORMS as readonly string[]).includes(p)))) ||
+      (update.enabled === undefined && update.pt === undefined && update.priority === undefined)
+    ) {
+      throw new SourceConfigError('无效的音源更新参数或平台', 400)
+    }
   }
 
-  if (count > 0) {
-    await writeConfig(config)
-    await notifyReload()
-    logger.info(`[source-manager-service] 批量更新 ${count} 条源配置`)
-  }
-  return { updated: count }
+  return mutateConfig(async () => {
+    const config = await readConfig()
+    const byPath = new Map(config.sources.map((s, i) => [s.path, i]))
+    for (const update of updates) {
+      if (!byPath.has(update.path)) {
+        throw new SourceConfigError(`音源列表已变更，请刷新后重试：${update.path}`, 409)
+      }
+    }
+    let count = 0
+
+    for (const update of updates) {
+      const idx = byPath.get(update.path)
+      if (idx === undefined) continue
+
+      const current = config.sources[idx]
+      const next = { ...current }
+      if (update.enabled !== undefined) next.enabled = update.enabled
+      if (update.priority !== undefined) next.priority = update.priority
+      if (update.pt !== undefined) {
+        next.pt = [...new Set(update.pt)]
+      }
+      if (
+        next.enabled === current.enabled &&
+        (next.pt ?? []).length === (current.pt ?? []).length &&
+        (next.pt ?? []).every(p => current.pt?.includes(p)) &&
+        next.priority === current.priority
+      )
+        continue
+
+      config.sources[idx] = next
+      count++
+    }
+
+    if (count > 0) {
+      await writeConfig(config)
+      await notifyReload()
+      logger.info(`[source-manager-service] 批量更新 ${count} 条源配置`)
+    }
+    return { updated: count }
+  })
 }
 
 /** 删除一条源配置 + 关联脚本文件 */
 export async function removeSource(sourcePath: string): Promise<void> {
-  const config = await readConfig()
-  const idx = config.sources.findIndex(s => s.path === sourcePath)
-  if (idx < 0) throw new Error(`找不到源配置: ${sourcePath}`)
+  return mutateConfig(async () => {
+    const config = await readConfig()
+    const idx = config.sources.findIndex(s => s.path === sourcePath)
+    if (idx < 0) throw new Error(`找不到源配置: ${sourcePath}`)
 
-  config.sources.splice(idx, 1)
-  await writeConfig(config)
-  await notifyReload()
+    config.sources.splice(idx, 1)
+    await writeConfig(config)
+    await notifyReload()
 
-  // 删除关联脚本文件
-  await deleteScript(sourcePath)
-  logger.info(`[source-manager-service] 删除源 + 脚本: ${sourcePath}`)
+    // 删除关联脚本文件
+    await deleteScript(sourcePath)
+    logger.info(`[source-manager-service] 删除源 + 脚本: ${sourcePath}`)
+  })
 }
 
 /** 从脚本 sourceInfo 提取支持平台（用于上传后自动填充 pt） */
