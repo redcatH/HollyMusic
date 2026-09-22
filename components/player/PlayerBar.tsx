@@ -18,6 +18,7 @@ interface PlayerBarProps {
 
 export function PlayerBar({ audio, onAudioElement }: PlayerBarProps) {
   const streamUrl = usePlayerStore(s => s.streamUrl)
+  const streamNonce = usePlayerStore(s => s.streamNonce)
   const isPlaying = usePlayerStore(s => s.isPlaying)
   const volume = usePlayerStore(s => s.volume)
   const isMuted = usePlayerStore(s => s.isMuted)
@@ -25,16 +26,14 @@ export function PlayerBar({ audio, onAudioElement }: PlayerBarProps) {
   const toggleLyrics = usePlayerStore(s => s.toggleLyrics)
   const toggleQueue = usePlayerStore(s => s.toggleQueue)
 
-  /**
-   * loadSeq：每次 streamUrl 变化自增。
-   * play/pause effect 用它判断 isPlaying 变化是否由「切歌」引起——
-   * 若是，跳过本次 play()，由 load(autoplay=true) 接管，避免 Howler 叠加双实例。
-   */
-  const loadSeqRef = useRef(0)
-  const skipNextPlayPauseRef = useRef(false)
+  const loadedRef = useRef<{ url: string; nonce: number } | null>(null)
 
   const { isReady, load, play, pause, seek, setVolume, setMuted } = useAudioPlayer({
-    onAudioElement,
+    onAudioElement: element => {
+      // StrictMode 的 effect 重建会创建新 Audio，不能沿用旧元素的加载记录。
+      loadedRef.current = null
+      onAudioElement(element)
+    },
     onTimeUpdate: t => usePlayerStore.getState().setCurrentTime(t),
     onDuration: d => usePlayerStore.getState().setDuration(d),
     onPlayState: p => usePlayerStore.getState().setIsPlaying(p),
@@ -48,18 +47,24 @@ export function PlayerBar({ audio, onAudioElement }: PlayerBarProps) {
   // PC 端全局键盘快捷键
   useKeyboardShortcuts()
 
-  // streamUrl 变化 → 加载音频（load 内部决定是否 autoplay）
+  // 加载/重播与暂停在同一 effect 中编排，避免状态被 React 合并后漏掉播放命令。
   useEffect(() => {
-    if (!streamUrl) return
-    loadSeqRef.current++
-    skipNextPlayPauseRef.current = true // 切歌引起的 isPlaying 变化由 load 接管
-    load(streamUrl, usePlayerStore.getState().isPlaying)
-  }, [streamUrl, load])
-
-  // isPlaying 变化 → 播放/暂停（跳过切歌引起的那一次，避免与 autoplay 叠加双实例）
-  useEffect(() => {
-    if (skipNextPlayPauseRef.current) {
-      skipNextPlayPauseRef.current = false
+    if (!streamUrl) {
+      loadedRef.current = null
+      void pause()
+      return
+    }
+    const previous = loadedRef.current
+    if (previous?.url !== streamUrl || previous.nonce !== streamNonce) {
+      loadedRef.current = { url: streamUrl, nonce: streamNonce }
+      if (previous?.url === streamUrl && isReady) {
+        // 同源重播复用已有缓冲；单曲循环在后台也不依赖 rAF 或布尔值翻转。
+        seek(0)
+        if (isPlaying) void play()
+        else void pause()
+      } else {
+        void load(streamUrl, isPlaying)
+      }
       return
     }
     // 播放需等待就绪；暂停不能等待。否则用户在加载/缓冲期间点击暂停，
@@ -69,7 +74,7 @@ export function PlayerBar({ audio, onAudioElement }: PlayerBarProps) {
       return
     }
     if (isReady) void play()
-  }, [isPlaying, isReady, play, pause])
+  }, [streamUrl, streamNonce, isPlaying, isReady, load, play, pause, seek])
 
   useEffect(() => {
     setVolume(volume)

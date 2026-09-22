@@ -11,6 +11,7 @@ import { QualityBadge } from './QualityBadge'
 import { Play, Pause, Heart, MoreHorizontal, Download, Loader2 } from 'lucide-react'
 import { formatTime } from '@/lib/utils/format'
 import { resolveQuality } from '@/lib/quality-options'
+import { toast } from '@/lib/toast'
 import type { Track } from '@/lib/types/player'
 
 interface SongRowProps {
@@ -93,7 +94,11 @@ export function SongRow({ track, queue, index }: SongRowProps) {
       </span>
 
       <button
-        onClick={() => toggleFav(track.uid).catch(() => {})}
+        onClick={() =>
+          toggleFav(track.uid).catch(() =>
+            toast.error(isFav ? '取消收藏失败，请重试' : '收藏失败，请重试')
+          )
+        }
         // 触屏扩大命中区（视觉不变，24px→40px，负 margin 抵消布局膨胀；HIG 44pt 标准）
         className={`shrink-0 p-1 transition pointer-coarse:p-3 pointer-coarse:-m-1.5 ${
           isFav

@@ -17,6 +17,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { logger } from '@/lib/logger'
 
 interface UseAudioPlayerOptions {
   /** 音频元素创建/销毁通知，供频谱等附属能力接入同一播放实例。 */
@@ -210,7 +211,7 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
     const onError = () => {
       if (!isCurrent()) return
       const err = audio.error
-      console.error('[useAudioPlayer] audio error', err)
+      logger.error('[useAudioPlayer] audio error', err)
       optsRef.current.onLoading?.(null)
       optsRef.current.onPlayState?.(false)
       stopProgress()
@@ -306,7 +307,6 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
   // ------------------------------------------------------------------
   const load = useCallback(
     async (url: string, autoplay = false) => {
-      console.log('[diag] audio load', url, 'autoplay=', autoplay)
       const audio = audioRef.current
       if (!audio) return
 
@@ -361,7 +361,7 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
           }
           if (gen !== loadGenRef.current) return
           audio.volume = targetVolumeRef.current
-          console.warn('[useAudioPlayer] autoplay blocked', e)
+          logger.warn('[useAudioPlayer] autoplay blocked', e)
           // autoplay 被浏览器拦截——同步 UI 状态，避免显示"播放中"但实际没声音
           optsRef.current.onPlayState?.(false)
         }
@@ -379,7 +379,6 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
       void fadeVolume(targetVolumeRef.current, 240)
       return
     }
-    console.log('[diag] audio play, readyState=', audio.readyState)
     try {
       audio.volume = 0
       await audio.play()
@@ -389,7 +388,7 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
       // 是浏览器标准行为，不算播放失败——否则会触发自动跳歌甚至停播
       if (e instanceof Error && e.name === 'AbortError') return
       audio.volume = targetVolumeRef.current
-      console.error('[useAudioPlayer] play() failed', e)
+      logger.error('[useAudioPlayer] play() failed', e)
       optsRef.current.onError?.('播放失败：' + (e instanceof Error ? e.message : String(e)))
     }
   }, [fadeVolume])
@@ -402,7 +401,6 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
     // play() Promise 尚未完成时 audio.paused 仍可能为 true；意图已写入，
     // 让随后到达的 play/playing 事件保持静默即可。
     if (audio.paused) return
-    console.log('[diag] audio pause, paused=', audio.paused)
     await fadeVolume(0, 360)
     // 淡出期间可能已切歌或恢复播放；仅暂停仍是同一段淡出的音频。
     if (audioRef.current !== audio || audio.paused || loadGenRef.current !== generation || playbackIntentRef.current !== 'paused') return
@@ -413,7 +411,6 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
     (t: number) => {
       const audio = audioRef.current
       if (!audio) return
-      console.log('[diag] audio seek to', t, 'readyState=', audio.readyState)
       // 设置自管理 seek 标志，让 onPause 能区分 seek 引起的 spurious pause
       seekingRef.current = true
       // 原生 seek：设置 currentTime，浏览器自动发 Range 请求
@@ -423,11 +420,15 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
       } catch (e) {
         // readyState=0 时设 currentTime 可能抛 InvalidStateError
         seekingRef.current = false
-        console.warn('[useAudioPlayer] seek failed', e)
+        logger.warn('[useAudioPlayer] seek failed', e)
         return
       }
       // 立即上报目标位置，让进度条即时响应（seeked 事件会再确认真实位置）
       optsRef.current.onTimeUpdate?.(t)
+      // 同源重播不会重新触发 loadedmetadata，主动恢复 store 中的真实时长。
+      if (Number.isFinite(audio.duration) && audio.duration > 0) {
+        optsRef.current.onDuration?.(audio.duration)
+      }
       // 主动启动 rAF 循环——seek 完成恢复播放后 onPlaying 会接管
       // 这是为了防止某些浏览器 seek 后事件时机异常导致 rAF 不启动
       if (!audio.paused) {

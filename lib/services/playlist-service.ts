@@ -229,6 +229,9 @@ export async function updatePlaylistMeta(
 /**
  * 向歌单添加歌曲（去重，position 追加）。仅 owner。
  * songIds 为 source-{存储songmid} 列表。
+ *
+ * 整体在交互式事务中执行：并发添加时"读最大 position → create"不再交错，
+ * 唯一约束冲突（P2002，如与并发删除重排撞 position）时整体重试。
  */
 export async function addSongsToPlaylist(
   id: number,
@@ -237,47 +240,52 @@ export async function addSongsToPlaylist(
 ): Promise<void> {
   await assertOwner(id, username)
 
-  const maxPosRow = await prisma.playlistEntry.findFirst({
-    where: { playlistId: id },
-    orderBy: { position: 'desc' },
-    select: { position: true },
-  })
-  let pos = maxPosRow?.position ?? 0
+  await withUniqueRetry(() =>
+    prisma.$transaction(async tx => {
+      const maxPosRow = await tx.playlistEntry.findFirst({
+        where: { playlistId: id },
+        orderBy: { position: 'desc' },
+        select: { position: true },
+      })
+      let pos = maxPosRow?.position ?? 0
 
-  const seen = new Set<string>()
-  for (const rawSid of songIds) {
-    const sid = String(rawSid).trim()
-    if (!sid || seen.has(sid)) continue
-    seen.add(sid)
+      const seen = new Set<string>()
+      for (const rawSid of songIds) {
+        const sid = String(rawSid).trim()
+        if (!sid || seen.has(sid)) continue
+        seen.add(sid)
 
-    // 已存在则跳过
-    const exists = await prisma.playlistEntry.findFirst({ where: { playlistId: id, songmid: sid } })
-    if (exists) continue
+        // 已存在则跳过
+        const exists = await tx.playlistEntry.findFirst({ where: { playlistId: id, songmid: sid } })
+        if (exists) continue
 
-    pos++
-    // 解析 source-songmid 关联 MusicInfo 行
-    let miRow: { id: number } | null = null
-    if (sid.includes('-')) {
-      const idx = sid.indexOf('-')
-      const src = sid.substring(0, idx)
-      const mid = sid.substring(idx + 1)
-      if (src && mid) {
-        miRow = await prisma.musicInfo.findUnique({
-          where: { source_songmid: { source: src, songmid: mid } },
-          select: { id: true },
+        pos++
+        // 解析 source-songmid 关联 MusicInfo 行
+        let miRow: { id: number } | null = null
+        if (sid.includes('-')) {
+          const idx = sid.indexOf('-')
+          const src = sid.substring(0, idx)
+          const mid = sid.substring(idx + 1)
+          if (src && mid) {
+            miRow = await tx.musicInfo.findUnique({
+              where: { source_songmid: { source: src, songmid: mid } },
+              select: { id: true },
+            })
+          }
+        }
+        await tx.playlistEntry.create({
+          data: { playlistId: id, musicInfoId: miRow?.id ?? null, songmid: sid, position: pos, addedBy: username },
         })
       }
-    }
-    await prisma.playlistEntry.create({
-      data: { playlistId: id, musicInfoId: miRow?.id ?? null, songmid: sid, position: pos, addedBy: username },
     })
-  }
+  )
 
   await refreshPlaylistStats(id)
 }
 
 /**
  * 从歌单移除歌曲（按 position）。仅 owner。删除后重排 position。
+ * 删除与重排在同一事务中执行，避免与并发操作交错产生 position 空洞/冲突。
  */
 export async function removeSongsFromPlaylist(
   id: number,
@@ -286,23 +294,27 @@ export async function removeSongsFromPlaylist(
 ): Promise<void> {
   await assertOwner(id, username)
 
-  for (const pos of positions) {
-    await prisma.playlistEntry.deleteMany({ where: { playlistId: id, position: pos } })
-  }
+  await withUniqueRetry(() =>
+    prisma.$transaction(async tx => {
+      for (const pos of positions) {
+        await tx.playlistEntry.deleteMany({ where: { playlistId: id, position: pos } })
+      }
 
-  const remaining = await prisma.playlistEntry.findMany({
-    where: { playlistId: id },
-    orderBy: { position: 'asc' },
-  })
-  for (let i = 0; i < remaining.length; i++) {
-    const newPos = i + 1
-    if (remaining[i].position !== newPos) {
-      await prisma.playlistEntry.update({
-        where: { id: remaining[i].id },
-        data: { position: newPos },
+      const remaining = await tx.playlistEntry.findMany({
+        where: { playlistId: id },
+        orderBy: { position: 'asc' },
       })
-    }
-  }
+      for (let i = 0; i < remaining.length; i++) {
+        const newPos = i + 1
+        if (remaining[i].position !== newPos) {
+          await tx.playlistEntry.update({
+            where: { id: remaining[i].id },
+            data: { position: newPos },
+          })
+        }
+      }
+    })
+  )
 
   await refreshPlaylistStats(id)
 }
@@ -317,6 +329,26 @@ export async function deletePlaylist(id: number, username: string): Promise<void
 }
 
 // ---- 内部工具 ----
+
+/** Prisma P2002：唯一约束冲突（duck-typing 判定，避免对生成客户端的类依赖） */
+function isUniqueConstraintError(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === 'P2002'
+}
+
+/** 事务撞唯一约束时（与并发操作交错）整体重试，最多 retries 次 */
+async function withUniqueRetry<T>(fn: () => Promise<T>, retries = 2): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn()
+    } catch (err) {
+      if (isUniqueConstraintError(err) && attempt < retries) {
+        logger.warn(`[playlist] unique constraint conflict, retrying (${attempt + 1}/${retries})`)
+        continue
+      }
+      throw err
+    }
+  }
+}
 
 async function assertOwner(id: number, username: string): Promise<void> {
   const playlist = await prisma.playlist.findUnique({ where: { id }, select: { username: true } })

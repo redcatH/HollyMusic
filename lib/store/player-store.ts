@@ -1,7 +1,7 @@
 /**
  * 播放器全局状态（zustand）
  * 管理播放队列、当前曲目、播放状态、播放模式、UI 面板。
- * 音频引擎（howler）在 useAudioPlayer 中，由 PlayerBar 编排 store 与音频。
+ * 原生音频引擎在 useAudioPlayer 中，由 PlayerBar 编排 store 与音频。
  */
 
 import { create } from 'zustand'
@@ -12,6 +12,12 @@ import { resolveQuality, nextLowerQuality } from '@/lib/quality-options'
 import { detectCodecCap, capQuality } from '@/lib/codec-support'
 import { reportPlay } from '@/lib/api/history'
 import { useAuthStore } from '@/hooks/useAuth'
+import { logger } from '@/lib/logger'
+
+/** 原生元数据就绪前使用曲目信息，避免有已知时长却显示 0:00。 */
+function initialDuration(track: Track): number {
+  return Number.isFinite(track.duration) && track.duration > 0 ? track.duration : 0
+}
 
 /** 仅在已登录时上报播放历史，匿名跳过（/api/history 受保护） */
 function reportPlayIfAuthed(musicInfo: Track['musicInfo']) {
@@ -52,6 +58,8 @@ interface PlayerStore {
   currentIndex: number
   currentTrack: Track | null
   streamUrl: string | null
+  /** 每次加载/重播均递增；同 URL 也必须执行，不能依赖 isPlaying 的瞬时变化。 */
+  streamNonce: number
   isFetchingUrl: boolean
   urlFetchError: string | null
   /** 连续播放失败计数（自动跳歌防死循环） */
@@ -134,6 +142,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   currentIndex: -1,
   currentTrack: null,
   streamUrl: null,
+  streamNonce: 0,
   isFetchingUrl: false,
   urlFetchError: null,
   errorRetryCount: 0,
@@ -168,7 +177,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
         set(s => ({ queue: [...s.queue, track], currentIndex: s.queue.length }))
       }
     }
-    set({ currentTrack: track, isCurrentTempPlay: false, currentTime: 0, duration: 0, urlFetchError: null })
+    set({ currentTrack: track, isCurrentTempPlay: false, currentTime: 0, duration: initialDuration(track), urlFetchError: null })
     await get().loadStreamUrl(track)
     reportPlayIfAuthed(track.musicInfo)
   },
@@ -183,6 +192,9 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     const eff = capQuality(resolved, get().codecCap)
     set({
       streamUrl: buildAudioUrl(track.uid, eff),
+      streamNonce: get().streamNonce + 1,
+      seekTarget: null,
+      currentTime: 0,
       effectiveQuality: eff,
       isFetchingUrl: false,
       isPlaying: true,
@@ -195,7 +207,6 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   },
 
   togglePlay: () => {
-    console.log('[diag] togglePlay, isPlaying=', get().isPlaying)
     set(s => (s.currentTrack ? { isPlaying: !s.isPlaying } : {}))
   },
   // 不在此处重置 errorRetryCount：解码失败常是「播一瞬间就挂」，play 事件已触发会把计数清零，
@@ -206,7 +217,9 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     if (t > 5 && s.errorRetryCount > 0) return { currentTime: t, errorRetryCount: 0 }
     return { currentTime: t }
   }),
-  setDuration: (d) => set({ duration: d }),
+  setDuration: (d) => {
+    if (Number.isFinite(d) && d > 0) set({ duration: d })
+  },
   setBufferProgress: (v) => set({ bufferProgress: v }),
   handleTrackError: (msg, errCode?) => {
     // 解码/格式不支持 → 仅对当前这首歌降一档重试（手机 WebView 常解不了 FLAC，降到 MP3 即可播）。
@@ -219,7 +232,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
         // errCode 3/4 多是单首音源坏数据 / 网络截断 / 服务端返回非音频，而非浏览器能力不足；
         // 旧实现把瞬时失败误判为能力上限并只降不升，一次失败就把整会话压到 128k（即使用户 flac 优先）。
         // 浏览器能力探测交给启动时的 canPlayType（detectCodecCap），已足够覆盖真不支持 FLAC 的设备。
-        console.warn(
+        logger.warn(
           `[player] 解码失败(err=${errCode})，${effectiveQuality} → ${lower} 降级重试：${currentTrack.name}`
         )
         get().loadStreamUrl(currentTrack, lower)
@@ -277,7 +290,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       nextIndex = (currentIndex + 1) % queue.length
     }
     const track = queue[nextIndex]
-    set({ currentIndex: nextIndex, currentTrack: track, isCurrentTempPlay: false, currentTime: 0, duration: 0 })
+    set({ currentIndex: nextIndex, currentTrack: track, isCurrentTempPlay: false, currentTime: 0, duration: initialDuration(track) })
     get().loadStreamUrl(track)
     reportPlayIfAuthed(track.musicInfo)
   },
@@ -295,7 +308,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       : (currentIndex - 1 + queue.length) % queue.length
     if (prevIndex < 0 || prevIndex >= queue.length) return
     const track = queue[prevIndex]
-    set({ currentIndex: prevIndex, currentTrack: track, isCurrentTempPlay: false, currentTime: 0, duration: 0 })
+    set({ currentIndex: prevIndex, currentTrack: track, isCurrentTempPlay: false, currentTime: 0, duration: initialDuration(track) })
     get().loadStreamUrl(track)
     reportPlayIfAuthed(track.musicInfo)
   },
@@ -306,13 +319,13 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       get().playFromPlayNext(0)
       return
     }
-    const { playbackMode, queue, currentIndex } = get()
-    if (queue.length === 0) return
-    if (playbackMode === 'loop') {
-      // 单曲循环：回到开头重新播放（onEnd 已将 isPlaying 置 false，此处 true 触发播放）
-      set({ currentTime: 0, seekTarget: 0, seekNonce: get().seekNonce + 1, isPlaying: true })
+    const { playbackMode, queue, currentIndex, currentTrack } = get()
+    if (playbackMode === 'loop' && currentTrack) {
+      // 单曲/插播都可重播。保留实际音质，由独立请求触发 seek(0) + play()。
+      set(s => ({ currentTime: 0, seekTarget: null, streamNonce: s.streamNonce + 1, isPlaying: true }))
       return
     }
+    if (queue.length === 0) return
     if (playbackMode === 'sequence' && currentIndex >= queue.length - 1) {
       // 顺序播放到末尾：停止
       set({ isPlaying: false, currentTime: 0 })
@@ -346,7 +359,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       currentTrack: track,
       isCurrentTempPlay: true,
       currentTime: 0,
-      duration: 0,
+      duration: initialDuration(track),
     })
     get().loadStreamUrl(track)
     reportPlayIfAuthed(track.musicInfo)
@@ -390,6 +403,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       isPlaying: false,
       currentTime: 0,
       duration: 0,
+      seekTarget: null,
       effectiveQuality: null,
       bufferProgress: null,
     }),

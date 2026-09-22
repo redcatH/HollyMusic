@@ -11,6 +11,35 @@ import { requireUser, AuthError } from '@/lib/services/user-context'
 import { listFavoriteSongs, starSong, unstarSong } from '@/lib/services/favorites-service'
 import { logger } from '@/lib/logger'
 
+/** 单页上限：防止 limit=100000 之类的请求拖垮富化查询；store 全量同步按 500/页翻页 */
+const MAX_PAGE_SIZE = 500
+const DEFAULT_PAGE_SIZE = 200
+
+/**
+ * 解析并校验 limit/offset 分页参数。
+ * 非法值（非整数、超范围）返回 null，由调用方回 400；不合法值绝不落进 Prisma take/skip。
+ */
+function parsePagination(searchParams: URLSearchParams): { limit: number; offset: number } | null {
+  let limit = DEFAULT_PAGE_SIZE
+  let offset = 0
+
+  const limitRaw = searchParams.get('limit')
+  if (limitRaw !== null && limitRaw !== '') {
+    const n = Number(limitRaw)
+    if (!Number.isInteger(n) || n < 1 || n > MAX_PAGE_SIZE) return null
+    limit = n
+  }
+
+  const offsetRaw = searchParams.get('offset')
+  if (offsetRaw !== null && offsetRaw !== '') {
+    const n = Number(offsetRaw)
+    if (!Number.isInteger(n) || n < 0) return null
+    offset = n
+  }
+
+  return { limit, offset }
+}
+
 function authGuard(err: unknown) {
   if (err instanceof AuthError) return createErrorResponse('UNAUTHORIZED', err.message, 401)
   return null
@@ -19,9 +48,15 @@ function authGuard(err: unknown) {
 export async function GET(request: NextRequest) {
   try {
     const user = await requireUser(request)
-    const limit = parseInt(request.nextUrl.searchParams.get('limit') || '200')
-    const offset = parseInt(request.nextUrl.searchParams.get('offset') || '0')
-    const data = await listFavoriteSongs(user.id, { limit, offset })
+    const page = parsePagination(request.nextUrl.searchParams)
+    if (!page) {
+      return createErrorResponse(
+        ErrorCodes.INVALID_PARAMS,
+        `分页参数无效：limit 需为 1~${MAX_PAGE_SIZE} 的整数，offset 需为非负整数`,
+        400
+      )
+    }
+    const data = await listFavoriteSongs(user.id, page)
     return createSuccessResponse(data)
   } catch (err) {
     const guard = authGuard(err)

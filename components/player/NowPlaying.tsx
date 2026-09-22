@@ -5,6 +5,7 @@ import { CoverImage } from '@/components/shared/CoverImage'
 import { Heart, Share2 } from 'lucide-react'
 import { QUALITY_LABEL } from '@/lib/quality-options'
 import { shareContent, buildSongShareUrl } from '@/lib/share'
+import { toast } from '@/lib/toast'
 
 export function NowPlaying() {
   const track = usePlayerStore(s => s.currentTrack)
@@ -51,7 +52,11 @@ export function NowPlaying() {
         <div className="truncate text-xs text-muted-foreground">{track.artist}</div>
       </div>
       <button
-        onClick={() => toggle(track.uid).catch(() => {})}
+        onClick={() =>
+          toggle(track.uid).catch(() =>
+            toast.error(isFav ? '取消收藏失败，请重试' : '收藏失败，请重试')
+          )
+        }
         className={`shrink-0 rounded-md p-2 transition-colors hover:bg-accent ${
           isFav ? 'text-primary' : 'text-foreground/70 hover:text-foreground'
         }`}
