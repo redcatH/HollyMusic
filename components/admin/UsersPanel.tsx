@@ -108,7 +108,7 @@ export function UsersPanel() {
                 <th className="px-4 py-3 font-medium">角色</th>
                 <th className="px-4 py-3 font-medium">状态</th>
                 <th className="px-4 py-3 font-medium">密码</th>
-                <th className="px-4 py-3 font-medium">最近登录</th>
+                <th className="px-4 py-3 font-medium">最近活跃</th>
                 <th className="px-4 py-3 font-medium">创建时间</th>
                 <th className="px-4 py-3 text-right font-medium">操作</th>
               </tr>
@@ -155,7 +155,7 @@ export function UsersPanel() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
-                      {u.lastLogin ? new Date(u.lastLogin).toLocaleString('zh-CN') : '—'}
+                      {u.lastSeen ? new Date(u.lastSeen).toLocaleString('zh-CN') : '—'}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
                       {new Date(u.createdAt).toLocaleDateString('zh-CN')}
