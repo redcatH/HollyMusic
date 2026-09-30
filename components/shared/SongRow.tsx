@@ -12,15 +12,17 @@ import { Play, Pause, Heart, MoreHorizontal, Download, Loader2 } from 'lucide-re
 import { formatTime } from '@/lib/utils/format'
 import { resolveQuality } from '@/lib/quality-options'
 import { toast } from '@/lib/toast'
+import type { PlaylistMenuEntry } from '@/lib/store/context-menu-store'
 import type { Track } from '@/lib/types/player'
 
 interface SongRowProps {
   track: Track
   queue?: Track[]
   index?: number
+  playlistEntry?: PlaylistMenuEntry
 }
 
-export function SongRow({ track, queue, index }: SongRowProps) {
+export function SongRow({ track, queue, index, playlistEntry }: SongRowProps) {
   const currentTrack = usePlayerStore(s => s.currentTrack)
   const isPlaying = usePlayerStore(s => s.isPlaying)
   const playTrack = usePlayerStore(s => s.playTrack)
@@ -34,7 +36,7 @@ export function SongRow({ track, queue, index }: SongRowProps) {
   const isCurrentPlaying = isCurrent && isPlaying
 
   // 触屏长按呼出操作菜单（Spotify/网易云同款），桌面走右键/hover"⋯"
-  const longPress = useLongPress((x, y) => openMenu(track, x, y))
+  const longPress = useLongPress((x, y) => openMenu(track, x, y, playlistEntry))
 
   const handlePlay = () => {
     if (isCurrent) {
@@ -48,7 +50,7 @@ export function SongRow({ track, queue, index }: SongRowProps) {
     <div
       onContextMenu={e => {
         e.preventDefault()
-        openMenu(track, e.clientX, e.clientY)
+        openMenu(track, e.clientX, e.clientY, playlistEntry)
       }}
       {...longPress}
       // 触屏禁用长按文本选择/iOS 放大镜（桌面不受影响）
@@ -138,7 +140,7 @@ export function SongRow({ track, queue, index }: SongRowProps) {
       <button
         onClick={e => {
           const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-          openMenu(track, rect.right, rect.bottom)
+          openMenu(track, rect.right, rect.bottom, playlistEntry)
         }}
         // 手机常显（触屏无 hover，pointer-fine 不匹配即回落 opacity-70），桌面 hover 显现；
         // 触屏扩大命中区（视觉不变，24px→40px），与收藏按钮命中区不重叠

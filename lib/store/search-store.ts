@@ -27,6 +27,7 @@ interface SearchStore {
   /** 搜索结果 */
   results: Song[]
   loading: boolean
+  pendingSources: number
   error: string | null
   /** 请求序号，自增用于丢弃过期请求 */
   reqId: number
@@ -44,6 +45,7 @@ export const useSearchStore = create<SearchStore>((set, get) => ({
   lastSource: 'all',
   results: [],
   loading: false,
+  pendingSources: 0,
   error: null,
   reqId: 0,
 
@@ -53,60 +55,43 @@ export const useSearchStore = create<SearchStore>((set, get) => ({
 
   run: async (kw, source) => {
     const trimmed = kw.trim()
+    const reqId = get().reqId + 1
     if (!trimmed) {
-      set({ results: [], loading: false, error: null, lastKeyword: '', lastSource: source })
+      set({ results: [], loading: false, pendingSources: 0, error: null, lastKeyword: '', lastSource: source, reqId })
       return
     }
-    const reqId = get().reqId + 1
-    set({ loading: true, error: null, reqId })
+    const sources = source === 'all' ? ALL_SOURCES : [source]
+    const lists = new Map<SourceType, Song[]>()
+    let completed = 0
+    let successful = 0
+    let firstError: unknown
+    set({ results: [], loading: true, pendingSources: sources.length, error: null, lastKeyword: trimmed, lastSource: source, reqId })
 
-    try {
-      const sources = source === 'all' ? ALL_SOURCES : [source]
-      const responses = await Promise.all(
-        sources.map(s =>
-          search(s, trimmed, 1, 30)
-            .then(r => ({ ok: true as const, list: r.list }))
-            .catch(err => ({ ok: false as const, err }))
-        )
-      )
-      // 过期请求丢弃
-      if (reqId !== get().reqId) return
-      const okLists: Song[][] = []
-      const failErrs: unknown[] = []
-      for (const r of responses) {
-        if (r.ok) okLists.push(r.list)
-        else failErrs.push(r.err)
+    await Promise.all(sources.map(async s => {
+      try {
+        const response = await search(s, trimmed, 1, 30)
+        successful++
+        lists.set(s, response.list)
+      } catch (error) {
+        firstError ??= error
+      } finally {
+        completed++
+        // 新搜索或重置后，不让旧请求覆盖当前结果。
+        if (reqId !== get().reqId) return
+        const results = sources.flatMap(src => lists.get(src) ?? [])
+        const pendingSources = sources.length - completed
+        if (pendingSources === 0 && successful === 0) {
+          // 全部源失败时显示错误；只要有一个源成功，空结果仍表示未找到。
+          const raw = firstError instanceof Error ? firstError.message : ''
+          const friendly = !raw || /Failed to execute|Network Error|fetch|JSON|ECONN/i.test(raw)
+            ? '网络异常或服务不可用，请稍后重试'
+            : raw
+          set({ results: [], loading: false, pendingSources: 0, error: friendly })
+        } else {
+          set({ results, loading: results.length === 0 && pendingSources > 0, pendingSources })
+        }
       }
-      if (okLists.length === 0) {
-        // 全部源失败：不能伪装成"未找到结果"，用户需要知道是服务/网络问题
-        const raw = failErrs[0] instanceof Error ? failErrs[0].message : ''
-        // fetch/JSON 解析等网络层报错对用户无意义，归一为友好文案；后端业务错误（中文 message）透出
-        const friendly = !raw || /Failed to execute|Network Error|fetch|JSON|ECONN/i.test(raw)
-          ? '网络异常或服务不可用，请稍后重试'
-          : raw
-        set({
-          results: [],
-          loading: false,
-          error: friendly,
-          lastKeyword: trimmed,
-          lastSource: source,
-        })
-        return
-      }
-      set({
-        results: okLists.flat(),
-        loading: false,
-        error: null,
-        lastKeyword: trimmed,
-        lastSource: source,
-      })
-    } catch (e) {
-      if (reqId !== get().reqId) return
-      set({
-        loading: false,
-        error: e instanceof Error ? e.message : '搜索失败',
-      })
-    }
+    }))
   },
 
   reset: () =>
@@ -117,7 +102,8 @@ export const useSearchStore = create<SearchStore>((set, get) => ({
       lastSource: 'all',
       results: [],
       loading: false,
+      pendingSources: 0,
       error: null,
-      reqId: 0,
+      reqId: get().reqId + 1,
     }),
 }))

@@ -28,6 +28,7 @@ export interface PlaylistSummary {
 }
 
 export interface PlaylistEntryItem {
+  id: number
   position: number
   songId: string
   musicInfo: MusicInfo | null
@@ -131,6 +132,7 @@ export async function getPlaylistDetail(
       }
     }
     entries.push({
+      id: e.id,
       position: e.position,
       songId: e.songmid || (musicInfo ? `${musicInfo.source}-${musicInfo.songmid}` : ''),
       musicInfo,
@@ -231,7 +233,7 @@ export async function updatePlaylistMeta(
  * songIds 为 source-{存储songmid} 列表。
  *
  * 整体在交互式事务中执行：并发添加时"读最大 position → create"不再交错，
- * 唯一约束冲突（P2002，如与并发删除重排撞 position）时整体重试。
+ * 统计在同一事务内更新；唯一约束/事务写冲突时整体重试。
  */
 export async function addSongsToPlaylist(
   id: number,
@@ -240,7 +242,7 @@ export async function addSongsToPlaylist(
 ): Promise<void> {
   await assertOwner(id, username)
 
-  await withUniqueRetry(() =>
+  await withTransactionRetry(() =>
     prisma.$transaction(async tx => {
       const maxPosRow = await tx.playlistEntry.findFirst({
         where: { playlistId: id },
@@ -277,32 +279,36 @@ export async function addSongsToPlaylist(
           data: { playlistId: id, musicInfoId: miRow?.id ?? null, songmid: sid, position: pos, addedBy: username },
         })
       }
+      await refreshPlaylistStats(tx, id)
     })
   )
-
-  await refreshPlaylistStats(id)
 }
 
 /**
- * 从歌单移除歌曲（按 position）。仅 owner。删除后重排 position。
- * 删除与重排在同一事务中执行，避免与并发操作交错产生 position 空洞/冲突。
+ * 从歌单移除歌曲（按稳定的 PlaylistEntry.id）。仅 owner。删除后重排 position。
+ * 删除、重排和统计在同一事务中执行，避免部分提交及过期统计写回。
  */
 export async function removeSongsFromPlaylist(
   id: number,
   username: string,
-  positions: number[]
+  entryIds: number[]
 ): Promise<void> {
   await assertOwner(id, username)
 
-  await withUniqueRetry(() =>
+  await withTransactionRetry(() =>
     prisma.$transaction(async tx => {
-      for (const pos of positions) {
-        await tx.playlistEntry.deleteMany({ where: { playlistId: id, position: pos } })
+      const ids = [...new Set(entryIds)]
+      const deleted = await tx.playlistEntry.deleteMany({
+        where: { playlistId: id, id: { in: ids } },
+      })
+      if (deleted.count !== ids.length) {
+        throw new PlaylistError('歌单歌曲不存在，请刷新后重试', 404)
       }
 
       const remaining = await tx.playlistEntry.findMany({
         where: { playlistId: id },
         orderBy: { position: 'asc' },
+        include: { musicInfo: { select: { durationSeconds: true } } },
       })
       for (let i = 0; i < remaining.length; i++) {
         const newPos = i + 1
@@ -313,10 +319,9 @@ export async function removeSongsFromPlaylist(
           })
         }
       }
+      await refreshPlaylistStats(tx, id, remaining)
     })
   )
-
-  await refreshPlaylistStats(id)
 }
 
 /**
@@ -330,19 +335,21 @@ export async function deletePlaylist(id: number, username: string): Promise<void
 
 // ---- 内部工具 ----
 
-/** Prisma P2002：唯一约束冲突（duck-typing 判定，避免对生成客户端的类依赖） */
-function isUniqueConstraintError(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === 'P2002'
+/** 仅重试明确的唯一约束冲突或事务写冲突；业务错误原样上抛。 */
+function isRetryableTransactionError(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false
+  const code = (err as { code?: unknown }).code
+  return code === 'P2002' || code === 'P2034'
 }
 
-/** 事务撞唯一约束时（与并发操作交错）整体重试，最多 retries 次 */
-async function withUniqueRetry<T>(fn: () => Promise<T>, retries = 2): Promise<T> {
+/** 事务发生可重试冲突时整体重试，最多 retries 次 */
+async function withTransactionRetry<T>(fn: () => Promise<T>, retries = 2): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     try {
       return await fn()
     } catch (err) {
-      if (isUniqueConstraintError(err) && attempt < retries) {
-        logger.warn(`[playlist] unique constraint conflict, retrying (${attempt + 1}/${retries})`)
+      if (isRetryableTransactionError(err) && attempt < retries) {
+        logger.warn(`[playlist] transaction conflict, retrying (${attempt + 1}/${retries})`)
         continue
       }
       throw err
@@ -356,14 +363,18 @@ async function assertOwner(id: number, username: string): Promise<void> {
   if (playlist.username !== username) throw new PlaylistError('Access denied', 403)
 }
 
-async function refreshPlaylistStats(id: number): Promise<void> {
-  const total = await prisma.playlistEntry.count({ where: { playlistId: id } })
-  const entries = await prisma.playlistEntry.findMany({
+/** 与条目变更一起提交；数量和时长使用同一份条目数据。 */
+async function refreshPlaylistStats(
+  tx: Prisma.TransactionClient,
+  id: number,
+  remaining?: { musicInfo: { durationSeconds: number | null } | null }[]
+): Promise<void> {
+  const entries = remaining ?? await tx.playlistEntry.findMany({
     where: { playlistId: id },
     include: { musicInfo: { select: { durationSeconds: true } } },
   })
   const totalDuration = entries.reduce((acc, e) => acc + (e.musicInfo?.durationSeconds ?? 0), 0)
-  await prisma.playlist.update({ where: { id: id }, data: { songCount: total, duration: totalDuration } })
+  await tx.playlist.update({ where: { id }, data: { songCount: entries.length, duration: totalDuration } })
 }
 
 export class PlaylistError extends Error {

@@ -13,6 +13,7 @@ import type { SourceType } from '@/lib/types/music'
 export function useSearch() {
   const results = useSearchStore(s => s.results)
   const loading = useSearchStore(s => s.loading)
+  const pendingSources = useSearchStore(s => s.pendingSources)
   const error = useSearchStore(s => s.error)
   const keyword = useSearchStore(s => s.keyword)
   const lastKeyword = useSearchStore(s => s.lastKeyword)
@@ -26,5 +27,5 @@ export function useSearch() {
     [runStore]
   )
 
-  return { results, loading, error, keyword, lastKeyword, source, setKeyword, setSource, run }
+  return { results, loading, pendingSources, error, keyword, lastKeyword, source, setKeyword, setSource, run }
 }

@@ -1,7 +1,7 @@
 /**
  * 歌单歌曲 API
  * POST   /api/playlists/[id]/songs  body {songIds[]}        添加歌曲
- * DELETE /api/playlists/[id]/songs  query/body {positions[]} 移除歌曲（按 position）
+ * DELETE /api/playlists/[id]/songs  query {entryId} 移除歌曲（按 PlaylistEntry.id）
  */
 
 import { NextRequest } from 'next/server'
@@ -48,24 +48,12 @@ export async function DELETE(
     const playlistId = parseInt(id, 10)
     if (isNaN(playlistId)) return createErrorResponse(ErrorCodes.INVALID_PARAMS, '无效的歌单 id', 400)
 
-    // positions 可来自 query 或 body
-    let positions: number[]
-    const posQuery = request.nextUrl.searchParams.get('positions')
-    if (posQuery) {
-      positions = posQuery
-        .split(',')
-        .map(s => parseInt(s.trim(), 10))
-        .filter(n => !isNaN(n))
-    } else {
-      const body = await request.json().catch(() => ({}))
-      positions = Array.isArray(body?.positions)
-        ? body.positions.map((n: unknown) => Number(n)).filter((n: number) => !isNaN(n))
-        : []
+    const entryIdParam = request.nextUrl.searchParams.get('entryId')
+    const entryId = Number(entryIdParam)
+    if (!entryIdParam || !Number.isSafeInteger(entryId) || entryId <= 0) {
+      return createErrorResponse(ErrorCodes.INVALID_PARAMS, '无效的 entryId', 400)
     }
-    if (positions.length === 0) {
-      return createErrorResponse(ErrorCodes.INVALID_PARAMS, '缺少 positions', 400)
-    }
-    await removeSongsFromPlaylist(playlistId, user.username, positions)
+    await removeSongsFromPlaylist(playlistId, user.username, [entryId])
     return createSuccessResponse({ removed: true })
   } catch (err) {
     if (err instanceof AuthError) return createErrorResponse('UNAUTHORIZED', err.message, 401)

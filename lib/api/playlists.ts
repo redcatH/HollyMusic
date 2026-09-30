@@ -20,6 +20,7 @@ export interface PlaylistSummary {
 }
 
 export interface PlaylistEntryItem {
+  id: number
   position: number
   songId: string
   musicInfo: MusicInfo | null
@@ -64,7 +65,7 @@ export function addSongsToPlaylist(
 
 export function removeSongsFromPlaylist(
   id: number,
-  positions: number[]
+  entryId: number
 ): Promise<{ removed: boolean }> {
-  return apiDelete(`playlists/${id}/songs`, { positions: positions.join(',') })
+  return apiDelete(`playlists/${id}/songs`, { entryId })
 }

@@ -11,18 +11,26 @@ import type { Track } from '@/lib/types/player'
  *  （与 useLongPress 的 touchend preventDefault 双保险，防止菜单闪关） */
 const OPEN_GUARD_MS = 350
 
+export interface PlaylistMenuEntry {
+  playlistId: number
+  entryId: number
+  onRemoved: () => Promise<void>
+}
+
 interface MenuState {
-  menu: { track: Track; x: number; y: number; openedAt: number } | null
-  openMenu: (track: Track, x: number, y: number) => void
+  menu: { track: Track; x: number; y: number; openedAt: number; playlistEntry?: PlaylistMenuEntry } | null
+  openMenu: (track: Track, x: number, y: number, playlistEntry?: PlaylistMenuEntry) => void
   close: () => void
+  dismiss: () => void
 }
 
 export const useContextMenuStore = create<MenuState>((set, get) => ({
   menu: null,
-  openMenu: (track, x, y) => set({ menu: { track, x, y, openedAt: Date.now() } }),
+  openMenu: (track, x, y, playlistEntry) => set({ menu: { track, x, y, openedAt: Date.now(), playlistEntry } }),
   close: () => {
     const m = get().menu
     if (m && Date.now() - m.openedAt < OPEN_GUARD_MS) return
     set({ menu: null })
   },
+  dismiss: () => set({ menu: null }),
 }))

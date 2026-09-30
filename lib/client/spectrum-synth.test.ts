@@ -22,13 +22,17 @@ function averageEnvelope(bins: number, samples: number): { low: number; high: nu
 describe('spectrumSynth', () => {
   it('输出值域始终在 [0, 255]', () => {
     const data = new Uint8Array(SPECTRUM_SYNTH_BINS)
+    let min = Infinity
+    let max = -Infinity
     for (let s = 0; s < 200; s++) {
       spectrumSynth(data, s * 137.5)
       for (const v of data) {
-        expect(v).toBeGreaterThanOrEqual(0)
-        expect(v).toBeLessThanOrEqual(255)
+        min = Math.min(min, v)
+        max = Math.max(max, v)
       }
     }
+    expect(min).toBeGreaterThanOrEqual(0)
+    expect(max).toBeLessThanOrEqual(255)
   })
 
   it('能量包络低频重、高频轻（多帧平均）', () => {

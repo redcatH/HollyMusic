@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import { Play, ListPlus, Plus, Heart, ListMusic, Download, Share2 } from 'lucide-react'
+import { Play, ListPlus, Plus, Heart, ListMusic, ListMinus, Download, Share2 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useContextMenuStore } from '@/lib/store/context-menu-store'
 import { usePlayerStore } from '@/lib/store/player-store'
@@ -19,6 +19,7 @@ import { useAuthStore } from '@/hooks/useAuth'
 import { useDownload } from '@/hooks/useDownload'
 import { resolveQuality } from '@/lib/quality-options'
 import { toast } from '@/lib/toast'
+import { removeSongsFromPlaylist } from '@/lib/api/playlists'
 import { shareContent, buildSongShareUrl } from '@/lib/share'
 import { AddToPlaylistDialog } from '../../frontend/src/components/playlists/AddToPlaylistDialog'
 // ponytail: AddToPlaylistDialog 已移至 frontend/src/components/playlists，
@@ -46,6 +47,7 @@ function useIsMobile() {
 export function SongContextMenu() {
   const menu = useContextMenuStore(s => s.menu)
   const close = useContextMenuStore(s => s.close)
+  const dismiss = useContextMenuStore(s => s.dismiss)
   const playTrack = usePlayerStore(s => s.playTrack)
   const addNext = usePlayerStore(s => s.addNext)
   const addToQueue = usePlayerStore(s => s.addToQueue)
@@ -81,7 +83,7 @@ export function SongContextMenu() {
   )
 
   if (!menu) return <>{playlistDialog}</>
-  const { track, x, y } = menu
+  const { track, x, y, playlistEntry } = menu
   const left = Math.min(x, window.innerWidth - MENU_WIDTH - 8)
   const top = Math.min(y, window.innerHeight - MENU_MAX_HEIGHT - 8)
 
@@ -92,6 +94,23 @@ export function SongContextMenu() {
       url: buildSongShareUrl(track.uid),
     })
     close()
+  }
+
+  const handleRemoveFromPlaylist = async () => {
+    if (!playlistEntry) return
+    dismiss()
+    try {
+      await removeSongsFromPlaylist(playlistEntry.playlistId, playlistEntry.entryId)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '移出歌单失败')
+      return
+    }
+    try {
+      await playlistEntry.onRemoved()
+      toast.success('已移出歌单')
+    } catch {
+      toast.warning('已移出歌单，但刷新失败，请重试')
+    }
   }
 
   // 两套布局共用的菜单项列表（addNext/addToQueue 入插播队列必生效，toast 恒真）
@@ -111,6 +130,9 @@ export function SongContextMenu() {
         }}
       />
       <MenuItem icon={ListMusic} label="加入歌单" onClick={() => { setPlaylistUid(track.uid); close() }} />
+      {playlistEntry && (
+        <MenuItem icon={ListMinus} label="移出歌单" onClick={() => { void handleRemoveFromPlaylist() }} />
+      )}
       {authenticated && (
         <MenuItem
           icon={Download}

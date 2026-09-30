@@ -18,6 +18,7 @@ import { SongContextMenu } from '@/components/shared/SongContextMenu'
 import { useFavoritesStore } from '@/lib/store/favorites-store'
 import { usePlayerStore } from '@/lib/store/player-store'
 import { useSearchStore } from '@/lib/store/search-store'
+import { useContextMenuStore } from '@/lib/store/context-menu-store'
 import { useAuthStore } from '@/hooks/useAuth'
 import { HomePage } from './routes/HomePage'
 import { DiscoveryCollectionPage } from './routes/DiscoveryCollectionPage'
@@ -44,6 +45,11 @@ export function App() {
   // 播放引擎只创建一张原生 Audio；传给底栏与歌词详情共用同一分析对象。
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null)
 
+  // 包括浏览器前进/后退；强制关闭，避免刚打开菜单时的 close 保护期。
+  useEffect(() => {
+    useContextMenuStore.getState().dismiss()
+  }, [location])
+
   // 启动时获取会话状态
   useEffect(() => {
     initAuth()
@@ -59,6 +65,7 @@ export function App() {
   // 登出/会话失效 → 清空上一个用户的播放器、收藏、搜索等残留状态
   useEffect(() => {
     if (authenticated !== false) return
+    useContextMenuStore.getState().dismiss()
     const p = usePlayerStore.getState()
     p.clearQueue()       // 队列/当前曲目/streamUrl/isPlaying（停声音 + 清 MediaSession）
     p.clearSleepTimer()  // 上一个用户的睡眠定时器

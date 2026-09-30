@@ -3,8 +3,8 @@
  *
  * P1b 回归守卫：
  * - addSongsToPlaylist / removeSongsFromPlaylist 在交互式事务中执行；
- * - 撞唯一约束（P2002）时整体重试，其他错误如实上抛；
- * - position 追加与删除后压缩重排正确。
+ * - 唯一约束/事务写冲突时有限重试，其他错误如实上抛；
+ * - position 追加、按条目 ID 删除与删除后压缩重排正确，统计在事务中更新。
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -45,6 +45,7 @@ const { addSongsToPlaylist, removeSongsFromPlaylist, PlaylistError } = await imp
 
 /** 事务内 tx 客户端：与外层 mock 共用同一组 spy */
 const txClient = {
+  playlist: { update: m.playlistUpdate },
   playlistEntry: {
     findFirst: m.entryFindFirst,
     findMany: m.entryFindMany,
@@ -63,7 +64,7 @@ beforeEach(() => {
   // stats 刷新的默认返回
   m.entryCount.mockResolvedValue(0)
   m.entryFindMany.mockResolvedValue([])
-  m.entryDeleteMany.mockResolvedValue({ count: 0 })
+  m.entryDeleteMany.mockResolvedValue({ count: 1 })
   m.entryCreate.mockResolvedValue({ id: 100 })
   m.entryUpdate.mockResolvedValue({})
   m.playlistUpdate.mockResolvedValue({})
@@ -128,6 +129,16 @@ describe('addSongsToPlaylist（P1b 事务化）', () => {
     expect(m.transaction).toHaveBeenCalledTimes(1)
   })
 
+  it('事务写冲突（P2034）整体重试，且重试有上限', async () => {
+    const conflict = Object.assign(new Error('write conflict'), { code: 'P2034' })
+    m.entryFindFirst.mockResolvedValue(null)
+    m.transaction.mockRejectedValue(conflict)
+
+    await expect(addSongsToPlaylist(1, 'tester', ['kw-123'])).rejects.toThrow('write conflict')
+    expect(m.transaction).toHaveBeenCalledTimes(3)
+    expect(m.playlistUpdate).not.toHaveBeenCalled()
+  })
+
   it('非 owner 拒绝（403）', async () => {
     m.playlistFindUnique.mockResolvedValue({ username: 'someone-else' })
 
@@ -140,7 +151,7 @@ describe('addSongsToPlaylist（P1b 事务化）', () => {
 
 describe('removeSongsFromPlaylist（重排正确性）', () => {
   it('删除后剩余条目压缩重排为 1..N，且在事务中执行', async () => {
-    // 删掉 position 1 后剩余 [2, 3, 5]
+    // 按条目 ID 11 删除后剩余 [2, 3, 5]
     m.entryFindMany
       .mockResolvedValueOnce([
         { id: 21, position: 2 },
@@ -149,27 +160,39 @@ describe('removeSongsFromPlaylist（重排正确性）', () => {
       ])
       .mockResolvedValue([]) // stats 刷新读取
 
-    await removeSongsFromPlaylist(1, 'tester', [1])
+    await removeSongsFromPlaylist(1, 'tester', [11])
 
     expect(m.transaction).toHaveBeenCalledTimes(1)
-    expect(m.entryDeleteMany).toHaveBeenCalledWith({ where: { playlistId: 1, position: 1 } })
+    expect(m.entryDeleteMany).toHaveBeenCalledWith({ where: { playlistId: 1, id: { in: [11] } } })
     expect(m.entryUpdate).toHaveBeenCalledTimes(3)
     expect(m.entryUpdate).toHaveBeenNthCalledWith(1, { where: { id: 21 }, data: { position: 1 } })
     expect(m.entryUpdate).toHaveBeenNthCalledWith(2, { where: { id: 31 }, data: { position: 2 } })
     expect(m.entryUpdate).toHaveBeenNthCalledWith(3, { where: { id: 51 }, data: { position: 3 } })
+    expect(m.playlistUpdate).toHaveBeenCalledWith({ where: { id: 1 }, data: { songCount: 3, duration: 0 } })
+    expect(m.entryFindMany).toHaveBeenCalledTimes(1)
+    expect(m.entryCount).not.toHaveBeenCalled()
   })
 
-  it('position 已连续时跳过无谓的重排 update', async () => {
+  it('原有 position 变化后仍按条目 ID 删除', async () => {
     m.entryFindMany
       .mockResolvedValueOnce([
         { id: 1, position: 1 },
-        { id: 2, position: 2 },
+        { id: 3, position: 2 },
       ])
       .mockResolvedValue([])
 
-    await removeSongsFromPlaylist(1, 'tester', [5])
+    await removeSongsFromPlaylist(1, 'tester', [2])
 
+    expect(m.entryDeleteMany).toHaveBeenCalledWith({ where: { playlistId: 1, id: { in: [2] } } })
     expect(m.entryUpdate).not.toHaveBeenCalled()
+  })
+
+  it('条目不在该歌单或已被移除时返回 404，不重排', async () => {
+    m.entryDeleteMany.mockResolvedValue({ count: 0 })
+
+    await expect(removeSongsFromPlaylist(1, 'tester', [11])).rejects.toMatchObject({ statusCode: 404 })
+    expect(m.entryFindMany).not.toHaveBeenCalled()
+    expect(m.playlistUpdate).not.toHaveBeenCalled()
   })
 
   it('歌单不存在抛 404', async () => {

@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { respond, subsonicError, type SubsonicPayload, type SubsonicSongNode } from '@/lib/subsonic'
 import { resolveSubsonicMediaMeta } from '@/lib/subsonic-media'
 import type { MusicInfo } from '@/lib/types/music'
-import { upsertMusicInfo, getStorageSongmidForMusicInfo, getRandomMusicInfoList } from '@/lib/db'
+import { upsertMusicInfosInTransaction, getStorageSongmidForMusicInfo, getRandomMusicInfoList } from '@/lib/db'
 import { searchCache } from '@/lib/cache-manager'
 import { logger } from '@/lib/logger'
 import { buildSubsonicSearchCacheKey } from '@/lib/cache-key'
@@ -150,10 +150,19 @@ export async function handleSearch(request: NextRequest, authRes?: AuthResult) {
     // support both default export and module.exports
     const musicSearch: any = (musicSearchModule && (musicSearchModule as any).default) || musicSearchModule
 
-    for (const src of sources) {
-      if (songs.length >= songCount + songOffset) break
-      try {
-        const res  = await musicSearch.search(src, q, 1, 10)
+    const targetCount = songCount + songOffset
+    for (let sourceIndex = 0; sourceIndex < sources.length && songs.length < targetCount;) {
+      // 每源最多取 10 首：只并发当前需要的渠道，不为小 songCount 请求全部渠道。
+      const batchSize = Math.min(sources.length - sourceIndex, Math.max(1, Math.ceil((targetCount - songs.length) / 10)))
+      const batch = sources.slice(sourceIndex, sourceIndex + batchSize)
+      const responses = await Promise.allSettled(batch.map(src => musicSearch.search(src, q, 1, 10)))
+      for (const [index, response] of responses.entries()) {
+        const src = batch[index]
+        if (response.status === 'rejected') {
+          logger.warn(`[subsonic-search] ${src} search failed`, response.reason)
+          continue
+        }
+        const res = response.value
         if (res && Array.isArray(res.list)) {
           for (const item of res.list) {
             const raw = item as any
@@ -193,25 +202,20 @@ export async function handleSearch(request: NextRequest, authRes?: AuthResult) {
             ;(musicInfo as any).title = musicInfo.name
             ;(musicInfo as any).year = raw.year || raw.publishTime
 
-            // persist musicInfo (insert/update if changed)
-            try {
-              await upsertMusicInfo(musicInfo)
-            } catch (err) {
-              // ignore DB errors — do not break search
-              console.warn('upsertMusicInfo error', err)
-            }
-
             songs.push(musicInfo)
-            if (songs.length >= songCount + songOffset) break
+            if (songs.length >= targetCount) break
           }
         }
-      } catch {
-        // ignore source errors
       }
+      sourceIndex += batchSize
     }
 
     // slice according to offset/count
     const sliced = songs.slice(songOffset, songOffset + songCount)
+
+    // 只持久化实际返回的歌曲；同一事务内顺序写入，避免逐首提交与 SQLite 写锁争抢。
+    // 写入失败时不返回无法通过 song id 查询的歌曲，也不缓存本次结果。
+    await upsertMusicInfosInTransaction(sliced)
 
     // Build album grouping from the sliced songs so we can return <album> nodes
     const albumMap = new Map<string, any>()
@@ -306,6 +310,7 @@ export async function handleSearch(request: NextRequest, authRes?: AuthResult) {
     logger.debug('[subsonic-search] returning', songNodes.length, 'songs for query:', q)
     return respond(request, payload)
   } catch (err) {
+    logger.error('[subsonic-search] search failed', err)
     return subsonicError(request, 0, err instanceof Error ? err.message : 'search error')
   }
 }

@@ -3,7 +3,7 @@ import { useSearch } from '@/hooks/useSearch'
 import { SongList } from '@/components/shared/SongList'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { Search, Music, X, CloudOff } from 'lucide-react'
+import { Search, Music, X, CloudOff, Loader2 } from 'lucide-react'
 import { toTrack } from '@/lib/types/player'
 import type { SourceType } from '@/lib/types/music'
 
@@ -19,7 +19,7 @@ const SOURCES: { value: SourceType | 'all'; label: string }[] = [
 export function SearchPage() {
   // keyword/source/results/loading 全部来自 search-store（外部状态）：
   // 离开搜索页再回来时输入框与结果都保留。
-  const { results, loading, error, keyword, lastKeyword, source, setKeyword, setSource, run } = useSearch()
+  const { results, loading, pendingSources, error, keyword, lastKeyword, source, setKeyword, setSource, run } = useSearch()
   const inputRef = useRef<HTMLInputElement>(null)
 
   const submit = (e: React.FormEvent) => {
@@ -96,6 +96,12 @@ export function SearchPage() {
         ))}
       </div>
 
+      {tracks.length > 0 && pendingSources > 0 && (
+        <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground" role="status">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          正在搜索其他渠道…
+        </div>
+      )}
       {loading ? (
         <LoadingSkeleton />
       ) : error ? (

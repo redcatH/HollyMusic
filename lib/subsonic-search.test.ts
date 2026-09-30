@@ -10,7 +10,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { NextRequest } from 'next/server'
 import { handleSearch, parseSongCount, parseSubsonicSearchQuery } from './subsonic-search'
-import { getRandomMusicInfoList } from './db'
+import { getRandomMusicInfoList, upsertMusicInfosInTransaction } from './db'
 import { searchCache } from './cache-manager'
 import { getSearchSources } from './search-config'
 
@@ -19,7 +19,7 @@ vi.mock('./services/history-service', () => ({
 }))
 
 vi.mock('./db', () => ({
-  upsertMusicInfo: vi.fn(async () => ({})),
+  upsertMusicInfosInTransaction: vi.fn(async () => []),
   getStorageSongmidForMusicInfo: vi.fn((mi: { songmid: string }) => mi.songmid),
   getRandomMusicInfoList: vi.fn(async () => []),
 }))
@@ -153,8 +153,58 @@ describe('handleSearch — 非空 query（聚合搜索，行为保持不变）',
     expect(search).toHaveBeenCalledTimes(2)
     expect(search).toHaveBeenCalledWith('wy', '测试', 1, 10)
     expect(search).toHaveBeenCalledWith('kg', '测试', 1, 10)
+    expect(upsertMusicInfosInTransaction).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(upsertMusicInfosInTransaction).mock.calls[0][0]).toHaveLength(15)
     // 结果写缓存（键含 query 与 count）
     expect(searchCache.set).toHaveBeenCalledTimes(1)
+  })
+
+  it('所需渠道同时请求，按配置顺序返回而非完成顺序', async () => {
+    const { search } = await import('./music-core/music-search')
+    const pending = new Map<string, (value: { list: ReturnType<typeof sourceSong>[] }) => void>()
+    vi.mocked(search).mockImplementation((source: string) => new Promise(resolve => {
+      pending.set(source, resolve)
+    }) as never)
+
+    const result = handleSearch(req('?query=测试&songCount=15&f=json'))
+    await vi.waitFor(() => expect(search).toHaveBeenCalledTimes(2))
+    expect([...pending.keys()]).toEqual(['wy', 'kg'])
+    pending.get('kg')!({ list: Array.from({ length: 10 }, (_, i) => sourceSong(`酷狗${i}`)) })
+    pending.get('wy')!({ list: Array.from({ length: 10 }, (_, i) => sourceSong(`网易${i}`)) })
+
+    const body = JSON.parse(await (await result).text())
+    const songs = body['subsonic-response'].searchResult3.song
+    expect(songs).toHaveLength(15)
+    expect(songs.slice(0, 10).every((song: { id: string }) => song.id.startsWith('wy-'))).toBe(true)
+    expect(songs.slice(10).every((song: { id: string }) => song.id.startsWith('kg-'))).toBe(true)
+    expect(vi.mocked(upsertMusicInfosInTransaction).mock.calls[0][0]).toHaveLength(15)
+  })
+
+  it('渠道失败时继续从后续渠道补足结果', async () => {
+    const { search } = await import('./music-core/music-search')
+    vi.mocked(getSearchSources).mockReturnValue(['wy', 'kg', 'tx'])
+    vi.mocked(search).mockImplementation(async (source: string) => {
+      if (source === 'wy') throw new Error('渠道超时')
+      return { list: Array.from({ length: 10 }, (_, i) => sourceSong(`${source}${i}`)) } as never
+    })
+
+    const response = await handleSearch(req('?query=测试&songCount=15&f=json'))
+    const body = JSON.parse(await response.text())
+
+    expect(search).toHaveBeenCalledTimes(3)
+    expect(body['subsonic-response'].searchResult3.song).toHaveLength(15)
+    expect(body['subsonic-response'].searchResult3.song[0].id).toMatch(/^kg-/)
+  })
+
+  it('入库失败时不缓存无法播放的歌曲', async () => {
+    const { search } = await import('./music-core/music-search')
+    vi.mocked(search).mockResolvedValue({ list: [sourceSong('测试')] } as never)
+    vi.mocked(upsertMusicInfosInTransaction).mockRejectedValueOnce(new Error('database error'))
+
+    const response = await handleSearch(req('?query=测试&songCount=1&f=json'))
+    const body = JSON.parse(await response.text())
+    expect(body['subsonic-response'].status).toBe('failed')
+    expect(searchCache.set).not.toHaveBeenCalled()
   })
 
   it('缓存命中时直接返回，不触发上游请求', async () => {
