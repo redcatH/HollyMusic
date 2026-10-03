@@ -504,6 +504,23 @@ async function getWyTracksByIds(ids: number[]): Promise<WyPlaylistTrack[]> {
   return songs.sort((a, b) => (order.get(Number(a.id)) ?? Number.MAX_SAFE_INTEGER) - (order.get(Number(b.id)) ?? Number.MAX_SAFE_INTEGER))
 }
 
+/**
+ * 按网易云歌曲 ID 批量获取可播放元数据。
+ * 歌单导入使用此入口，确保 CSV 导入的歌曲包含真实的音质能力信息。
+ */
+export async function getWySongsByIds(ids: string[]): Promise<Song[]> {
+  const numericIds = ids
+    .map(id => Number(String(id).trim()))
+    .filter((id): id is number => Number.isSafeInteger(id) && id > 0)
+  if (numericIds.length === 0) return []
+  const rawTracks = await getWyTracksByIds(numericIds)
+  return enrichMusicInfos(
+    rawTracks
+      .map(toWyMusicInfo)
+      .filter((item): item is MusicInfo => item !== null),
+  )
+}
+
 async function getWyPlaylistDetail(id: string): Promise<DiscoveryCollectionDetail | null> {
   const payload = await fetchJson<{
     code?: number
