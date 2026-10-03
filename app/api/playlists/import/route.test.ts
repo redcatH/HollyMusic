@@ -7,6 +7,7 @@ const mock = vi.hoisted(() => ({
   getPlaylistDetail: vi.fn(),
   addSongsToPlaylist: vi.fn(),
   getWySongsByIds: vi.fn(),
+  getTxPlaylistDetail: vi.fn(),
   upsertMusicInfosInTransaction: vi.fn(),
 }))
 
@@ -20,7 +21,7 @@ vi.mock('@/lib/services/playlist-service', () => ({
   addSongsToPlaylist: mock.addSongsToPlaylist,
   PlaylistError: class extends Error {},
 }))
-vi.mock('@/lib/services/discovery-service', () => ({ getWySongsByIds: mock.getWySongsByIds }))
+vi.mock('@/lib/services/discovery-service', () => ({ getWySongsByIds: mock.getWySongsByIds, getTxPlaylistDetail: mock.getTxPlaylistDetail }))
 vi.mock('@/lib/db', () => ({ upsertMusicInfosInTransaction: mock.upsertMusicInfosInTransaction }))
 
 const { POST } = await import('./route')
@@ -44,6 +45,7 @@ describe('POST /api/playlists/import', () => {
     mock.createPlaylist.mockResolvedValue({ id: 7 })
     mock.getPlaylistDetail.mockResolvedValue({ entries: [], songCount: 0 })
     mock.getWySongsByIds.mockResolvedValue([fetchedSong])
+    mock.getTxPlaylistDetail.mockResolvedValue({ name: 'QQ 测试', tracks: [{ source: 'tx', songmid: 'mid-1', name: '测试', singer: '歌手', interval: '180', types: [{ type: '128k', size: '1M' }], _types: { '128k': { size: '1M' } }, typeUrl: {} }] })
     mock.upsertMusicInfosInTransaction.mockResolvedValue([])
     mock.addSongsToPlaylist.mockResolvedValue(undefined)
   })
@@ -73,3 +75,4 @@ describe('POST /api/playlists/import', () => {
     expect(response.status).toBe(401)
   })
 })
+

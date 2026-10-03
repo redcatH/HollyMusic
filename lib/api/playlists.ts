@@ -93,3 +93,11 @@ export async function importNeteaseCsv(
   if (!json.success || !json.data) throw new Error(json.error?.message || '导入失败')
   return json.data
 }
+
+export async function importQqPlaylist(input: string, name?: string): Promise<PlaylistImportResult> {
+  const body = new FormData(); body.set('source', 'tx'); body.set('input', input); if (name) body.set('name', name)
+  const res = await fetch('/api/playlists/import', { method: 'POST', body })
+  const json = await res.json() as { success: boolean; data?: PlaylistImportResult; error?: { message?: string } }
+  if (!json.success || !json.data) throw new Error(json.error?.message || '导入失败')
+  return json.data
+}
