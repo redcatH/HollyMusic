@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ListMusic, Plus, Sparkles } from 'lucide-react'
+import { FileUp, ListMusic, Plus, Sparkles } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import type { PlaylistSummary } from '@/lib/api/playlists'
 import { useAuthStore } from '@/hooks/useAuth'
@@ -10,11 +10,13 @@ import { CreatePlaylistDialog } from '@@/components/playlists/CreatePlaylistDial
 import { DeletePlaylistDialog } from '@@/components/playlists/DeletePlaylistDialog'
 import { EditPlaylistDialog } from '@@/components/playlists/EditPlaylistDialog'
 import { PlaylistGrid } from '@@/components/playlists/PlaylistGrid'
+import { ImportPlaylistDialog } from '@@/components/playlists/ImportPlaylistDialog'
 
 export function PlaylistsPage() {
   const { playlists, loading, create, rename, remove } = usePlaylists()
   const currentUsername = useAuthStore(s => s.username)
   const [showCreate, setShowCreate] = useState(false)
+  const [showImport, setShowImport] = useState(false)
   const [editingPlaylist, setEditingPlaylist] = useState<PlaylistSummary | null>(null)
   const [deletingPlaylist, setDeletingPlaylist] = useState<PlaylistSummary | null>(null)
   const navigate = useNavigate()
@@ -44,6 +46,12 @@ export function PlaylistsPage() {
       <div className="mb-4 flex items-center justify-between">
         <h1 className="hidden text-2xl font-bold md:block">我的歌单</h1>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowImport(true)}
+            className="flex items-center gap-1 rounded-full border border-border px-3 py-2 text-sm hover:bg-accent"
+          >
+            <FileUp className="h-4 w-4" /> 导入
+          </button>
           <button
             onClick={() => navigate('/playlists/ai-create')}
             className="flex items-center gap-1 rounded-full bg-primary/15 px-3 py-2 text-sm font-medium text-primary transition hover:bg-primary/25"
@@ -78,6 +86,16 @@ export function PlaylistsPage() {
           onCreate={async name => {
             await create(name)
             setShowCreate(false)
+          }}
+        />
+      )}
+
+      {showImport && (
+        <ImportPlaylistDialog
+          onClose={() => setShowImport(false)}
+          onImported={playlistId => {
+            setShowImport(false)
+            navigate(`/playlists/${playlistId}`)
           }}
         />
       )}

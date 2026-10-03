@@ -5,6 +5,15 @@
 import { apiGet, apiPost, apiPatch, apiDelete } from './client'
 import type { MusicInfo } from '@/lib/types/music'
 
+export interface PlaylistImportResult {
+  playlistId: number
+  totalRows: number
+  added: number
+  duplicates: number
+  qualityFallback: number
+  songCount: number
+}
+
 export interface PlaylistSummary {
   id: number
   name: string
@@ -68,4 +77,19 @@ export function removeSongsFromPlaylist(
   entryId: number
 ): Promise<{ removed: boolean }> {
   return apiDelete(`playlists/${id}/songs`, { entryId })
+}
+
+export async function importNeteaseCsv(
+  file: File,
+  options?: { name?: string; playlistId?: number },
+): Promise<PlaylistImportResult> {
+  const body = new FormData()
+  body.set('file', file)
+  body.set('mode', options?.playlistId ? 'append' : 'create')
+  if (options?.name) body.set('name', options.name)
+  if (options?.playlistId) body.set('playlistId', String(options.playlistId))
+  const res = await fetch('/api/playlists/import', { method: 'POST', body })
+  const json = await res.json() as { success: boolean; data?: PlaylistImportResult; error?: { message?: string } }
+  if (!json.success || !json.data) throw new Error(json.error?.message || '导入失败')
+  return json.data
 }
