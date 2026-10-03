@@ -100,7 +100,7 @@ export function UsersPanel() {
       ) : users.length === 0 ? (
         <EmptyState icon={Shield} title="暂无用户" description="" />
       ) : (
-        <div className="overflow-hidden rounded-lg border border-border">
+        <div className="overflow-x-auto rounded-lg border border-border">
           <table className="w-full text-sm">
             <thead className="bg-accent/40 text-left text-xs uppercase text-muted-foreground">
               <tr>
@@ -108,6 +108,7 @@ export function UsersPanel() {
                 <th className="px-4 py-3 font-medium">角色</th>
                 <th className="px-4 py-3 font-medium">状态</th>
                 <th className="px-4 py-3 font-medium">密码</th>
+                <th className="px-4 py-3 font-medium">最近活跃</th>
                 <th className="px-4 py-3 font-medium">最近登录</th>
                 <th className="px-4 py-3 font-medium">创建时间</th>
                 <th className="px-4 py-3 text-right font-medium">操作</th>
@@ -153,6 +154,9 @@ export function UsersPanel() {
                           待改密
                         </span>
                       )}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {u.lastSeen ? new Date(u.lastSeen).toLocaleString('zh-CN') : '—'}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
                       {u.lastLogin ? new Date(u.lastLogin).toLocaleString('zh-CN') : '—'}
