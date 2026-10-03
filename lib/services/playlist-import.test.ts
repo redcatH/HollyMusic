@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { createFallbackMusicInfo, mergeImportedSong, parseNeteaseCsv } from './playlist-import'
+import { createFallbackMusicInfo, mergeImportedSong, parseNeteaseCsv, parseQqPlaylistInput } from './playlist-import'
 
 describe('网易云 CSV 歌单导入', () => {
+  it('解析 QQ 公开歌单链接和数字 ID', () => {
+    expect(parseQqPlaylistInput('https://y.qq.com/n/ryqq_v2/playlist/3043596225')).toBe('3043596225')
+    expect(parseQqPlaylistInput('3043596225')).toBe('3043596225')
+    expect(() => parseQqPlaylistInput('https://example.com/playlist/3043596225')).toThrow()
+  })
+  it('解析 QQ 公开歌单链接和数字 ID', () => {
+    expect(parseQqPlaylistInput('https://y.qq.com/n/ryqq_v2/playlist/3043596225')).toBe('3043596225')
+    expect(parseQqPlaylistInput('3043596225')).toBe('3043596225')
+    expect(() => parseQqPlaylistInput('https://example.com/playlist/3043596225')).toThrow()
+  })
   it('解析 UTF-8 BOM、带逗号的引号字段，并保持行顺序', () => {
     const parsed = parseNeteaseCsv('\uFEFF序号,歌名,歌手,专辑,歌曲ID,时长\n1,"嘿,姑娘",反光镜,释你,25843038,3:48\n2,晴天,周杰伦,叶惠美,186016,4:29')
     expect(parsed.rows).toEqual([
@@ -32,3 +42,6 @@ describe('网易云 CSV 歌单导入', () => {
     expect(song.img).toBe('https://example.com/cover.jpg')
   })
 })
+
+
+

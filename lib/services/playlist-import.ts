@@ -30,6 +30,22 @@ export interface PlaylistImportResult {
 export const MAX_CSV_BYTES = 2 * 1024 * 1024
 export const MAX_ROWS = 5_000
 
+const QQ_HOSTS = new Set(['y.qq.com', 'i.y.qq.com', 'i2.y.qq.com', 'c.y.qq.com'])
+
+export function parseQqPlaylistInput(input: string): string {
+  const value = input.trim()
+  if (/^\d+$/.test(value)) return value
+  let url: URL
+  try { url = new URL(value) } catch { throw new Error('请输入 QQ 音乐歌单链接或数字歌单 ID') }
+  if (!QQ_HOSTS.has(url.hostname.toLowerCase())) throw new Error('只支持 QQ 音乐歌单链接')
+  const queryId = url.searchParams.get('id')
+  const pathId = url.pathname.match(/(?:playlist|playsquare)[^\d]*(\d+)/i)?.[1]
+  const id = queryId || pathId
+  if (!id || !/^\d+$/.test(id)) throw new Error('QQ 音乐链接中没有有效歌单 ID')
+  return id
+}
+
+
 function normalizeHeader(value: string): string {
   return value.replace(/^\uFEFF/, '').trim().toLowerCase().replace(/[\s_\-]/g, '')
 }

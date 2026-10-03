@@ -14,6 +14,8 @@ const KG_PLAYLIST_TRACK_LIMIT = 10_000
 const MG_PLAYLIST_TRACK_LIMIT = 50
 const WY_PLAYLIST_TRACK_LIMIT = 100_000
 const WY_SONG_DETAIL_BATCH_SIZE = 1_000
+const TX_PLAYLIST_PAGE_SIZE = 1_000
+const TX_PLAYLIST_MAX_TRACKS = 10_000
 const WY_LINUX_API_KEY = Buffer.from('rFgB&h#%2?^eDg:Q')
 const WY_WEAPI_PRESET_KEY = Buffer.from('0CoJUm6Qyw8W8jud')
 const WY_WEAPI_IV = Buffer.from('0102030405060708')
@@ -836,34 +838,42 @@ async function searchPlaylists(source: DiscoverySource, keyword: string, limit: 
   return searchTxPlaylists(keyword, limit, page)
 }
 
-/** 与 lx-music tx/songList.js 同一歌单详情端点：按 disstid 直取，不依赖列表页缓存。 */
-async function getTxPlaylistDetail(id: string): Promise<DiscoveryCollectionDetail | null> {
-  const query = new URLSearchParams({
-    type: '1', json: '1', utf8: '1', onlysong: '0', new_format: '1', disstid: id,
-    loginUin: '0', hostUin: '0', format: 'json', inCharset: 'utf8', outCharset: 'utf-8',
-    notice: '0', platform: 'yqq.json', needNewCode: '0',
-  })
-  const payload = await fetchJson<{
-    code?: number
-    cdlist?: Array<{ dissname?: string; logo?: string; desc?: string; nickname?: string; songlist?: QQSong[] }>
-  }>(`https://c.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?${query}`, {
-    headers: {
-      Origin: 'https://y.qq.com',
-      Referer: `https://y.qq.com/n/yqq/playsquare/${encodeURIComponent(id)}.html`,
-    },
-  })
-  const info = payload.cdlist?.[0]
-  const songs = info?.songlist || []
-  if (payload.code !== 0 || songs.length === 0) return null
+type TxPlaylistPage = { dissname?: string; logo?: string; desc?: string; nickname?: string; songnum?: number; total_song_num?: number; song_begin?: number; songlist?: QQSong[] }
 
-  return {
-    id,
-    name: info?.dissname || 'QQ 音乐推荐歌单',
-    description: info?.desc || '',
-    cover: normalizeCover(info?.logo),
-    author: info?.nickname || 'QQ 音乐',
-    tracks: await enrichSongs(songs),
+async function getTxPlaylistPage(id: string, begin: number): Promise<TxPlaylistPage> {
+  const query = new URLSearchParams({ type: '1', json: '1', utf8: '1', onlysong: '0', new_format: '1', disstid: id, loginUin: '0', hostUin: '0', format: 'json', inCharset: 'utf8', outCharset: 'utf-8', notice: '0', platform: 'yqq.json', needNewCode: '0', song_begin: String(begin), song_num: String(TX_PLAYLIST_PAGE_SIZE) })
+  const payload = await fetchJson<{ code?: number; cdlist?: TxPlaylistPage[] }>(
+    `https://c.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?${query}`,
+    { headers: { Origin: 'https://y.qq.com', Referer: `https://y.qq.com/n/yqq/playsquare/${encodeURIComponent(id)}.html` } },
+  )
+  if (payload.code !== 0 || !payload.cdlist?.[0]) throw new Error('QQ 音乐未返回歌单数据')
+  return payload.cdlist[0]
+}
+
+/** QQ 歌单详情：分页拉取完整曲目，并校验偏移、重复页和最终数量。 */
+export async function getTxPlaylistDetail(id: string): Promise<DiscoveryCollectionDetail | null> {
+  const first = await getTxPlaylistPage(id, 0)
+  const total = Number(first.total_song_num ?? first.songnum ?? first.songlist?.length ?? 0)
+  if (!Number.isSafeInteger(total) || total <= 0) return null
+  if (total > TX_PLAYLIST_MAX_TRACKS) throw new Error(`QQ 歌单超过 ${TX_PLAYLIST_MAX_TRACKS} 首，暂不支持导入`)
+  const rawSongs = [...(first.songlist || [])]
+  let begin = rawSongs.length
+  let previousPageKey = `${rawSongs[0]?.mid || rawSongs[0]?.id || ''}:${rawSongs.at(-1)?.mid || rawSongs.at(-1)?.id || ''}`
+  while (rawSongs.length < total) {
+    const page = await getTxPlaylistPage(id, begin)
+    const returnedBegin = Number(page.song_begin ?? begin)
+    const songs = page.songlist || []
+    const pageKey = `${songs[0]?.mid || songs[0]?.id || ''}:${songs.at(-1)?.mid || songs.at(-1)?.id || ''}`
+    if (returnedBegin !== begin) throw new Error(`QQ 歌单分页偏移异常：请求 ${begin}，返回 ${returnedBegin}`)
+    if (songs.length === 0) throw new Error(`QQ 歌单获取不完整：接口声明 ${total} 首，当前仅获取 ${rawSongs.length} 首`)
+    if (pageKey === previousPageKey) throw new Error('QQ 歌单分页重复返回，已停止导入')
+    rawSongs.push(...songs); previousPageKey = pageKey; begin += songs.length
+    if (begin > total) throw new Error(`QQ 歌单返回数量异常：接口声明 ${total} 首，实际超过总数`)
   }
+  if (rawSongs.length !== total) throw new Error(`QQ 歌单获取不完整：接口声明 ${total} 首，实际获取 ${rawSongs.length} 首`)
+  const tracks = await enrichSongs(rawSongs)
+  if (tracks.length !== rawSongs.length) throw new Error(`QQ 歌单存在无法转换的歌曲：接口返回 ${rawSongs.length} 首，可播放歌曲 ${tracks.length} 首`)
+  return { id, name: first.dissname || 'QQ 音乐歌单', description: first.desc || '', cover: normalizeCover(first.logo), author: first.nickname || 'QQ 音乐', tracks }
 }
 
 async function getWyRecommendedPlaylists(limit: number, page: number, filter: DiscoveryPlaylistFilter): Promise<DiscoveryPlaylist[]> {
@@ -1254,3 +1264,5 @@ export async function getRecommendedPlaylistDetail(source: DiscoverySource, id: 
   searchCache.set(cacheKey, detail, CACHE_TTL)
   return detail
 }
+
+

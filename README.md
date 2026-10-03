@@ -69,7 +69,7 @@ Holly Music 是一个纯自部署的在线音乐聚合播放器。内置 `lx-env
 ### 🌍 多源发现
 - **平台切换**：在发现页切换不同公开音乐服务，不依赖已配置的自定义搜索音源
 - **排行榜与推荐歌单**：查看各音源榜单、推荐歌单与曲目详情；可直接播放、加入播放队列或保存到自己的歌单
-- **网易云歌单导入**：在「我的歌单」中上传网易云 CSV 导出文件，系统按歌曲 ID 精确补全歌曲元数据、音质和封面后导入本地歌单；CSV 导出可使用 [Music-Playlist-Exporter](https://github.com/redcatH/Music-Playlist-Exporter)。
+- **外部歌单导入**：在「我的歌单」中切换网易云 CSV 或 QQ 公开链接；网易云按歌曲 ID 精确补全，QQ 按公开歌单分页取全并校验数量，再写入本地歌单。CSV 导出可使用 [Music-Playlist-Exporter](https://github.com/redcatH/Music-Playlist-Exporter)。
 
 ### 📱 移动端 & PWA
 - **响应式布局**：大屏侧边栏常驻，小屏自动切换顶部导航栏 + 抽屉式菜单
@@ -93,10 +93,10 @@ Holly Music 是一个纯自部署的在线音乐聚合播放器。内置 `lx-env
 | 来源 | 当前状态 | 导入方式 | 说明 |
 |------|---------|---------|------|
 | **网易云音乐** | ✅ 已支持 | CSV 文件 | 需要包含歌名、歌手和网易云歌曲 ID；按 ID 精确匹配，自动补全音质、封面和时长 |
-| **QQ 音乐** | 🟡 发现页支持 | 暂不支持文件导入 | 可以在发现页浏览、播放和保存推荐歌单；QQ 歌单文件导入待后续适配 |
+| **QQ 音乐** | ✅ 已支持 | 公开歌单链接 | 输入 `https://y.qq.com/n/ryqq_v2/playlist/<id>` 或数字 ID；服务端分页获取完整曲目，校验 `total_song_num` 后按 `tx-歌曲MID` 导入 |
 | **酷我 / 酷狗 / 咪咕** | 🟡 发现页支持 | 暂不支持文件导入 | 可以浏览平台歌单并加入 Holly 歌单；通用 CSV 字段适配待后续完善 |
 
-网易云 CSV 导出由独立工具 [redcatH/Music-Playlist-Exporter](https://github.com/redcatH/Music-Playlist-Exporter) 完成。Holly Music 只负责导入，不保存网易云账号密码或 Cookie。歌曲能否最终播放仍取决于当前启用的音源脚本和上游播放地址可用性。
+网易云 CSV 导出由独立工具 [redcatH/Music-Playlist-Exporter](https://github.com/redcatH/Music-Playlist-Exporter) 完成。QQ 公开歌单由 Holly Music 服务端读取，无需 QQ 登录 Cookie。Holly Music 只负责导入，不保存平台账号密码。歌曲能否最终播放仍取决于当前启用的音源脚本和上游播放地址可用性。
 
 ### 🔧 工程能力
 - **内存缓存**：搜索结果与播放 URL 缓存（默认 TTL 210 分钟）
@@ -612,3 +612,5 @@ A：Vite dev server 已配置代理 `/api` → `localhost:3000`，确保后端 `
 ## 📋 更新日志
 
 详见 [CHANGELOG.md](CHANGELOG.md)。
+
+
