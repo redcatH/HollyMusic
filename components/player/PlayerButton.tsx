@@ -36,12 +36,12 @@ export function PlayerButton({
       disabled={disabled}
       aria-label={label}
       title={label}
-      className={`inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-2 transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent ${
+      className={`inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-2 py-2 transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent desktop:min-h-0 desktop:min-w-0 ${
         active ? 'text-primary' : 'text-foreground/70 hover:text-foreground'
       }`}
     >
-      <Icon className={size === 'sm' ? 'h-4 w-4' : 'h-5 w-5'} />
-      {showLabel && <span className="text-xs font-medium">{label}</span>}
+      <Icon className={size === 'sm' ? 'h-4 w-4 shrink-0' : 'h-[18px] w-[18px] shrink-0'} />
+      {showLabel && <span className="hidden whitespace-nowrap text-xs font-medium xl:inline">{label}</span>}
     </button>
   )
 }

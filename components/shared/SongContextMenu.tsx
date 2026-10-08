@@ -28,7 +28,7 @@ import { AddToPlaylistDialog } from '../../frontend/src/components/playlists/Add
 
 const MENU_WIDTH = 192
 const MENU_MAX_HEIGHT = 360
-const MOBILE_QUERY = '(max-width: 767px)'
+const MOBILE_QUERY = '(max-width: 767px), (max-height: 499px)'
 
 /** 手机端判定（与 AiPlaylistPage 同款 matchMedia 监听，无第三方依赖） */
 function useIsMobile() {
@@ -154,10 +154,10 @@ export function SongContextMenu() {
     <>
       {isMobile ? (
         // 手机：底部 action sheet，点遮罩关闭
-        <div className="fixed inset-0 z-50 bg-black/50" onClick={close}>
+        <div className="safe-screen fixed inset-0 z-50 bg-black/50" onClick={close}>
           <div
             ref={menuRef}
-            className="safe-area-bottom absolute inset-x-0 bottom-0 max-h-[70vh] overflow-y-auto rounded-t-xl border-t border-border bg-card p-2 pb-3 shadow-2xl"
+            className="safe-area-bottom song-action-sheet absolute inset-x-0 bottom-0 max-h-[70dvh] overflow-y-auto rounded-t-xl border-t border-border bg-card p-2 pb-3 shadow-2xl"
             onClick={e => e.stopPropagation()}
             role="menu"
           >

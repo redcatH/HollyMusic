@@ -101,7 +101,7 @@ export function ChangePasswordPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
+    <div className="safe-form-page flex min-h-dvh items-center justify-center bg-background p-4">
       <div className="w-full max-w-sm rounded-2xl bg-card p-6 shadow-xl ring-1 ring-border sm:p-8">
         <div className="mb-6 flex flex-col items-center gap-2">
           {!forced && (

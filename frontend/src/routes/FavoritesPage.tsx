@@ -104,8 +104,9 @@ export function FavoritesPage() {
     .map(f => toTrack({ uid: f.songId, musicInfo: f.musicInfo! }))
 
   return (
-    <div className="p-6">
-      <h1 className="mb-4 hidden text-2xl font-bold md:block">我的收藏</h1>
+    <div className="page-shell">
+      <h1 className="page-title mb-6 hidden desktop:block">我的收藏</h1>
+      {!loading && !error && tracks.length > 0 && <p className="mb-4 text-xs text-muted-foreground">已收藏 {total} 首音乐</p>}
       {loading ? (
         <LoadingSkeleton />
       ) : error ? (

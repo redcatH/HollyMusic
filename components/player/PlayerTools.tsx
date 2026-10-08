@@ -1,8 +1,7 @@
 /**
  * 桌面端播放栏右侧工具区（替代旧 VolumeControl）。
  *
- * 关键改动：容器不再 `hidden md:flex`——功能入口（歌词/队列/定时器）始终可见。
- * 歌词/队列用 showLabel 显示文字（高频入口，解决「猜」）；定时器/静音纯图标 + title。
+ * 宽屏显示歌词/队列文字，手机对应功能由播放栏和更多菜单提供。
  */
 
 import { usePlayerStore } from '@/lib/store/player-store'
@@ -23,7 +22,7 @@ export function PlayerTools() {
   const VolIcon = isMuted || volume === 0 ? VolumeX : Volume2
 
   return (
-    <div className="hidden items-center justify-end gap-1 md:flex md:w-[30%]">
+    <div className="hidden min-w-0 items-center justify-end gap-0.5 desktop:flex xl:gap-1">
       <PlayerButton icon={Mic2} label="歌词" onClick={toggleLyrics} showLabel />
       <PlayerButton icon={ListMusic} label="队列" onClick={toggleQueue} showLabel />
       <PlayerButton
@@ -38,8 +37,8 @@ export function PlayerTools() {
         onClick={toggleMute}
         active={isMuted}
       />
-      <div className="w-24">
-        <ProgressBar value={isMuted ? 0 : volume * 100} onChange={pct => setVolume(pct / 100)} />
+      <div className="ml-1 flex h-8 w-12 min-w-8 items-center lg:w-20">
+        <ProgressBar label="音量" value={isMuted ? 0 : volume * 100} onChange={pct => setVolume(pct / 100)} />
       </div>
     </div>
   )

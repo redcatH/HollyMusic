@@ -11,7 +11,7 @@ import { useAiPlaylist } from '@@/hooks/useAiPlaylist'
 import { AiPlaylistDesktop } from '@@/components/playlist-assist/AiPlaylistDesktop'
 import { AiPlaylistMobile } from '@@/components/playlist-assist/AiPlaylistMobile'
 
-const MOBILE_QUERY = '(max-width: 767px)'
+const MOBILE_QUERY = '(max-width: 767px), (max-height: 499px)'
 
 export function AiPlaylistPage() {
   const { id: idStr } = useParams<{ id: string }>()

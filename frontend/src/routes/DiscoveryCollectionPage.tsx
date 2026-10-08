@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
-import { Music, Play, RefreshCw } from 'lucide-react'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { ChevronLeft, Music, Play, RefreshCw } from 'lucide-react'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { RemoteCoverImage } from '@/components/shared/RemoteCoverImage'
@@ -42,28 +42,30 @@ export function DiscoveryCollectionPage({ kind }: { kind: 'toplists' | 'playlist
 
   const tracks = useMemo(() => (detail?.tracks ?? []).map(song => toTrack({ uid: song.uid, musicInfo: song })), [detail])
 
-  if (loading) return <div className="p-6"><LoadingSkeleton /></div>
-  if (!detail) return <div className="p-6"><EmptyState icon={Music} title="加载失败" description={error || '内容不存在'} /></div>
+  if (loading) return <div className="page-shell"><LoadingSkeleton /></div>
+  if (!detail) return <div className="page-shell"><EmptyState icon={Music} title="加载失败" description={error || '内容不存在'} /></div>
 
   return (
-    <div className="p-6">
-      <div className="mb-6 flex items-end gap-4">
+    <div className="page-shell">
+      <Link to={`/?source=${source}`} className="mb-5 inline-flex min-h-8 items-center gap-1 text-xs text-muted-foreground hover:text-primary"><ChevronLeft className="h-4 w-4" /> 发现音乐</Link>
+      <div className="feature-surface mb-7 flex items-start gap-3 rounded-3xl border border-border/50 p-4 sm:items-center sm:gap-6 sm:p-7">
         {detail.cover ? (
-          <RemoteCoverImage src={detail.cover} alt="" className="h-32 w-32 shrink-0 rounded-lg object-cover shadow-lg" />
+          <RemoteCoverImage src={detail.cover} alt="" className="cover-elevation h-20 w-20 shrink-0 rounded-2xl object-cover sm:h-40 sm:w-40 lg:h-44 lg:w-44" />
         ) : (
-          <div className="flex h-32 w-32 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary/50 to-primary/10 shadow-lg"><Music className="h-12 w-12 text-primary-foreground/80" /></div>
+          <div className="cover-elevation flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 sm:h-40 sm:w-40 lg:h-44 lg:w-44"><Music className="h-8 w-8 text-primary sm:h-12 sm:w-12" /></div>
         )}
         <div className="min-w-0 flex-1">
-          <p className="text-sm text-muted-foreground">{kind === 'toplists' ? '排行榜' : '推荐歌单'}</p>
-          <h1 className="truncate text-3xl font-bold">{detail.name}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{detail.author}{detail.updateTime ? ` · 更新于 ${detail.updateTime}` : ''}</p>
-          {detail.description && <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{detail.description}</p>}
-          <div className="mt-3 flex gap-2">
+          <p className="text-xs font-medium tracking-wider text-primary">{kind === 'toplists' ? '排行榜' : '推荐歌单'}</p>
+          <h1 className="mt-2 break-words text-2xl font-bold leading-tight tracking-tight lg:text-4xl">{detail.name}</h1>
+          <p className="mt-3 text-xs text-muted-foreground sm:text-sm">{detail.author}{detail.updateTime ? ` · 更新于 ${detail.updateTime}` : ''}</p>
+          {detail.description && <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground sm:text-sm">{detail.description}</p>}
+          <div className="mt-5 flex flex-wrap gap-2">
             <button onClick={() => tracks[0] && playTrack(tracks[0], tracks)} disabled={tracks.length === 0} className="flex items-center gap-1 rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"><Play className="h-4 w-4 fill-current" /> 播放全部</button>
             <button onClick={() => void load()} className="rounded-full border border-border p-2 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="刷新"><RefreshCw className="h-4 w-4" /></button>
           </div>
         </div>
       </div>
+      <div className="mb-3 flex items-baseline gap-2"><h2 className="section-title">歌曲</h2><span className="text-xs text-muted-foreground">{tracks.length} 首</span></div>
       {tracks.length > 0 ? <SongList tracks={tracks} /> : <EmptyState icon={Music} title="暂无可播放歌曲" />}
     </div>
   )

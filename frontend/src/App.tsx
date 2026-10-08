@@ -133,7 +133,7 @@ export function App() {
   // 登录页无需已有会话；其余路由在校验完成前不渲染业务内容，避免未登录闪屏。
   if (location.pathname === '/login') {
     return (
-      <div className="min-h-screen bg-background text-foreground">
+      <div className="min-h-dvh bg-background text-foreground">
         <Routes>
           <Route path="/login" element={<LoginPage />} />
         </Routes>
@@ -141,22 +141,22 @@ export function App() {
     )
   }
 
-  if (authenticated === null) return <div className="min-h-screen bg-background" />
+  if (authenticated === null) return <div className="min-h-dvh bg-background" />
   if (authenticated === false) return null
   if (mustChangePassword && location.pathname !== '/change-password') return <Navigate to="/change-password" replace />
 
   // 改密页同样必须已登录，但保持独立全屏布局。
   if (location.pathname === '/change-password') {
-    return <div className="min-h-screen bg-background text-foreground"><ChangePasswordPage /></div>
+    return <div className="min-h-dvh bg-background text-foreground"><ChangePasswordPage /></div>
   }
 
   return (
-    <div className="flex h-screen flex-col bg-background text-foreground">
+    <div className="app-atmosphere app-viewport flex h-dvh flex-col text-foreground">
       <ServiceWorkerRegister />
       <MobileHeader onMenuClick={() => setDrawerOpen(true)} />
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden desktop:gap-3 desktop:px-3 desktop:pt-3">
         <Sidebar />
-        <main className="flex-1 overflow-y-auto">
+        <main className="app-main min-w-0 flex-1 overflow-y-auto">
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/recommend" element={<RecommendedMusicPage />} />

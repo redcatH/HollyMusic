@@ -45,9 +45,9 @@ export function AiPlaylistMobile({ ai }: { ai: AiPlaylistController }) {
   const nav = useWizardNav(ai, onView)
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background">
+    <div className="safe-screen fixed inset-0 z-50 flex flex-col bg-background">
       {/* 顶部：关闭 + 进度（safe-area-top 避刘海） */}
-      <div className="safe-area-top flex h-14 shrink-0 items-center gap-2 border-b border-border px-2">
+      <div className="safe-header flex shrink-0 items-center gap-2 border-b border-border px-2">
         <button
           onClick={close}
           className="touch-target flex items-center justify-center rounded-full text-muted-foreground transition hover:bg-accent hover:text-foreground"
@@ -61,7 +61,7 @@ export function AiPlaylistMobile({ ai }: { ai: AiPlaylistController }) {
       </div>
 
       {/* 内容区（高度链：min-h-0 保证子级可滚动；safe-area-bottom 避手势条） */}
-      <div className="relative min-h-0 flex-1 overflow-hidden safe-area-bottom">
+      <div className="relative min-h-0 flex-1 overflow-hidden">
         <AnimatePresence custom={ai.direction} mode="wait">
           <motion.div
             key={ai.step}
@@ -120,7 +120,7 @@ export function AiPlaylistMobile({ ai }: { ai: AiPlaylistController }) {
       </div>
 
       {/* 统一底部导航栏 */}
-      <div className="flex shrink-0 items-center gap-2 border-t border-border bg-card px-4 py-3">
+      <div className="safe-area-bottom flex shrink-0 items-center gap-2 border-t border-border bg-card px-4 py-3">
         {nav.left && <FooterBtn btn={nav.left} />}
         {nav.right && <FooterBtn btn={nav.right} primary />}
       </div>

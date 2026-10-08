@@ -42,12 +42,11 @@ export function PlaylistsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl p-4 sm:p-6">
-      <div className="mb-8 flex flex-col gap-4 border-b border-border pb-6 sm:flex-row sm:items-end sm:justify-between">
+    <div className="page-shell">
+      <div className="mb-6 flex flex-col gap-4 border-b border-border/50 pb-6 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="mb-1 text-xs font-medium uppercase tracking-[0.18em] text-primary">Your library</p>
-          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">我的歌单</h1>
-          <p className="mt-1 text-sm text-muted-foreground">整理收藏，导入外部歌单，随时开始播放。</p>
+          <h1 className="page-title hidden desktop:block">我的歌单</h1>
+          <p className="text-sm text-muted-foreground md:mt-2">把喜欢的旋律，收进自己的音乐角落。</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
@@ -70,6 +69,8 @@ export function PlaylistsPage() {
           </button>
         </div>
       </div>
+
+      {!loading && playlists.length > 0 && <p className="mb-3 text-xs text-muted-foreground">共 {playlists.length} 个歌单</p>}
 
       {loading ? (
         <LoadingSkeleton count={4} />

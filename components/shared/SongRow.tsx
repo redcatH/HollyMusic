@@ -54,12 +54,13 @@ export function SongRow({ track, queue, index, playlistEntry }: SongRowProps) {
       }}
       {...longPress}
       // 触屏禁用长按文本选择/iOS 放大镜（桌面不受影响）
-      className={`group flex items-center gap-3 rounded-md px-2 py-2 pointer-coarse:select-none pointer-coarse:[-webkit-touch-callout:none] ${
+      data-current={isCurrent}
+      className={`group flex items-center gap-2 rounded-xl px-2 py-2.5 transition-colors sm:gap-3 sm:px-3 pointer-coarse:select-none pointer-coarse:[-webkit-touch-callout:none] ${
         isCurrent ? 'bg-accent/50' : 'hover:bg-accent/30'
       }`}
     >
       {/* 序号 / 播放按钮 */}
-      <div className="flex w-6 shrink-0 items-center justify-center text-sm text-muted-foreground">
+      <div className="hidden w-6 shrink-0 items-center justify-center text-sm text-muted-foreground sm:flex">
         {isCurrentPlaying ? (
           <button onClick={handlePlay} aria-label="暂停">
             <Pause className="h-4 w-4 fill-current text-primary" />
@@ -76,8 +77,8 @@ export function SongRow({ track, queue, index, playlistEntry }: SongRowProps) {
         )}
       </div>
 
-      <button onClick={handlePlay} className="shrink-0">
-        <CoverImage uid={track.uid} cacheKey={track.musicInfo.img} className="h-10 w-10" />
+      <button onClick={handlePlay} className="shrink-0" aria-label={`播放 ${track.name}`}>
+        <CoverImage uid={track.uid} cacheKey={track.musicInfo.img} className="h-10 w-10 rounded-lg shadow-sm" />
       </button>
 
       <button onClick={handlePlay} className="min-w-0 flex-1 text-left">
@@ -91,7 +92,7 @@ export function SongRow({ track, queue, index, playlistEntry }: SongRowProps) {
         </div>
       </button>
 
-      <span className="hidden w-32 shrink-0 truncate text-xs text-muted-foreground sm:block">
+      <span className="hidden w-32 shrink-0 truncate text-xs text-muted-foreground xl:block">
         {track.album}
       </span>
 
@@ -102,7 +103,7 @@ export function SongRow({ track, queue, index, playlistEntry }: SongRowProps) {
           )
         }
         // 触屏扩大命中区（视觉不变，24px→40px，负 margin 抵消布局膨胀；HIG 44pt 标准）
-        className={`shrink-0 p-1 transition pointer-coarse:p-3 pointer-coarse:-m-1.5 ${
+        className={`hidden shrink-0 p-1 transition lg:block pointer-coarse:p-3 pointer-coarse:-m-1.5 ${
           isFav
             ? 'text-primary'
             : 'text-muted-foreground opacity-70 hover:text-foreground focus-visible:opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100'
@@ -121,7 +122,7 @@ export function SongRow({ track, queue, index, playlistEntry }: SongRowProps) {
             })
           }
           disabled={downloading}
-          className={`hidden shrink-0 p-1 transition md:block ${
+          className={`hidden shrink-0 p-1 transition xl:block ${
             downloading
               ? 'text-primary opacity-100'
               : 'text-muted-foreground opacity-70 hover:text-foreground focus-visible:opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100'
@@ -151,7 +152,7 @@ export function SongRow({ track, queue, index, playlistEntry }: SongRowProps) {
         <MoreHorizontal className="h-4 w-4" />
       </button>
 
-      <span className="w-12 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+      <span className="hidden w-10 shrink-0 text-right text-xs tabular-nums text-muted-foreground min-[360px]:block sm:w-12">
         {formatTime(track.duration)}
       </span>
     </div>

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Home, Search, Heart, ListMusic, History, Music2, LogIn, LogOut, User, ChevronUp, Settings, KeyRound, Shuffle } from 'lucide-react'
 import { useAuthStore } from '@/hooks/useAuth'
+import { AppearanceButton } from './AppearanceSettings'
 
 const nav = [
   { href: '/', label: '首页', icon: Home, protected: false },
@@ -54,7 +55,8 @@ function NavLink({
     <Link
       to={href}
       onClick={handleClick}
-      className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+      aria-current={active ? 'page' : undefined}
+      className={`relative flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
         active
           ? 'bg-sidebar-accent text-sidebar-accent-foreground'
           : 'text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground'
@@ -62,6 +64,7 @@ function NavLink({
     >
       <Icon className="h-5 w-5" />
       {label}
+      {active && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-primary" aria-hidden="true" />}
     </Link>
   )
 }
@@ -70,7 +73,6 @@ function NavLink({
  * Sidebar 共享内容：logo + 主导航 + 底部用户区（含用户管理下拉）。
  */
 function SidebarContent({ onNavigate }: ContentProps) {
-  const { pathname } = useLocation()
   const navigate = useNavigate()
   const authenticated = useAuthStore(s => s.authenticated)
   const username = useAuthStore(s => s.username)
@@ -98,25 +100,28 @@ function SidebarContent({ onNavigate }: ContentProps) {
 
   return (
     <>
-      <div className="flex items-center gap-2 px-3 py-4">
-        <Music2 className="h-6 w-6 text-primary" />
-        <span className="text-lg font-bold">Holly Music</span>
+      <div className="mb-6 flex shrink-0 items-center gap-2.5 px-2 py-4">
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm"><Music2 className="h-5 w-5" /></span>
+        <span className="text-base font-bold tracking-tight">Holly Music</span>
       </div>
-      <nav className="flex flex-col gap-1">
+      <nav className="flex shrink-0 flex-col gap-1">
         {nav.map(item => (
-          <NavLink
-            key={item.href}
-            href={item.href}
-            label={item.label}
-            icon={item.icon}
-            isProtected={item.protected}
-            authenticated={authenticated}
-            onNavigate={onNavigate}
-          />
+          <div key={item.href}>
+            {item.href === '/favorites' && <p className="mb-3 mt-7 px-3 text-[11px] font-medium tracking-widest text-muted-foreground">我的音乐</p>}
+            <NavLink
+              href={item.href}
+              label={item.label}
+              icon={item.icon}
+              isProtected={item.protected}
+              authenticated={authenticated}
+              onNavigate={onNavigate}
+            />
+          </div>
         ))}
       </nav>
 
-      <div className="relative mt-auto border-t border-border p-2">
+      <div className="relative mt-auto border-t border-border/60 px-1 pt-3">
+        <AppearanceButton />
         {authenticated === true ? (
           <>
             <button
@@ -176,7 +181,7 @@ function SidebarContent({ onNavigate }: ContentProps) {
 /** 大屏常驻侧边栏（≥768px） */
 export function Sidebar() {
   return (
-    <aside className="hidden w-60 shrink-0 flex-col bg-sidebar p-2 text-sidebar-foreground md:flex">
+    <aside className="hidden w-48 shrink-0 flex-col overflow-y-auto rounded-[22px] border border-sidebar-border/50 bg-sidebar p-3 text-sidebar-foreground desktop:flex lg:w-52 xl:w-56">
       <SidebarContent />
     </aside>
   )
@@ -187,7 +192,7 @@ export function Sidebar() {
  */
 export function MobileSidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
-    <div className="md:hidden">
+    <div className="desktop:hidden">
       <div
         className={`fixed inset-0 z-40 bg-black/50 transition-opacity duration-300 ${
           open ? 'opacity-100' : 'pointer-events-none opacity-0'
@@ -196,7 +201,7 @@ export function MobileSidebar({ open, onClose }: { open: boolean; onClose: () =>
         aria-hidden={!open}
       />
       <aside
-        className={`fixed left-0 top-0 z-50 flex h-full w-64 flex-col bg-sidebar p-2 text-sidebar-foreground shadow-2xl transition-transform duration-300 ${
+        className={`mobile-drawer fixed left-0 top-0 z-50 flex h-dvh w-64 flex-col bg-sidebar p-2 text-sidebar-foreground shadow-2xl transition-transform duration-300 ${
           open ? 'translate-x-0' : '-translate-x-full'
         }`}
         aria-hidden={!open}

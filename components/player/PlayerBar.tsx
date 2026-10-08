@@ -9,7 +9,8 @@ import { PlayerControls } from './PlayerControls'
 import { PlayerTools } from './PlayerTools'
 import { PlayerButton } from './PlayerButton'
 import { MobilePlayerMenu } from './MobilePlayerMenu'
-import { Mic2, ListMusic } from 'lucide-react'
+import { TransportButtons } from './TransportButtons'
+import { ListMusic } from 'lucide-react'
 
 interface PlayerBarProps {
   audio: HTMLAudioElement | null
@@ -23,7 +24,6 @@ export function PlayerBar({ audio, onAudioElement }: PlayerBarProps) {
   const volume = usePlayerStore(s => s.volume)
   const isMuted = usePlayerStore(s => s.isMuted)
   const seekNonce = usePlayerStore(s => s.seekNonce)
-  const toggleLyrics = usePlayerStore(s => s.toggleLyrics)
   const toggleQueue = usePlayerStore(s => s.toggleQueue)
 
   const loadedRef = useRef<{ url: string; nonce: number } | null>(null)
@@ -91,12 +91,12 @@ export function PlayerBar({ audio, onAudioElement }: PlayerBarProps) {
   }, [seekNonce, seek])
 
   return (
-    <footer className="safe-area-bottom flex flex-col gap-2 border-t border-border bg-card px-3 py-3 md:min-h-[136px] md:flex-row md:items-center md:justify-between md:gap-4 md:px-4">
-      {/* 单一 DOM 布局：桌面端横排三栏，移动端纵向排列。频谱只保留一张 canvas。 */}
-      <div className="flex items-center gap-1 md:contents">
+    <footer className="glass-surface player-surface relative z-10 flex shrink-0 flex-col gap-1 rounded-2xl border border-border/60 px-3 py-2 desktop:m-3 desktop:grid desktop:min-h-[100px] desktop:grid-cols-[minmax(0,1fr)_minmax(220px,1.2fr)_minmax(0,1fr)] desktop:items-center desktop:gap-3 desktop:rounded-[22px] desktop:px-4 desktop:py-3">
+      {/* 手机将播放和歌曲信息合并成一行，进度单独一行；桌面保持三栏。 */}
+      <div className="flex items-center gap-1 desktop:contents">
         <NowPlaying />
-        <div className="flex items-center md:hidden">
-          <PlayerButton icon={Mic2} label="歌词" onClick={toggleLyrics} size="sm" />
+        <div className="flex items-center desktop:hidden">
+          <TransportButtons compact />
           <PlayerButton icon={ListMusic} label="队列" onClick={toggleQueue} size="sm" />
           <MobilePlayerMenu />
         </div>

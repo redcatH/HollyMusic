@@ -36,14 +36,14 @@ export function QueuePanel() {
 
   return (
     <div
-      className="fixed inset-0 z-40 flex justify-end bg-black/50"
+      className="safe-screen fixed inset-0 z-40 flex justify-end bg-black/50"
       onClick={() => setQueueOpen(false)}
       role="dialog"
       aria-modal="true"
       aria-label="播放队列"
     >
       <div
-        className="safe-area-top flex h-full w-full max-w-md flex-col bg-card"
+        className="safe-area-top safe-area-bottom flex h-full w-full max-w-md flex-col bg-card"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-2 border-b border-border p-4">
@@ -65,7 +65,7 @@ export function QueuePanel() {
             </button>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-2">
+        <div className="min-h-0 flex-1 overflow-y-auto p-2">
           {/* 正在播放的插播曲（主队列游标冻结，该曲播完回到下方队列高亮处继续） */}
           {isCurrentTempPlay && currentTrack && (
             <div className="mb-2 border-b border-border pb-2">
