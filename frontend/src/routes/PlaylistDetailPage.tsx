@@ -69,7 +69,7 @@ export function PlaylistDetailPage() {
   }
 
   return (
-    <div className="p-6">
+    <div className="page-shell">
       {loading ? (
         <LoadingSkeleton />
       ) : error ? (
@@ -87,18 +87,19 @@ export function PlaylistDetailPage() {
         <EmptyState icon={Music} title="歌单不存在" />
       ) : (
         <>
-          <div className="mb-6 flex items-end gap-4">
+          <div className="feature-surface mb-7 grid grid-cols-[80px_minmax(0,1fr)] gap-x-4 gap-y-1 rounded-3xl border border-border/50 p-5 sm:flex sm:items-center sm:gap-6 sm:p-7">
             <PlaylistCover
               coverArt={detail.coverArt}
               coverSongUid={detail.coverSongUid}
-              className="h-32 w-32 shrink-0"
+              className="cover-elevation row-span-3 h-20 w-20 shrink-0 rounded-2xl sm:h-40 sm:w-40"
             />
-            <div className="flex-1">
-              <h1 className="text-3xl font-bold">{detail.name}</h1>
-              <p className="mt-1 text-sm text-muted-foreground">
+            <div className="contents min-w-0 flex-1 sm:block">
+              <p className="col-start-2 text-xs font-medium tracking-wider text-primary sm:mb-2">我的歌单</p>
+              <h1 className="col-start-2 break-words text-2xl font-bold tracking-tight lg:text-4xl">{detail.name}</h1>
+              <p className="col-start-2 mt-1 text-sm text-muted-foreground">
                 {detail.songCount} 首 · {detail.username}
               </p>
-              <div className="mt-3 flex flex-wrap gap-2">
+              <div className="col-span-2 mt-3 flex flex-wrap gap-2">
                 <button
                   onClick={() => tracks.length > 0 && playTrack(tracks[0], tracks)}
                   disabled={tracks.length === 0}

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useDebounce } from 'react-use'
-import { ChevronLeft, ChevronRight, ListMusic, Music, Play, RefreshCw, Search, Trophy } from 'lucide-react'
+import { ArrowUpRight, ChevronLeft, ChevronRight, ListMusic, Music, Play, RefreshCw, Search, Trophy } from 'lucide-react'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { RemoteCoverImage } from '@/components/shared/RemoteCoverImage'
@@ -49,9 +49,9 @@ function formatPlayCount(value: number): string {
 
 function Cover({ src, icon: Icon, title }: { src: string; icon: typeof Music; title?: string }) {
   return src ? (
-    <RemoteCoverImage src={src} alt="" className="aspect-square w-full rounded-lg object-cover" />
+    <RemoteCoverImage src={src} alt="" className="aspect-square w-full rounded-xl object-cover" />
   ) : (
-    <div className="flex aspect-square w-full flex-col items-center justify-center gap-2 rounded-lg bg-gradient-to-br from-primary/45 to-primary/10 px-3 text-center">
+    <div className="flex aspect-square w-full flex-col items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 px-3 text-center">
       <Icon className="h-8 w-8 shrink-0 text-primary" />
       {title && <div className="line-clamp-2 text-sm font-semibold leading-5 text-foreground">{title}</div>}
     </div>
@@ -74,6 +74,7 @@ export function HomePage() {
   const [keyword, setKeyword] = useState(keywordParam)
   const [loadingToplists, setLoadingToplists] = useState(true)
   const [loadingPlaylists, setLoadingPlaylists] = useState(true)
+  const [showAllToplists, setShowAllToplists] = useState(false)
   const [toplistsError, setToplistsError] = useState<string | null>(null)
   const [playlistsError, setPlaylistsError] = useState<string | null>(null)
   const toplistRequestId = useRef(0)
@@ -142,34 +143,59 @@ export function HomePage() {
 
   const isLastPlaylistPage = playlists.length < PLAYLIST_PAGE_SIZE
   const isLoading = loadingToplists || loadingPlaylists
+  const featuredPlaylist = playlists[0]
+  const visibleToplists = showAllToplists ? toplists : toplists.slice(0, 4)
 
   const refresh = () => {
     void Promise.all([loadToplists(), loadPlaylists()])
   }
 
   return (
-    <div className="p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="hidden md:block"><h1 className="text-2xl font-bold">发现音乐</h1><p className="text-sm text-muted-foreground">各平台实时榜单与精选歌单</p></div>
-        <button onClick={refresh} className="flex items-center gap-1 rounded-full border border-border px-3 py-2 text-sm hover:bg-accent" disabled={isLoading}><RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /> 刷新</button>
+    <div className="page-shell">
+      <div className="mb-6 flex items-center justify-between gap-3">
+        <div className="hidden desktop:block"><h1 className="page-title">发现音乐</h1><p className="mt-2 text-sm text-muted-foreground">从熟悉的旋律，到下一首心动。</p></div>
+        <p className="text-sm text-muted-foreground desktop:hidden">为今天选一些好音乐</p>
+        <div className="flex shrink-0 items-center gap-2">
+          <Link to="/search" className="flex h-10 items-center gap-2 rounded-full border border-border/60 bg-card px-3 text-sm text-muted-foreground transition hover:border-primary/30 hover:text-primary" aria-label="搜索音乐"><Search className="h-4 w-4" /><span className="hidden lg:inline">搜索歌曲、歌手</span></Link>
+          <button onClick={refresh} className="flex h-10 w-10 items-center justify-center rounded-full border border-border/60 bg-card text-muted-foreground transition hover:border-primary/30 hover:text-primary disabled:opacity-50" disabled={isLoading} aria-label="刷新"><RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /></button>
+        </div>
       </div>
 
-      <div className="mb-6 flex flex-wrap gap-2" role="tablist" aria-label="音乐渠道">
+      <div className="mb-6 flex flex-wrap gap-1 border-b border-border/50 pb-3" role="tablist" aria-label="音乐渠道">
         {CHANNELS.map(channel => (
-          <button key={channel.source} onClick={() => { setSearchParams({ source: channel.source }); setToplists([]); setPlaylists([]) }} className={`rounded-full px-4 py-2 text-sm transition ${source === channel.source ? 'bg-primary text-primary-foreground' : 'border border-border text-muted-foreground hover:bg-accent hover:text-foreground'}`} role="tab" aria-selected={source === channel.source}>{channel.label}</button>
+          <button key={channel.source} onClick={() => { setSearchParams({ source: channel.source }); setToplists([]); setPlaylists([]); setShowAllToplists(false) }} className={`rounded-full px-3 py-2 text-xs font-medium transition sm:px-4 sm:text-sm ${source === channel.source ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}`} role="tab" aria-selected={source === channel.source}>{channel.label}</button>
         ))}
       </div>
-      <section className="mb-10">
-        <div className="mb-3 flex items-center gap-2"><Trophy className="h-5 w-5 text-primary" /><h2 className="text-lg font-semibold">排行榜</h2></div>
+
+      {featuredPlaylist && !keywordParam && (
+        <Link to={`/discover/playlists/${featuredPlaylist.id}?source=${source}`} aria-label={`打开精选歌单：${featuredPlaylist.name}`} className="feature-surface group mb-8 flex min-h-44 items-center justify-between gap-4 overflow-hidden rounded-3xl border border-border/50 p-5 transition hover:border-primary/25 sm:min-h-52 sm:gap-7 sm:p-7">
+          <div className="min-w-0 flex-1">
+            <span className="mb-3 inline-flex items-center gap-1.5 text-xs font-medium tracking-wider text-primary"><span className="h-1.5 w-1.5 rounded-full bg-primary" /> 歌单精选</span>
+            <h2 className="line-clamp-2 text-lg font-semibold leading-snug tracking-tight sm:text-2xl lg:text-[28px]">{featuredPlaylist.name}</h2>
+            <p className="mt-2 truncate text-xs text-muted-foreground sm:text-sm">{featuredPlaylist.author}{featuredPlaylist.songCount ? ` · ${featuredPlaylist.songCount} 首音乐` : ''}</p>
+            <span className="mt-5 inline-flex items-center gap-2 rounded-full bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground sm:text-sm">探索歌单 <ArrowUpRight className="h-3.5 w-3.5" /></span>
+          </div>
+          <div className="relative mr-1 w-24 shrink-0 sm:mr-4 sm:w-36 lg:mr-5 lg:w-40" aria-hidden="true">
+            {playlists[1] && <div className="absolute inset-0 translate-x-3 rotate-12 opacity-40 sm:translate-x-5"><Cover src={playlists[1].cover} icon={ListMusic} /></div>}
+            <div className="featured-art relative -rotate-6 rounded-xl"><Cover src={featuredPlaylist.cover} icon={ListMusic} /></div>
+          </div>
+        </Link>
+      )}
+
+      <section className="mb-8">
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <h2 className="section-title">正在流行</h2>
+          {toplists.length > 4 && <button type="button" onClick={() => setShowAllToplists(value => !value)} aria-expanded={showAllToplists} className="flex min-h-9 items-center gap-1 text-xs font-medium text-muted-foreground hover:text-primary">{showAllToplists ? '收起榜单' : `全部榜单 · ${toplists.length}`}<ChevronRight className={`h-3.5 w-3.5 transition-transform ${showAllToplists ? '-rotate-90' : ''}`} /></button>}
+        </div>
         {loadingToplists ? <LoadingSkeleton count={6} /> : toplistsError ? (
           <EmptyState icon={Music} title="排行榜加载失败" description={toplistsError} />
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
-            {toplists.map(item => (
-              <Link key={item.id} to={`/discover/toplists/${item.id}?source=${source}`} className="group rounded-lg p-2 transition hover:bg-accent/50">
-                <Cover src={item.cover} icon={Trophy} title={item.name} />
-                <div className="mt-2 truncate text-sm font-medium group-hover:text-primary">{item.name}</div>
-                <div className="truncate text-xs text-muted-foreground">{item.description}</div>
+          <div className="grid grid-cols-1 gap-2.5 min-[480px]:grid-cols-2 2xl:grid-cols-4">
+            {visibleToplists.map(item => (
+              <Link key={item.id} to={`/discover/toplists/${item.id}?source=${source}`} className="group flex min-w-0 items-center gap-3 rounded-2xl border border-border/50 bg-card/80 p-2.5 transition hover:border-primary/25 hover:bg-card hover:shadow-sm">
+                <div className="w-12 shrink-0"><Cover src={item.cover} icon={Trophy} /></div>
+                <div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold group-hover:text-primary">{item.name}</div><div className="mt-1 truncate text-xs text-muted-foreground">{item.description || '聆听此刻的热门音乐'}</div></div>
+                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/60 group-hover:text-primary" />
               </Link>
             ))}
           </div>
@@ -177,16 +203,23 @@ export function HomePage() {
       </section>
 
       <section>
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-2"><ListMusic className="h-5 w-5 text-primary" /><h2 className="text-lg font-semibold">推荐歌单</h2></div><div className="flex flex-wrap items-center gap-2"><label className="relative"><Search className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input value={keyword} onChange={event => setKeyword(event.target.value)} placeholder="搜索歌单" className="h-9 w-40 rounded-md border border-border bg-transparent pl-8 pr-2 text-sm outline-none focus:ring-1 focus:ring-primary" /></label><select value={category} onChange={event => updatePlaylistParams({ category: event.target.value || undefined, page: '1' })} className="h-9 rounded-md border border-border bg-background px-2 text-sm">{categories.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select value={playlistSort} onChange={event => updatePlaylistParams({ sort: event.target.value, page: '1' })} className="h-9 rounded-md border border-border bg-background px-2 text-sm">{sorts.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div></div>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="section-title">发现好歌单</h2>
+          <div className="flex max-w-full flex-wrap items-center gap-2">
+            <label className="relative"><Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" /><input value={keyword} onChange={event => setKeyword(event.target.value)} placeholder="搜索歌单" aria-label="搜索歌单" className="h-9 w-36 rounded-full border border-border/60 bg-card pl-8 pr-2 text-xs outline-none focus:ring-1 focus:ring-primary" /></label>
+            <select value={category} aria-label="歌单分类" onChange={event => updatePlaylistParams({ category: event.target.value || undefined, page: '1' })} className="h-9 rounded-full border border-border/60 bg-card px-3 text-xs">{categories.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+            <select value={playlistSort} aria-label="歌单排序" onChange={event => updatePlaylistParams({ sort: event.target.value, page: '1' })} className="h-9 rounded-full border border-border/60 bg-card px-3 text-xs">{sorts.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+          </div>
+        </div>
         {loadingPlaylists && playlists.length === 0 ? <LoadingSkeleton count={PLAYLIST_PAGE_SIZE} /> : playlistsError ? (
           <EmptyState icon={ListMusic} title="推荐歌单加载失败" description={playlistsError} />
         ) : playlists.length === 0 ? <EmptyState icon={ListMusic} title="暂无推荐歌单" /> : (
-          <div className={`grid grid-cols-2 gap-3 transition-opacity sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 ${loadingPlaylists ? 'pointer-events-none opacity-50' : ''}`} aria-busy={loadingPlaylists}>
+          <div className={`-mx-2 grid grid-cols-2 gap-x-1 gap-y-4 transition-opacity sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 ${loadingPlaylists ? 'pointer-events-none opacity-50' : ''}`} aria-busy={loadingPlaylists}>
             {playlists.map(item => (
-              <Link key={item.id} to={`/discover/playlists/${item.id}?source=${source}`} className="group rounded-lg p-2 transition hover:bg-accent/50">
-                <div className="relative"><Cover src={item.cover} icon={ListMusic} />{item.playCount > 0 && <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-1 text-[11px] text-white"><Play className="h-3 w-3 fill-current" />{formatPlayCount(item.playCount)}</span>}</div>
-                <div className="mt-2 line-clamp-2 text-sm font-medium group-hover:text-primary">{item.name}</div>
-                <div className="truncate text-xs text-muted-foreground">{item.author}{item.songCount && item.songCount > 0 ? ` · ${item.songCount} 首` : ''}</div>
+              <Link key={item.id} to={`/discover/playlists/${item.id}?source=${source}`} className="album-tile group min-w-0 rounded-2xl p-2">
+                <div className="cover-elevation relative rounded-xl"><Cover src={item.cover} icon={ListMusic} />{item.playCount > 0 && <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-black/55 px-2 py-1 text-[10px] text-white"><Play className="h-2.5 w-2.5 fill-current" />{formatPlayCount(item.playCount)}</span>}</div>
+                <div className="mt-3 line-clamp-2 text-sm font-medium leading-relaxed group-hover:text-primary">{item.name}</div>
+                <div className="mt-1 truncate text-xs text-muted-foreground">{item.author}{item.songCount && item.songCount > 0 ? ` · ${item.songCount} 首` : ''}</div>
               </Link>
             ))}
           </div>

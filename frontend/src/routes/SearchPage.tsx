@@ -41,9 +41,9 @@ export function SearchPage() {
   const tracks = results.map(s => toTrack({ uid: s.uid, musicInfo: s }))
 
   return (
-    <div className="p-6">
+    <div className="page-shell">
       {/* 小屏下 MobileHeader 已显示页面标题，页内大标题仅桌面保留 */}
-      <h1 className="mb-4 hidden text-2xl font-bold md:block">搜索</h1>
+      <h1 className="page-title mb-6 hidden desktop:block">搜索</h1>
       <form onSubmit={submit} className="mb-4 flex gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -77,7 +77,7 @@ export function SearchPage() {
       <div
         role="tablist"
         aria-label="音源"
-        className="mb-6 flex gap-2 overflow-x-auto pb-1"
+        className="scrollbar-hidden mb-6 flex gap-2 overflow-x-auto pb-1"
       >
         {SOURCES.map(s => (
           <button

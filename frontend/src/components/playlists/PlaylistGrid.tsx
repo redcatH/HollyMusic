@@ -32,16 +32,16 @@ export function PlaylistGrid({ playlists, currentUsername, onEdit, onDelete }: P
   }, [])
 
   return (
-    <div ref={gridRef} className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+    <div ref={gridRef} className="library-grid -mx-2">
       {playlists.map(playlist => (
-        <div key={playlist.id} className="group relative rounded-lg p-2 hover:bg-accent/40">
+        <div key={playlist.id} className="album-tile group relative min-w-0 rounded-2xl p-2">
           <Link to={`/playlists/${playlist.id}`} className="flex flex-col gap-2">
             <PlaylistCover
               coverArt={playlist.coverArt}
               coverSongUid={playlist.coverSongUid}
-              className="aspect-square w-full"
+              className="cover-elevation aspect-square w-full rounded-xl"
             />
-            <div className="truncate text-sm font-medium">{playlist.name}</div>
+            <div className="mt-1 truncate text-sm font-medium">{playlist.name}</div>
             <div className="pr-8 text-xs text-muted-foreground">{playlist.songCount} 首</div>
           </Link>
 

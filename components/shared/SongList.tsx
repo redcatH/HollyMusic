@@ -14,7 +14,7 @@ interface SongListProps {
 export function SongList({ tracks, playlist }: SongListProps) {
   if (tracks.length === 0) return null
   return (
-    <div className="flex flex-col">
+    <div className="track-list flex flex-col gap-0.5">
       {tracks.map((t, i) => (
         <SongRow
           key={`${t.uid}-${i}`}

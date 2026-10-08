@@ -24,8 +24,8 @@ export function EditPlaylistDialog({ initialName, onClose, onSave }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
-      <div className="w-full max-w-sm rounded-lg bg-card p-6 shadow-xl" onClick={event => event.stopPropagation()}>
+    <div className="safe-dialog-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
+      <div className="safe-dialog w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-xl" onClick={event => event.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold">编辑歌单</h2>
           <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground" aria-label="关闭">

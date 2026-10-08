@@ -1,60 +1,49 @@
-
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useRef, useState, type CSSProperties } from 'react'
 
 interface ProgressBarProps {
-  value: number // 0-100
+  value: number
   onChange?: (pct: number) => void
   disabled?: boolean
+  label?: string
 }
 
-export function ProgressBar({ value, onChange, disabled }: ProgressBarProps) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [dragging, setDragging] = useState(false)
+/** 原生 range 支持触摸与键盘；拖动结束后再提交，避免连续触发音频跳转。 */
+export function ProgressBar({ value, onChange, disabled, label = '播放进度' }: ProgressBarProps) {
+  const dragging = useRef(false)
   const [dragValue, setDragValue] = useState<number | null>(null)
-
-  const current = dragValue ?? value
-
-  const calcPct = useCallback((clientX: number) => {
-    const el = ref.current
-    if (!el) return 0
-    const rect = el.getBoundingClientRect()
-    return Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100))
-  }, [])
-
-  useEffect(() => {
-    if (!dragging) return
-    const move = (e: MouseEvent) => setDragValue(calcPct(e.clientX))
-    const up = (e: MouseEvent) => {
-      onChange?.(calcPct(e.clientX))
-      setDragging(false)
-      setDragValue(null)
-    }
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
-    return () => {
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
-    }
-  }, [dragging, calcPct, onChange])
+  const current = Math.max(0, Math.min(100, dragValue ?? value))
 
   return (
-    <div
-      ref={ref}
-      onMouseDown={e => {
+    <input
+      type="range"
+      min={0}
+      max={100}
+      step={0.1}
+      value={current}
+      disabled={disabled}
+      aria-label={label}
+      style={{ '--progress': `${current}%` } as CSSProperties}
+      className="player-range min-w-0 flex-1 disabled:cursor-not-allowed disabled:opacity-50"
+      onPointerDown={event => {
         if (disabled) return
-        setDragging(true)
-        setDragValue(calcPct(e.clientX))
+        dragging.current = true
+        event.currentTarget.setPointerCapture(event.pointerId)
       }}
-      className={`group relative h-1 flex-1 cursor-pointer rounded-full bg-muted ${disabled ? 'opacity-50' : ''}`}
-    >
-      <div
-        className="absolute inset-y-0 left-0 rounded-full bg-primary"
-        style={{ width: `${current}%` }}
-      />
-      <div
-        className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white opacity-0 shadow transition-opacity group-hover:opacity-100"
-        style={{ left: `${current}%` }}
-      />
-    </div>
+      onChange={event => {
+        const next = Number(event.currentTarget.value)
+        if (dragging.current) setDragValue(next)
+        else onChange?.(next)
+      }}
+      onPointerUp={event => {
+        if (!dragging.current) return
+        dragging.current = false
+        onChange?.(Number(event.currentTarget.value))
+        setDragValue(null)
+      }}
+      onPointerCancel={() => {
+        dragging.current = false
+        setDragValue(null)
+      }}
+    />
   )
 }

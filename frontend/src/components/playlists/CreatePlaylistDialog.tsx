@@ -23,9 +23,9 @@ export function CreatePlaylistDialog({ onClose, onCreate }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
+    <div className="safe-dialog-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
       <div
-        className="w-full max-w-sm rounded-lg bg-card p-6 shadow-xl"
+        className="safe-dialog w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-xl"
         onClick={e => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">

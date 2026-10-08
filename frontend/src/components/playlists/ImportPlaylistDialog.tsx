@@ -36,8 +36,8 @@ export function ImportPlaylistDialog({ onClose, onImported }: Props) {
     } catch (err) { setError(err instanceof Error ? err.message : '导入失败') } finally { setBusy(false) }
   }
 
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
-    <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+  return <div className="safe-dialog-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
+    <div className="safe-dialog w-full max-w-lg rounded-2xl border border-border bg-card shadow-2xl">
       <div className="flex items-start justify-between border-b border-border px-6 py-5"><div><p className="mb-1 text-xs font-medium uppercase tracking-[0.18em] text-primary">Playlist import</p><h2 className="text-xl font-semibold">导入外部歌单</h2></div><button type="button" onClick={onClose} aria-label="关闭" className="rounded p-1 hover:bg-accent"><X className="h-4 w-4" /></button></div>
       <div className="space-y-5 px-6 py-5">
         <div className="grid grid-cols-2 gap-2 rounded-xl bg-background p-1"><button type="button" onClick={() => { setSource('wy-csv'); setError(null) }} className={`rounded-lg px-3 py-2 text-sm font-medium transition ${source === 'wy-csv' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>网易云 CSV</button><button type="button" onClick={() => { setSource('tx'); setError(null) }} className={`rounded-lg px-3 py-2 text-sm font-medium transition ${source === 'tx' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>QQ 公开链接</button></div>
