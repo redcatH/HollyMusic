@@ -159,7 +159,8 @@
   background-image: radial-gradient(ellipse at 100% 100%, var(--surface-glow), transparent 55%);
 }
 
-.app-main { background: color-mix(in oklch, var(--card) 70%, var(--background)); }
+.app-main-frame { background: color-mix(in oklch, var(--card) 70%, var(--background)); }
+.app-main:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
 .app-viewport, .safe-screen { padding-inline: var(--safe-area-left) var(--safe-area-right); }
 .safe-header { height: calc(56px + var(--safe-area-top)); padding-top: var(--safe-area-top); }
 .mobile-drawer { padding-top: calc(8px + var(--safe-area-top)); padding-bottom: calc(8px + var(--safe-area-bottom)); padding-left: calc(8px + var(--safe-area-left)); }
@@ -184,7 +185,24 @@
 .track-list > [data-current="true"] { background-color: color-mix(in oklch, var(--primary) 9%, var(--card)); }
 @media (min-width: 768px) and (min-height: 500px) {
   .app-viewport { padding-top: var(--safe-area-top); padding-bottom: var(--safe-area-bottom); }
-  .app-main { border: 1px solid color-mix(in oklch, var(--border) 55%, transparent); border-radius: 22px; }
+  /* 外层保留完整圆角，内层原生滚动条整体内缩，避免端点被圆弧裁掉。 */
+  .app-main-frame {
+    --main-inset-block: 12px;
+    --main-inset-inline: 4px;
+    border: 1px solid color-mix(in oklch, var(--border) 55%, transparent);
+    border-radius: 22px;
+    padding: var(--main-inset-block) var(--main-inset-inline);
+  }
+  .app-main { scrollbar-gutter: stable; scroll-padding-block: 12px; }
+  .app-main::-webkit-scrollbar-thumb { min-height: 40px; }
+  /* 抵消容器内缩，保持页面标题、卡片与面板边缘原有的视觉间距。 */
+  .app-main > .page-shell {
+    padding: calc(28px - var(--main-inset-block)) calc(32px - var(--main-inset-inline)) calc(40px - var(--main-inset-block));
+  }
+  @supports not selector(::-webkit-scrollbar) {
+    .app-main { scrollbar-color: var(--scrollbar) transparent; }
+    .app-main:hover { scrollbar-color: var(--scrollbar-hover) transparent; }
+  }
 }
 @media (max-width: 767px), (max-height: 499px) {
   .page-shell { padding: 20px 18px 28px; }

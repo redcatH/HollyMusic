@@ -156,26 +156,28 @@ export function App() {
       <MobileHeader onMenuClick={() => setDrawerOpen(true)} />
       <div className="flex min-h-0 flex-1 overflow-hidden desktop:gap-3 desktop:px-3 desktop:pt-3">
         <Sidebar />
-        <main className="app-main min-w-0 flex-1 overflow-y-auto">
-          <Routes>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/recommend" element={<RecommendedMusicPage />} />
-            <Route path="/discover/toplists/:id" element={<DiscoveryCollectionPage kind="toplists" />} />
-            <Route path="/discover/playlists/:id" element={<DiscoveryCollectionPage kind="playlists" />} />
-            <Route path="/search" element={<SearchPage />} />
-            <Route path="/favorites" element={<FavoritesPage />} />
-            <Route path="/playlists" element={<PlaylistsPage />} />
-            <Route path="/playlists/ai-create" element={<AiPlaylistPage />} />
-            <Route path="/playlists/:id/ai-add" element={<AiPlaylistPage />} />
-            <Route path="/playlists/:id" element={<PlaylistDetailPage />} />
-            <Route path="/history" element={<HistoryPage />} />
-            <Route path="/admin" element={<AdminPage />} />
-            <Route path="/admin/users" element={<AdminUsersPage />} />
-            <Route path="/admin/sources" element={<AdminSourcesPage />} />
-            <Route path="/admin/recommend" element={<AdminRecommendPage />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </main>
+        <div className="app-main-frame flex min-h-0 min-w-0 flex-1 overflow-hidden">
+          <main className="app-main min-h-0 min-w-0 flex-1 overflow-y-auto" tabIndex={0} aria-label="页面内容">
+            <Routes>
+              <Route path="/" element={<HomePage />} />
+              <Route path="/recommend" element={<RecommendedMusicPage />} />
+              <Route path="/discover/toplists/:id" element={<DiscoveryCollectionPage kind="toplists" />} />
+              <Route path="/discover/playlists/:id" element={<DiscoveryCollectionPage kind="playlists" />} />
+              <Route path="/search" element={<SearchPage />} />
+              <Route path="/favorites" element={<FavoritesPage />} />
+              <Route path="/playlists" element={<PlaylistsPage />} />
+              <Route path="/playlists/ai-create" element={<AiPlaylistPage />} />
+              <Route path="/playlists/:id/ai-add" element={<AiPlaylistPage />} />
+              <Route path="/playlists/:id" element={<PlaylistDetailPage />} />
+              <Route path="/history" element={<HistoryPage />} />
+              <Route path="/admin" element={<AdminPage />} />
+              <Route path="/admin/users" element={<AdminUsersPage />} />
+              <Route path="/admin/sources" element={<AdminSourcesPage />} />
+              <Route path="/admin/recommend" element={<AdminRecommendPage />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </main>
+        </div>
       </div>
       <PlayerBar audio={audioElement} onAudioElement={setAudioElement} />
       <MobileSidebar open={drawerOpen} onClose={() => setDrawerOpen(false)} />
