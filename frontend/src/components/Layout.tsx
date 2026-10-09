@@ -194,7 +194,7 @@ export function MobileSidebar({ open, onClose }: { open: boolean; onClose: () =>
   return (
     <div className="desktop:hidden">
       <div
-        className={`fixed inset-0 z-40 bg-black/50 transition-opacity duration-300 ${
+        className={`safe-screen fixed inset-0 z-40 bg-black/50 transition-opacity duration-300 ${
           open ? 'opacity-100' : 'pointer-events-none opacity-0'
         }`}
         onClick={onClose}

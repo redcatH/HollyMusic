@@ -218,6 +218,18 @@
   .library-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
+/* iOS 独立 PWA 冷启动时，dvh / fixed 的底边可能少算顶部安全区，
+   直到外层拖动才更新。真机记录为 879 → 926px，而 vh 始终为 926px。
+   独立模式统一使用稳定的完整高度；浏览器标签页仍保留动态视口高度。 */
+@media (display-mode: standalone) {
+  .app-viewport { position: relative; height: 100vh; }
+  .safe-screen, .mobile-drawer { height: 100vh; bottom: auto; }
+  @media (max-width: 767px), (max-height: 499px) {
+    /* 以应用外框定位，避免播放器继续使用尚未更新的 fixed 底边。 */
+    .glass-surface.player-surface { position: absolute; }
+  }
+}
+
 .glass-surface { position: relative; isolation: isolate; background: var(--card); }
 @supports (backdrop-filter: blur(20px)) or (-webkit-backdrop-filter: blur(20px)) {
   .glass-surface { background: transparent; }
