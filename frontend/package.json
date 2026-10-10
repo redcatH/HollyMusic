@@ -20,7 +20,7 @@
     "framer-motion": "^11.0.8",
     "he": "^1.2.0",
     "lucide-react": "^0.577.0",
-    "qs": "^6.14.2",
+    "qs": "^6.16.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-router-dom": "^7.1.5",
