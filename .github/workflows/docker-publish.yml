@@ -35,6 +35,8 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 20
+          # 此任务只执行无依赖的容器测试，不安装 pnpm，也不需要依赖缓存。
+          package-manager-cache: false
 
       # ghcr.io 镜像名必须全小写；仓库所有者 redcatH 需转小写
       - name: Set image name (lowercase)
