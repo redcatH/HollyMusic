@@ -31,6 +31,11 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+
       # ghcr.io 镜像名必须全小写；仓库所有者 redcatH 需转小写
       - name: Set image name (lowercase)
         run: echo "IMAGE_NAME=ghcr.io/$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')/hollymusic" >> $GITHUB_ENV
@@ -45,20 +50,34 @@ jobs:
       # 从 GITHUB_REF（refs/tags/v1.0.0）提取 tag 名
       - name: Extract tag name
         id: tag
-        run: echo "name=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          echo "name=${TAG}" >> "$GITHUB_OUTPUT"
+          # 预发布仅更新 preview 通道，正式版才更新 latest。
+          if [[ "$TAG" == *-* ]]; then CHANNEL=preview; else CHANNEL=latest; fi
+          echo "channel=${CHANNEL}" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push
+      - name: Build release image
         uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
-          push: true
+          load: true
           tags: |
+            hollymusic:release-test
             ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.name }}
-            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.channel }}
           # GitHub Actions 缓存加速，二次构建只重建变化层
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Verify first-run and restart before publishing
+        run: node scripts/test-docker-setup.mjs hollymusic:release-test
+
+      - name: Push verified image
+        run: |
+          docker push "${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.name }}"
+          docker push "${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.channel }}"
 
   # 发布 GitHub Release：基于 Conventional Commits 自动生成中文分组更新说明，
   # 并把 CHANGELOG.md / package.json 版本号同步提交回 main
@@ -106,12 +125,13 @@ jobs:
           GITHUB_REPO: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 头部拼入 Docker 镜像拉取提示；补发（dispatch）时未构建镜像，不提 latest
+      # 预发布不更新 latest；补发（dispatch）时只提示具体版本。
       - name: Prepend Docker image hint
         run: |
           {
             if [ "${{ github.event_name }}" = "push" ]; then
-              echo "🐳 **Docker 镜像**：\`ghcr.io/redcath/hollymusic:${{ steps.rel.outputs.tag }}\`（\`latest\` 已同步更新）"
+              if [[ "${{ steps.rel.outputs.tag }}" == *-* ]]; then CHANNEL=preview; else CHANNEL=latest; fi
+              echo "🐳 **Docker 镜像**：\`ghcr.io/redcath/hollymusic:${{ steps.rel.outputs.tag }}\`（\`${CHANNEL}\` 已同步更新）"
             else
               echo "🐳 **Docker 镜像**：\`ghcr.io/redcath/hollymusic:${{ steps.rel.outputs.tag }}\`"
             fi
@@ -132,6 +152,7 @@ jobs:
       # ---- 同步 CHANGELOG.md 与 package.json 版本号，提交回 main ----
 
       - name: Regenerate CHANGELOG.md (git-cliff)
+        if: github.event_name == 'push' && !contains(steps.rel.outputs.tag, '-')
         uses: orhun/git-cliff-action@v4
         with:
           config: cliff.toml
@@ -141,9 +162,9 @@ jobs:
           GITHUB_REPO: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 版本号只在正常发布时同步；补发旧 tag 时不回退 main 上的版本号
+      # 仅正式发布回写 main；预发布和补发不修改正式版本元数据。
       - name: Sync package.json version
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && !contains(steps.rel.outputs.tag, '-')
         run: |
           VERSION="${{ steps.rel.outputs.tag }}"
           VERSION="${VERSION#v}"
@@ -156,6 +177,7 @@ jobs:
 
       # GITHUB_TOKEN 的 push 不会触发其他 workflow，无循环构建风险
       - name: Commit and push to main
+        if: github.event_name == 'push' && !contains(steps.rel.outputs.tag, '-')
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

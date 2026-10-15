@@ -25,6 +25,8 @@ curl -o docker-compose.yml \
 
 > 想固定版本？把 `image: ghcr.io/redcath/hollymusic:latest` 换成具体 tag，如 `:v0.27.1`（见 [releases](https://github.com/redcatH/HollyMusic/releases)）。
 
+> 体验预发布功能可使用 `ghcr.io/redcath/hollymusic:preview`，或固定到 `vX.Y.Z-preview.N` 标签。预发布不会覆盖正式镜像 `latest`，GitHub Release 会标记为预发布。
+
 **3. 创建 `.env`**
 
 ```env
@@ -44,7 +46,7 @@ AUTH_SECRET=请替换为至少32位的随机字符串
 docker compose up -d
 ```
 
-可选：若希望预置管理员而不从日志读取随机密码，在启动前创建被忽略的 `config/users.json`：
+可选：自动化部署可在启动前创建被忽略的 `config/users.json` 预置管理员，跳过网页首次设置：
 
 ```json
 {
@@ -54,11 +56,11 @@ docker compose up -d
 }
 ```
 
-启动后访问 http://localhost:3099 即可。若未预置 `admin`，初始密码会打印在容器日志中（仅显示一次，登录后强制改密）：
+启动后访问 http://localhost:3099。新安装会显示与登录页一致的首次设置页面，填写管理员密码（8–128 位）和确认密码后自动登录，不再从日志读取随机密码。已有管理员的实例升级后自动跳过此步骤，原账号、密码、会话及业务数据保留。
 
-```bash
-docker compose logs app | grep -i password
-```
+默认不要求额外参数，应先在可信网络完成设置后再开放公网。需要直接公网首启时，可在 `.env` 中设置独立的 `SETUP_TOKEN`，网页会要求输入初始化码；该参数对已完成初始化的实例不生效。它不能代替 `AUTH_SECRET`。
+
+初始化状态保存在数据库通用设置表 `SystemSetting` 的 `system.initialization` 项中，随数据库一起备份。迁移会将已有管理员标记为完成；有历史用户/业务数据却缺少管理员时关闭初始化入口，应恢复管理员或数据库备份。缺失/损坏的初始化记录不作为新安装处理，不要通过删除状态项重置密码。
 
 > 首次启动会自动在 `./prisma_data` 创建数据库并运行 Prisma 迁移，无需手动操作。
 
@@ -87,7 +89,7 @@ docker run -d \
 ```
 
 > - `AUTH_SECRET` 用 `$(openssl rand -hex 32)` 现场生成随机密钥（也可替换为自己固定的 ≥32 位字符串）。**注意：密钥一旦确定就不要再改**，否则已登录用户的 cookie 会全部失效。
-> - 端口 `3099:3000` 左边是宿主机端口，按需修改；初始密码在容器日志中：`docker logs holly-music | grep -i password`。
+> - 端口 `3099:3000` 左边是宿主机端口，按需修改；新安装在网页设置管理员密码。可选通过 `-e SETUP_TOKEN=自己生成的初始化码` 保护首次设置。
 > - 升级：`docker pull ghcr.io/redcath/hollymusic:latest && docker rm -f holly-music` 后重新执行上面的 `docker run`（数据通过 volume 保留）。
 
 **HTTPS 部署（可选）**

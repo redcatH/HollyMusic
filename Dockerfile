@@ -118,7 +118,7 @@ COPY --from=backend-builder /app/prisma ./prisma
 
 # ---------- 业务配置与音源 ----------
 COPY --from=backend-builder /app/config ./config
-# 兜底：users.json 含初始密码，绝不允许随镜像分发（若构建期生成，密码会出现在公开构建日志）
+# 兜底：初始用户配置绝不随镜像分发；新安装在网页设置管理员密码。
 RUN rm -f /app/config/users.json
 # custom-sources 是运行时用户数据目录（被 .gitignore 忽略，源码与 CI 中均不存在），
 # 实际数据通过 docker-compose volume（./custom-sources:/app/custom-sources）挂载宿主机目录提供。

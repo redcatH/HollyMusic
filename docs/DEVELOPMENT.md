@@ -79,8 +79,8 @@ AUDIO_CACHE_MAX_CONCURRENT=5
 # 首次开发：应用仓库已有迁移，初始化本地数据库
 pnpm prisma migrate dev
 
-# 或快速同步 schema（不生成 migration 文件）
-pnpm prisma db push
+# 自动化环境：仅应用已有迁移
+pnpm prisma migrate deploy
 
 # 生成 Prisma Client（migrate 会自动生成，必要时手动执行）
 pnpm prisma generate
@@ -89,8 +89,8 @@ pnpm prisma generate
 > ⚠️ **拉取新代码后，本地启动前务必同步 DB schema**：
 > ```bash
 > pnpm prisma migrate dev     # 应用未执行的 migration（推荐）
-> # 或 pnpm prisma db push    # 直接把 schema 推到本地 db（不记 migration 历史）
 > ```
+> 首次设置状态由迁移写入，不能只用 `prisma db push` 创建表。缺少初始化记录时服务会拒绝开放首次设置，避免把历史实例误判为空库。
 > 若本地 db 落后于代码 schema（如新增了列），Prisma 全量列查询会抛错并被 service 层 catch，导致 `/api/cover` 等接口**静默回退默认值**（封面全变默认图），且只在服务端日志报错、前端无感知。可用 `pnpm prisma migrate status` 检查是否有未应用的 migration。
 
 ### 4. 启动开发服务器
@@ -106,7 +106,7 @@ pnpm dev:all
 
 > 也可单独启动：`pnpm dev`（仅后端）、`pnpm dev:web`（仅前端，需后端在 3000 端口）
 
-> **初始管理员**：首次启动会先导入存在的 `config/users.json`；若其中提供 `admin`，使用该密码且不在日志中输出。若文件不存在或未提供 `admin`，才会创建随机密码的 `admin` 并仅在服务端日志中显示一次。admin 用户名固定为 `admin`；用户通过 Web UI 改密后以数据库为准，重启不会回写覆盖。
+> **初始管理员**：先应用数据库迁移，再运行 `pnpm dev:all`。新空库在网页为固定账号 `admin` 设置密码，完成后自动登录；迁移自动将已有管理员标记为初始化完成。显式 `config/users.json` 继续支持预置账户，已有账户密码以数据库为准，重启不会覆盖。通用设置由 `lib/services/system-settings.ts` 统一校验与读写；初始化记录只能由专用流程维护。`music.enabledPlatforms` 等键为后续功能提供存储能力，本次仍由现有音源配置驱动平台行为。
 
 ## 提交前检查
 

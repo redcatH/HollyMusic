@@ -6,6 +6,9 @@ export interface MeResponse {
   authenticated: boolean
   username: string | null
   mustChangePassword: boolean
+  setupRequired: boolean
+  setupRecoveryRequired: boolean
+  setupTokenRequired: boolean
 }
 
 /**
@@ -13,12 +16,26 @@ export interface MeResponse {
  * 注意：即使未登录也返回 200，不能走统一 parseJson（它要求 success && data）。
  */
 export async function getMe(): Promise<MeResponse> {
-  const res = await fetch('/api/auth/me')
+  const res = await fetch('/api/auth/me', { cache: 'no-store' })
   const json = await res.json()
-  if (!json.success) {
+  if (!res.ok || !json.success) {
     throw new Error(json.error?.message || '获取会话失败')
   }
   return json.data as MeResponse
+}
+
+export async function setup(password: string, confirmPassword: string, setupToken: string): Promise<void> {
+  const res = await fetch('/api/setup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password, confirmPassword, setupToken }),
+  })
+  const json = await res.json()
+  if (!res.ok || !json.success) {
+    const error = new Error(json.error?.message || '设置失败')
+    Object.assign(error, { status: res.status })
+    throw error
+  }
 }
 
 export async function login(username: string, password: string): Promise<{ username: string; mustChangePassword: boolean }> {

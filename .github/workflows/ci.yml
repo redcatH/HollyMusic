@@ -12,9 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # Prisma Client 实例化即读取 DATABASE_URL；SQLite file: 路径无需真实库文件，
-      # 单测与构建均不做真实连接（与 Docker 多阶段构建行为一致）
+      # 构建不连接此库；集成测试使用独立临时数据库并执行真实迁移。
       DATABASE_URL: file:./prisma/data/music.db
-      # 签名密钥缺失仅告警并回退开发 fallback，单测/构建无需真实值
+      # 测试专用签名密钥；生产环境必须配置独立的随机值。
       AUTH_SECRET: ci-dummy-secret-not-for-production
     steps:
       - name: Checkout
@@ -56,3 +56,9 @@ jobs:
         run: |
           pnpm build
           pnpm -C frontend build
+
+      - name: Build Docker image
+        run: docker build -t hollymusic:setup-test .
+
+      - name: Verify Docker first-run and restart
+        run: node scripts/test-docker-setup.mjs hollymusic:setup-test

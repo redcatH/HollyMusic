@@ -7,7 +7,7 @@
 #      curl -o docker-compose.yml \
 #        https://raw.githubusercontent.com/redcatH/HollyMusic/main/docker-compose.example.yml）
 #   3. 创建 .env（最小配置只需 AUTH_SECRET，生成：openssl rand -hex 32）
-#   4. docker compose up -d，访问 http://localhost:3099
+#   4. docker compose up -d，访问 http://localhost:3099，在网页设置管理员密码
 #
 # 想固定版本？把 image 的 :latest 换成具体 tag（如 :v0.20.1），
 # 见 https://github.com/redcatH/HollyMusic/releases

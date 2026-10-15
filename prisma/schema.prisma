@@ -14,6 +14,14 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+/// 实例级设置。valueJson 由带类型的设置服务校验，敏感凭证仍使用环境变量。
+model SystemSetting {
+  key       String   @id
+  valueJson String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model MusicInfo {
   id        Int      @id @default(autoincrement())
   source    String

@@ -9,7 +9,7 @@
  */
 
 import { create } from 'zustand'
-import { getMe, login as apiLogin, logout as apiLogout, heartbeat, changePassword as apiChangePassword } from '@/lib/api/auth'
+import { getMe, login as apiLogin, logout as apiLogout, heartbeat, changePassword as apiChangePassword, setup as apiSetup } from '@/lib/api/auth'
 
 const HEARTBEAT_INTERVAL_MS = 2 * 60 * 1000
 
@@ -43,7 +43,12 @@ interface AuthStore {
   /** 是否需要强制修改密码（首次登录/管理员重置后为 true） */
   mustChangePassword: boolean
   loading: boolean
+  setupRequired: boolean | null
+  setupRecoveryRequired: boolean
+  setupTokenRequired: boolean
+  error: string | null
   init: () => Promise<void>
+  setup: (password: string, confirmPassword: string, setupToken: string) => Promise<void>
   login: (username: string, password: string) => Promise<void>
   logout: () => Promise<void>
   /** 自助改密，成功后清除 mustChangePassword */
@@ -55,21 +60,42 @@ export const useAuthStore = create<AuthStore>((set) => ({
   username: null,
   mustChangePassword: false,
   loading: false,
+  setupRequired: null,
+  setupRecoveryRequired: false,
+  setupTokenRequired: false,
+  error: null,
 
   init: async () => {
-    set({ loading: true })
+    set({ loading: true, error: null })
     try {
       const me = await getMe()
-      set({ authenticated: me.authenticated, username: me.username, mustChangePassword: me.mustChangePassword, loading: false })
+      set({ authenticated: me.authenticated, username: me.username, mustChangePassword: me.mustChangePassword,
+        setupRequired: me.setupRequired, setupRecoveryRequired: me.setupRecoveryRequired,
+        setupTokenRequired: me.setupTokenRequired, loading: false, error: null })
       if (me.authenticated) startHeartbeat()
-    } catch {
-      set({ authenticated: false, username: null, mustChangePassword: false, loading: false })
+      else stopHeartbeat()
+    } catch (error) {
+      stopHeartbeat()
+      set({ authenticated: null, username: null, mustChangePassword: false, setupRequired: null,
+        loading: false, error: error instanceof Error ? error.message : '暂时无法连接服务' })
+    }
+  },
+
+  setup: async (password, confirmation, token) => {
+    try {
+      await apiSetup(password, confirmation, token)
+      set({ authenticated: true, username: 'admin', mustChangePassword: false,
+        setupRequired: false, setupRecoveryRequired: false, setupTokenRequired: false, error: null })
+      startHeartbeat()
+    } catch (error) {
+      if ((error as { status?: number }).status === 409) await useAuthStore.getState().init()
+      throw error
     }
   },
 
   login: async (username, password) => {
     const res = await apiLogin(username, password)
-    set({ authenticated: true, username: res.username, mustChangePassword: res.mustChangePassword })
+    set({ authenticated: true, username: res.username, mustChangePassword: res.mustChangePassword, error: null })
     startHeartbeat()
   },
 

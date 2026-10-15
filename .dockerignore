@@ -15,6 +15,8 @@ frontend/dist
 .env
 .env.local
 .env.*.local
+.env.*
+!.env.example
 .vscode
 .idea
 *.swp
@@ -68,5 +70,17 @@ lx-env-simulator/
 META-INF/
 .next/
 .pnpm-store/
+
+# 本地账号、数据库和运行期数据不得进入 builder 或镜像层。
+config/users.json
+**/*.db
+**/*.db-journal
+**/*.db-wal
+**/*.db-shm
+prisma_data/
+cache_data/
+app_logs/
+gui-test-screenshots/
+.playwright-mcp/
 .next/
 .pnpm-store/

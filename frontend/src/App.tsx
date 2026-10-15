@@ -30,6 +30,8 @@ import { PlaylistDetailPage } from './routes/PlaylistDetailPage'
 import { AiPlaylistPage } from './routes/AiPlaylistPage'
 import { HistoryPage } from './routes/HistoryPage'
 import { LoginPage } from './routes/LoginPage'
+import { SetupPage } from './routes/SetupPage'
+import { AuthLayout } from './components/AuthLayout'
 import { ChangePasswordPage } from './routes/ChangePasswordPage'
 import { AdminPage, AdminUsersPage, AdminSourcesPage, AdminRecommendPage } from './routes/AdminPage'
 
@@ -39,6 +41,8 @@ export function App() {
   const initAuth = useAuthStore(s => s.init)
   const authenticated = useAuthStore(s => s.authenticated)
   const mustChangePassword = useAuthStore(s => s.mustChangePassword)
+  const setupRequired = useAuthStore(s => s.setupRequired)
+  const authError = useAuthStore(s => s.error)
   const loadFavorites = useFavoritesStore(s => s.load)
   const playByUid = usePlayerStore(s => s.playByUid)
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -96,12 +100,12 @@ export function App() {
   // 全局路由守卫：除登录页外，所有页面都必须有有效会话。
   // 携带原地址（含查询参数）作为 redirect，登录成功后回到来源页（分享链接 ?uid=/?playlist= 场景）。
   useEffect(() => {
-    if (authenticated === null) return
+    if (authenticated === null || setupRequired === true || location.pathname === '/setup') return
     if (authenticated === false && location.pathname !== '/login') {
       const from = location.pathname + location.search
       navigate(`/login?redirect=${encodeURIComponent(from)}`, { replace: true })
     }
-  }, [authenticated, location.pathname, location.search, navigate])
+  }, [authenticated, setupRequired, location.pathname, location.search, navigate])
 
   // 强制改密守卫：已登录但 mustChangePassword=true 时，除改密页外一律拦截到改密页
   useEffect(() => {
@@ -130,7 +134,20 @@ export function App() {
     }
   }, [drawerOpen])
 
-  // 登录页无需已有会话；其余路由在校验完成前不渲染业务内容，避免未登录闪屏。
+  // 服务异常与未完成状态都不能被误判为新安装。
+  if (authError) {
+    return <AuthLayout title="暂时无法连接" description="请检查网络或稍后再试。" footer="已有账号与数据会保留。">
+      <p role="alert" className="mb-5 text-sm text-destructive">{authError}</p>
+      <button onClick={() => void initAuth()} className="h-12 w-full rounded-xl bg-primary text-sm font-semibold text-primary-foreground">重新连接</button>
+    </AuthLayout>
+  }
+  if (authenticated === null) return <div role="status" className="flex min-h-dvh items-center justify-center bg-background text-sm text-muted-foreground">正在连接 Holly Music...</div>
+  if (setupRequired === true) {
+    return location.pathname === '/setup' ? <SetupPage /> : <Navigate to="/setup" replace />
+  }
+  if (location.pathname === '/setup') return <Navigate to={authenticated ? '/' : '/login'} replace />
+
+  // 登录页无需已有会话。
   if (location.pathname === '/login') {
     return (
       <div className="min-h-dvh bg-background text-foreground">
@@ -141,7 +158,6 @@ export function App() {
     )
   }
 
-  if (authenticated === null) return <div className="min-h-dvh bg-background" />
   if (authenticated === false) return null
   if (mustChangePassword && location.pathname !== '/change-password') return <Navigate to="/change-password" replace />
 
