@@ -31,7 +31,7 @@ interface UseAudioPlayerOptions {
   /** 音频拉取/播放失败回调（如 HTTP 500、解码失败），由上层决定是否跳下一首。
    *  errCode 为浏览器 MediaError.code（3=DECODE 4=SRC_NOT_SUPPORTED 2=NETWORK），
    *  上层据此判断是否降级音质重试。 */
-  onError?: (msg: string, errCode?: number) => void
+  onError?: (msg: string, errCode?: number, wasPlaying?: boolean) => void
 }
 
 export function useAudioPlayer(opts: UseAudioPlayerOptions) {
@@ -46,6 +46,8 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
   const activeGenRef = useRef(0)
   /** 自管理的 seek 标志（比 audio.seeking 更可靠，区分"seek 引起的 spurious pause"与"用户主动暂停"） */
   const seekingRef = useRef(false)
+  /** 恢复进度/加载期间拖动：等待本次音频元数据后再定位。 */
+  const pendingSeekRef = useRef<number | null>(null)
   /** 用户设定的目标音量；淡入淡出只改变 audio.volume，不覆盖该偏好。 */
   const targetVolumeRef = useRef(1)
   /** 当前音量渐变。取消时也要结束旧 Promise，避免暂停流程卡在 await。 */
@@ -120,7 +122,8 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
 
     // iOS autoplay 解锁：首次用户交互时触发一次 load，解除 play() 限制
     const unlock = () => {
-      audio.load()
+      // 首次点击可能就是恢复播放；此时不能再次 load() 把进度重置。
+      if (!audio.src) audio.load()
       window.removeEventListener('touchstart', unlock)
       window.removeEventListener('click', unlock)
     }
@@ -143,24 +146,38 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
     // 若不匹配说明事件来自旧 load，丢弃
     const isCurrent = () => loadGenRef.current === activeGenRef.current && loadGenRef.current > 0
 
+    const applyPendingSeek = () => {
+      const target = pendingSeekRef.current
+      if (target === null || audio.readyState === 0) return
+      const position = Number.isFinite(audio.duration) && audio.duration > 0 ? Math.min(target, audio.duration) : target
+      try {
+        audio.currentTime = position
+        pendingSeekRef.current = null
+        optsRef.current.onTimeUpdate?.(position)
+      } catch { /* 个别内核在 loadedmetadata 时仍不可 seek，canplay 再试。 */ }
+    }
     const onLoadedMetadata = () => {
       if (!isCurrent()) return
       const dur = audio.duration
       if (Number.isFinite(dur) && dur > 0) {
         optsRef.current.onDuration?.(dur)
       }
+      applyPendingSeek()
     }
     const onCanPlay = () => {
       if (!isCurrent()) return
+      applyPendingSeek()
       setIsReady(true)
       optsRef.current.onLoading?.(null)
     }
     const onPlay = () => {
+      if (!isCurrent()) return
       if (playbackIntentRef.current !== 'playing') return
       optsRef.current.onPlayState?.(true)
       startProgress()
     }
     const onPlaying = () => {
+      if (!isCurrent()) return
       // playing 事件：播放恢复后触发（缓冲结束 / seek 完成后）
       // play 事件只在 paused→playing 时触发，seek 期间不触发 play 只有 playing
       // 所以这里必须也启动 rAF 循环，否则 seek 到未缓冲区恢复后进度条不动
@@ -170,6 +187,7 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
       startProgress()
     }
     const onPause = () => {
+      if (!isCurrent()) return
       // 用自管理 seekingRef 区分：seek 引起的 spurious pause 静默，用户主动暂停正常上报。
       // 意图只读：playbackIntentRef 仅由命令（load/play/pause）写入。load() 切歌时内部
       // audio.pause() 的原生事件在同步代码把意图写回 'playing' 之后才异步到达，若在此
@@ -180,15 +198,17 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
       stopProgress()
     }
     const onEnded = () => {
+      if (!isCurrent()) return
       optsRef.current.onPlayState?.(false)
       stopProgress()
       optsRef.current.onEnd?.()
     }
     const onTimeUpdate = () => {
-      if (audio.readyState === 0) return
+      if (!isCurrent() || audio.readyState === 0 || pendingSeekRef.current !== null) return
       optsRef.current.onTimeUpdate?.(audio.currentTime)
     }
     const onSeeked = () => {
+      if (!isCurrent() || pendingSeekRef.current !== null) return
       // seek 完成（含缓冲等待后）——上报真实位置 + 确保 rAF 循环在运行
       seekingRef.current = false
       optsRef.current.onTimeUpdate?.(audio.currentTime)
@@ -211,6 +231,7 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
     const onError = () => {
       if (!isCurrent()) return
       const err = audio.error
+      const wasPlaying = playbackIntentRef.current === 'playing'
       logger.error('[useAudioPlayer] audio error', err)
       optsRef.current.onLoading?.(null)
       optsRef.current.onPlayState?.(false)
@@ -232,7 +253,7 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
             return // 主动 abort（如切歌时），不算错误
         }
       }
-      optsRef.current.onError?.(msg, err?.code)
+      optsRef.current.onError?.(msg, err?.code, wasPlaying)
     }
 
     audio.addEventListener('loadedmetadata', onLoadedMetadata)
@@ -289,7 +310,7 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
       const audio = audioRef.current
       if (!audio) return
       // readyState > 0 才有有效 currentTime
-      if (audio.readyState > 0) {
+      if (audio.readyState > 0 && pendingSeekRef.current === null) {
         optsRef.current.onTimeUpdate?.(audio.currentTime)
       }
       if (!audio.paused && !audio.ended) {
@@ -303,21 +324,23 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
 
   // ------------------------------------------------------------------
   // 对外 API：load / play / pause / seek / setVolume / setMuted
-  // 签名与旧 Howler 实现完全一致，上层零改动
+  // startTime 用于刷新恢复与切音质时保留位置。
   // ------------------------------------------------------------------
   const load = useCallback(
-    async (url: string, autoplay = false) => {
+    async (url: string, autoplay = false, startTime = 0) => {
       const audio = audioRef.current
       if (!audio) return
 
       // generation 计数：快速切歌时放弃过期的事件回调
       const gen = ++loadGenRef.current
-      activeGenRef.current = gen
+      // 淡出期间仍是旧 src；此时的元数据/缓冲事件不能消费新歌的恢复位置。
+      activeGenRef.current = 0
       playbackIntentRef.current = autoplay ? 'playing' : 'paused'
 
       // 清理旧状态
       stopProgress()
       seekingRef.current = false
+      pendingSeekRef.current = Number.isFinite(startTime) && startTime > 0 ? startTime : null
       setIsReady(false)
       optsRef.current.onLoading?.(null)
 
@@ -330,6 +353,7 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
       if (gen !== loadGenRef.current) return
 
       // 设置新源
+      activeGenRef.current = gen
       audio.pause()
       audio.removeAttribute('src')
       audio.src = url
@@ -369,6 +393,23 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
     },
     [cancelVolumeFade, fadeVolume, stopProgress]
   )
+
+  const unload = useCallback(() => {
+    ++loadGenRef.current
+    activeGenRef.current = 0
+    playbackIntentRef.current = 'paused'
+    pendingSeekRef.current = null
+    seekingRef.current = false
+    stopProgress()
+    cancelVolumeFade()
+    setIsReady(false)
+    const audio = audioRef.current
+    if (audio?.src) {
+      audio.pause()
+      audio.removeAttribute('src')
+      audio.load()
+    }
+  }, [cancelVolumeFade, stopProgress])
 
   const play = useCallback(async () => {
     const audio = audioRef.current
@@ -411,6 +452,11 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
     (t: number) => {
       const audio = audioRef.current
       if (!audio) return
+      if (audio.readyState === 0) {
+        pendingSeekRef.current = t
+        optsRef.current.onTimeUpdate?.(t)
+        return
+      }
       // 设置自管理 seek 标志，让 onPause 能区分 seek 引起的 spurious pause
       seekingRef.current = true
       // 原生 seek：设置 currentTime，浏览器自动发 Range 请求
@@ -453,5 +499,5 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
     audio.muted = m
   }, [])
 
-  return { isReady, load, play, pause, seek, setVolume, setMuted }
+  return { isReady, load, unload, play, pause, seek, setVolume, setMuted }
 }

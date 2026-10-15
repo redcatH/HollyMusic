@@ -13,6 +13,7 @@ import { detectCodecCap, capQuality } from '@/lib/codec-support'
 import { reportPlay } from '@/lib/api/history'
 import { useAuthStore } from '@/hooks/useAuth'
 import { logger } from '@/lib/logger'
+import { loadPlayerPreferences, playerPreferencesStorage, type PlaybackSession, type PlayerTabState } from '@/lib/player-storage'
 
 /** 原生元数据就绪前使用曲目信息，避免有已知时长却显示 0:00。 */
 function initialDuration(track: Track): number {
@@ -26,21 +27,10 @@ function reportPlayIfAuthed(musicInfo: Track['musicInfo']) {
   }
 }
 
-// ---- 音质偏好持久化（项目无 zustand persist，直接读写 localStorage）----
-const QUALITY_KEY = 'player:quality'
-const VALID_QUALITIES: QualityType[] = ['128k', '320k', 'flac', 'flac24bit']
-/** 默认音质（320k 平衡音质与带宽/缓存）；用户手动切换后以 localStorage 记忆为准 */
-const DEFAULT_QUALITY: QualityType = '320k'
-
 /** 可降级重试的浏览器 audio 错误码（MediaError）：3=DECODE 4=SRC_NOT_SUPPORTED。
  *  这两种通常是「浏览器解不了该格式」（典型：手机 WebView 解不了 FLAC），降一档换 MP3 即可播。
  *  用数字而非 MediaError 常量：store 模块 SSR 也会加载，Node 端无 MediaError 全局。 */
 const DEGRADABLE_ERR_CODES = new Set([3, 4])
-function loadStoredQuality(): QualityType {
-  if (typeof window === 'undefined') return DEFAULT_QUALITY
-  const q = window.localStorage.getItem(QUALITY_KEY) as QualityType | null
-  return q && VALID_QUALITIES.includes(q) ? q : DEFAULT_QUALITY
-}
 
 // ---- 睡眠定时器（句柄放模块级，避免进 store 触发重渲染）----
 let sleepTimerHandle: ReturnType<typeof setTimeout> | null = null
@@ -95,7 +85,9 @@ interface PlayerStore {
 
   // 核心动作
   playTrack: (track: Track, queue?: Track[]) => Promise<void>
-  loadStreamUrl: (track: Track, forceQuality?: QualityType) => Promise<void>
+  loadStreamUrl: (track: Track, forceQuality?: QualityType, options?: { startTime?: number; autoplay?: boolean }) => Promise<void>
+  /** 只恢复显示状态；用户点击播放时才加载音频，不计入一次新播放。 */
+  restorePlayback: (session: PlaybackSession | null) => void
   /** 通过 uid 反查并播放（分享链接 ?uid= 自动播放用） */
   playByUid: (uid: string) => Promise<void>
   togglePlay: () => void
@@ -103,7 +95,7 @@ interface PlayerStore {
   setCurrentTime: (t: number) => void
   setDuration: (d: number) => void
   setBufferProgress: (v: number | null) => void
-  handleTrackError: (msg: string, errCode?: number) => void
+  handleTrackError: (msg: string, errCode?: number, wasPlaying?: boolean) => void
   seek: (t: number) => void
   setVolume: (v: number) => void
   toggleMute: () => void
@@ -132,6 +124,7 @@ interface PlayerStore {
 
   // 睡眠定时器
   cycleSleepTimer: () => void
+  setSleepTimer: (timer: PlayerTabState['sleepTimer']) => void
   clearSleepTimer: () => void
 }
 
@@ -150,10 +143,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   isPlaying: false,
   currentTime: 0,
   duration: 0,
-  volume: 0.8,
-  isMuted: false,
-  playbackMode: 'sequence',
-  quality: loadStoredQuality(),
+  ...loadPlayerPreferences(),
   effectiveQuality: null,
   codecCap: detectCodecCap(),
   bufferProgress: null,
@@ -182,7 +172,13 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     reportPlayIfAuthed(track.musicInfo)
   },
 
-  loadStreamUrl: async (track, forceQuality?) => {
+  restorePlayback: (session) => {
+    get().clearQueue()
+    set({ ...(session ?? {}), duration: session?.currentTrack ? initialDuration(session.currentTrack) : 0,
+      isQueueOpen: false, isLyricsOpen: false })
+  },
+
+  loadStreamUrl: async (track, forceQuality?, options?) => {
     // 前端按歌曲支持范围就近降级，URL 带准确音质 → 缓存键准确、UI 如实显示。
     // 服务端 getMusicUrl 仍保留降级作音源级兜底。
     // forceQuality：解码失败降级重试时强制指定（绕过用户偏好），见 handleTrackError。
@@ -194,24 +190,31 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       streamUrl: buildAudioUrl(track.uid, eff),
       streamNonce: get().streamNonce + 1,
       seekTarget: null,
-      currentTime: 0,
+      currentTime: options?.startTime ?? 0,
       effectiveQuality: eff,
       isFetchingUrl: false,
-      isPlaying: true,
+      isPlaying: options?.autoplay ?? true,
       bufferProgress: null,
     })
   },
   playByUid: async (uid) => {
+    const username = useAuthStore.getState().username
     const { musicInfo } = await getTrackByUid(uid)
+    if (useAuthStore.getState().username !== username) return
     await get().playTrack(toTrack({ uid, musicInfo }))
   },
 
   togglePlay: () => {
-    set(s => (s.currentTrack ? { isPlaying: !s.isPlaying } : {}))
+    if (get().currentTrack) get().setIsPlaying(!get().isPlaying)
   },
   // 不在此处重置 errorRetryCount：解码失败常是「播一瞬间就挂」，play 事件已触发会把计数清零，
   // 导致连续失败上限永远达不到 → 无限循环跳歌。改由 setCurrentTime 在播放稳定(>5s)时重置。
-  setIsPlaying: (v) => set(v ? { isPlaying: true } : { isPlaying: false }),
+  setIsPlaying: (v) => {
+    const { currentTrack, streamUrl, currentTime } = get()
+    if (v && currentTrack && !streamUrl) {
+      void get().loadStreamUrl(currentTrack, undefined, { startTime: currentTime })
+    } else set({ isPlaying: v && currentTrack !== null })
+  },
   setCurrentTime: (t) => set(s => {
     // 播放超过 5 秒视为「播放稳定」，重置连续失败计数（区分「真失败」与「稳定播放」）
     if (t > 5 && s.errorRetryCount > 0) return { currentTime: t, errorRetryCount: 0 }
@@ -221,7 +224,12 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     if (Number.isFinite(d) && d > 0) set({ duration: d })
   },
   setBufferProgress: (v) => set({ bufferProgress: v }),
-  handleTrackError: (msg, errCode?) => {
+  handleTrackError: (msg, errCode?, wasPlaying = get().isPlaying) => {
+    // 暂停加载/恢复时遇到错误不能自动出声或跳歌；保留歌曲与位置供用户重试。
+    if (!wasPlaying) {
+      set({ urlFetchError: msg, isPlaying: false, streamUrl: null, bufferProgress: null })
+      return
+    }
     // 解码/格式不支持 → 仅对当前这首歌降一档重试（手机 WebView 常解不了 FLAC，降到 MP3 即可播）。
     // 降到最低档仍失败，才走下面的跳歌逻辑。网络错误(2)不降级（换格式无意义）。
     if (errCode !== undefined && DEGRADABLE_ERR_CODES.has(errCode)) {
@@ -235,7 +243,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
         logger.warn(
           `[player] 解码失败(err=${errCode})，${effectiveQuality} → ${lower} 降级重试：${currentTrack.name}`
         )
-        get().loadStreamUrl(currentTrack, lower)
+        get().loadStreamUrl(currentTrack, lower, { startTime: get().currentTime })
         return
       }
     }
@@ -258,7 +266,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     get().next()
   },
   seek: (t) => set(s => ({ currentTime: t, seekTarget: t, seekNonce: s.seekNonce + 1 })),
-  setVolume: (v) => set({ volume: Math.max(0, Math.min(1, v)), isMuted: false }),
+  setVolume: (v) => { if (Number.isFinite(v)) set({ volume: Math.max(0, Math.min(1, v)), isMuted: false }) },
   toggleMute: () => set(s => ({ isMuted: !s.isMuted })),
   cyclePlaybackMode: () =>
     set(s => {
@@ -267,11 +275,10 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       return { playbackMode: modes[(i + 1) % modes.length] }
     }),
   setQuality: (q) => {
-    if (typeof window !== 'undefined') window.localStorage.setItem(QUALITY_KEY, q)
     set({ quality: q })
     // 切音质需重建 streamUrl（不同音质独立缓存键）
-    const { currentTrack } = get()
-    if (currentTrack) get().loadStreamUrl(currentTrack)
+    const { currentTrack, streamUrl, currentTime, isPlaying } = get()
+    if (currentTrack && streamUrl) void get().loadStreamUrl(currentTrack, undefined, { startTime: currentTime, autoplay: isPlaying })
   },
 
   next: () => {
@@ -397,6 +404,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       currentIndex: -1,
       currentTrack: null,
       streamUrl: null,
+      streamNonce: get().streamNonce + 1,
       isFetchingUrl: false,
       urlFetchError: null,
       errorRetryCount: 0,
@@ -420,21 +428,26 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       : SLEEP_STEPS.indexOf(cur.minutes) >= SLEEP_STEPS.length - 1
         ? null
         : SLEEP_STEPS[SLEEP_STEPS.indexOf(cur.minutes) + 1]
+    get().setSleepTimer(nextMinutes === null ? null : { minutes: nextMinutes, expiresAt: Date.now() + nextMinutes * 60_000 })
+  },
+  setSleepTimer: (timer) => {
     if (sleepTimerHandle) { clearTimeout(sleepTimerHandle); sleepTimerHandle = null }
-    if (nextMinutes === null) {
-      set({ sleepTimer: null })
-      return
-    }
-    const ms = nextMinutes * 60_000
+    if (!timer) { set({ sleepTimer: null }); return }
+    if (timer.expiresAt <= Date.now()) { set({ isPlaying: false, sleepTimer: null }); return }
     sleepTimerHandle = setTimeout(() => {
       usePlayerStore.getState().setIsPlaying(false)
       usePlayerStore.setState({ sleepTimer: null })
       sleepTimerHandle = null
-    }, ms)
-    set({ sleepTimer: { minutes: nextMinutes, expiresAt: Date.now() + ms } })
+    }, timer.expiresAt - Date.now())
+    set({ sleepTimer: timer })
   },
-  clearSleepTimer: () => {
-    if (sleepTimerHandle) { clearTimeout(sleepTimerHandle); sleepTimerHandle = null }
-    set({ sleepTimer: null })
-  },
+  clearSleepTimer: () => get().setSleepTimer(null),
 }))
+
+// 高频播放进度不触发偏好写入；字段白名单也避免把瞬时状态持久化。
+usePlayerStore.subscribe((state, previous) => {
+  if (state.volume === previous.volume && state.isMuted === previous.isMuted
+    && state.playbackMode === previous.playbackMode && state.quality === previous.quality) return
+  const { volume, isMuted, playbackMode, quality } = state
+  playerPreferencesStorage.write({ volume, isMuted, playbackMode, quality })
+})

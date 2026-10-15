@@ -255,4 +255,80 @@ describe('PC 与移动端共用播放器', () => {
     await ready()
     expect(audio.paused).toBe(false)
   })
+
+  it('恢复后保持暂停，点击继续等待元数据再跳到原进度', async () => {
+    await act(async () => {
+      usePlayerStore.getState().restorePlayback({ queue: [track], playNextQueue: [], currentIndex: 0,
+        currentTrack: track, isCurrentTempPlay: false, currentTime: 92 })
+    })
+    const plays = audio.play.mock.calls.length
+    expect(audio.src).toBe('')
+    expect(audio.paused).toBe(true)
+    expect(container.textContent).toContain('1:32')
+    await act(async () => { usePlayerStore.getState().togglePlay() })
+    expect(audio.play).toHaveBeenCalledTimes(plays + 1)
+    expect(usePlayerStore.getState().currentTime).toBe(92)
+    await ready()
+    expect(audio.currentTime).toBe(92)
+    expect(usePlayerStore.getState().currentTime).toBe(92)
+    expect(audio.paused).toBe(false)
+  })
+
+  it('恢复后拖动进度，再继续播放使用新的位置', async () => {
+    await act(async () => {
+      usePlayerStore.getState().restorePlayback({ queue: [track], playNextQueue: [], currentIndex: 0,
+        currentTrack: track, isCurrentTempPlay: false, currentTime: 92 })
+    })
+    await act(async () => { usePlayerStore.getState().seek(110) })
+    expect(audio.src).toBe('')
+    await act(async () => { usePlayerStore.getState().togglePlay() })
+    await ready()
+    expect(audio.currentTime).toBe(110)
+  })
+
+  it('恢复尚未完成就切歌，不把旧进度应用到新歌曲', async () => {
+    await act(async () => {
+      usePlayerStore.getState().restorePlayback({ queue: [track, second], playNextQueue: [], currentIndex: 0,
+        currentTrack: track, isCurrentTempPlay: false, currentTime: 92 })
+    })
+    await act(async () => { usePlayerStore.getState().togglePlay() })
+    await act(async () => { usePlayerStore.getState().next() })
+    await ready()
+    expect(audio.src).toContain('kw-second')
+    expect(audio.currentTime).toBe(0)
+  })
+
+  it('暂停时切音质保留位置，加载后仍暂停', async () => {
+    await act(async () => { usePlayerStore.getState().seek(75); usePlayerStore.getState().setIsPlaying(false) })
+    await act(async () => { usePlayerStore.getState().setQuality('128k') })
+    await ready()
+    expect(audio.currentTime).toBe(75)
+    expect(audio.paused).toBe(true)
+    expect(usePlayerStore.getState().isPlaying).toBe(false)
+  })
+
+  it('恢复遇到解码降级仍保留位置，暂停加载失败不会自动跳歌', async () => {
+    await act(async () => { usePlayerStore.getState().seek(92) })
+    await act(async () => { usePlayerStore.getState().handleTrackError('decode', 3, true) })
+    await ready()
+    expect(audio.currentTime).toBe(92)
+    expect(audio.src).toContain('quality=128k')
+    await act(async () => { usePlayerStore.getState().handleTrackError('network', 2, false) })
+    expect(usePlayerStore.getState()).toMatchObject({ currentTrack: { uid: track.uid }, currentTime: 92, isPlaying: false })
+    expect(audio.src).toBe('')
+  })
+
+  it('首次交互不会重新加载已恢复的音频', async () => {
+    await act(async () => { root.unmount() })
+    usePlayerStore.getState().restorePlayback({ queue: [track], playNextQueue: [], currentIndex: 0,
+      currentTrack: track, isCurrentTempPlay: false, currentTime: 92 })
+    root = createRoot(container)
+    await act(async () => { root.render(<PlayerBar audio={null} onAudioElement={a => { if (a) audio = a as unknown as TestAudio }} />) })
+    await act(async () => { usePlayerStore.getState().togglePlay() })
+    await ready()
+    const loads = audio.load.mock.calls.length
+    await act(async () => { window.dispatchEvent(new Event('click')) })
+    expect(audio.load).toHaveBeenCalledTimes(loads)
+    expect(audio.currentTime).toBe(92)
+  })
 })

@@ -1,5 +1,7 @@
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useSearch } from '@/hooks/useSearch'
+import { useSearchStore } from '@/lib/store/search-store'
 import { SongList } from '@/components/shared/SongList'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
@@ -21,20 +23,48 @@ export function SearchPage() {
   // 离开搜索页再回来时输入框与结果都保留。
   const { results, loading, pendingSources, error, keyword, lastKeyword, source, setKeyword, setSource, run } = useSearch()
   const inputRef = useRef<HTMLInputElement>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const initialized = useRef(false)
+  const memoryDraft = useRef<{ keyword: string; source: SourceType | 'all' } | null>(null)
+
+  useEffect(() => {
+    const state = useSearchStore.getState()
+    // 从站内导航返回搜索页，沿用已有结果并补齐可刷新的 URL。
+    if (!initialized.current && !searchParams.has('q') && !searchParams.has('source') && state.lastKeyword) {
+      memoryDraft.current ??= { keyword: state.keyword, source: state.source }
+      setSearchParams({ q: state.lastKeyword, source: state.lastSource }, { replace: true })
+      return
+    }
+    initialized.current = true
+    const query = (searchParams.get('q') || '').trim()
+    const selected = SOURCES.find(item => item.value === searchParams.get('source'))?.value ?? 'all'
+    state.setKeyword(memoryDraft.current?.keyword ?? query)
+    state.setSource(memoryDraft.current?.source ?? selected)
+    memoryDraft.current = null
+    if (state.lastKeyword !== query || state.lastSource !== selected) void state.run(query, selected)
+  }, [searchParams, setSearchParams])
+
+  const commitSearch = (query: string, selected: SourceType | 'all') => {
+    const trimmed = query.trim()
+    setKeyword(trimmed)
+    setSource(selected)
+    if (searchParams.get('q') === trimmed && (searchParams.get('source') || 'all') === selected) {
+      void run(trimmed, selected)
+    } else setSearchParams({ q: trimmed, source: selected })
+  }
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
-    run(keyword, source)
+    commitSearch(keyword, source)
   }
 
   // 与 lx-music 搜索页一致：已有搜索词时切换源自动重搜，否则仅切换选中态
   const handleSourceChange = (next: SourceType | 'all') => {
-    setSource(next)
-    if (keyword.trim()) run(keyword, next)
+    commitSearch(keyword, next)
   }
 
   const clearKeyword = () => {
-    setKeyword('')
+    commitSearch('', source)
     inputRef.current?.focus()
   }
 

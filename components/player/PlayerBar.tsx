@@ -28,18 +28,22 @@ export function PlayerBar({ audio, onAudioElement }: PlayerBarProps) {
 
   const loadedRef = useRef<{ url: string; nonce: number } | null>(null)
 
-  const { isReady, load, play, pause, seek, setVolume, setMuted } = useAudioPlayer({
+  const { isReady, load, unload, play, pause, seek, setVolume, setMuted } = useAudioPlayer({
     onAudioElement: element => {
       // StrictMode 的 effect 重建会创建新 Audio，不能沿用旧元素的加载记录。
       loadedRef.current = null
       onAudioElement(element)
     },
-    onTimeUpdate: t => usePlayerStore.getState().setCurrentTime(t),
+    onTimeUpdate: t => {
+      if (usePlayerStore.getState().streamUrl) usePlayerStore.getState().setCurrentTime(t)
+    },
     onDuration: d => usePlayerStore.getState().setDuration(d),
-    onPlayState: p => usePlayerStore.getState().setIsPlaying(p),
+    onPlayState: p => {
+      if (!p || usePlayerStore.getState().streamUrl) usePlayerStore.getState().setIsPlaying(p)
+    },
     onEnd: () => usePlayerStore.getState().handleTrackEnd(),
     onLoading: pct => usePlayerStore.getState().setBufferProgress(pct),
-    onError: (msg, errCode) => usePlayerStore.getState().handleTrackError(msg, errCode),
+    onError: (msg, errCode, wasPlaying) => usePlayerStore.getState().handleTrackError(msg, errCode, wasPlaying),
   })
 
   // 同步当前曲目到 MediaSession（锁屏/通知/耳机控制）
@@ -51,7 +55,7 @@ export function PlayerBar({ audio, onAudioElement }: PlayerBarProps) {
   useEffect(() => {
     if (!streamUrl) {
       loadedRef.current = null
-      void pause()
+      unload()
       return
     }
     const previous = loadedRef.current
@@ -59,11 +63,11 @@ export function PlayerBar({ audio, onAudioElement }: PlayerBarProps) {
       loadedRef.current = { url: streamUrl, nonce: streamNonce }
       if (previous?.url === streamUrl && isReady) {
         // 同源重播复用已有缓冲；单曲循环在后台也不依赖 rAF 或布尔值翻转。
-        seek(0)
+        seek(usePlayerStore.getState().currentTime)
         if (isPlaying) void play()
         else void pause()
       } else {
-        void load(streamUrl, isPlaying)
+        void load(streamUrl, isPlaying, usePlayerStore.getState().currentTime)
       }
       return
     }
@@ -74,7 +78,7 @@ export function PlayerBar({ audio, onAudioElement }: PlayerBarProps) {
       return
     }
     if (isReady) void play()
-  }, [streamUrl, streamNonce, isPlaying, isReady, load, play, pause, seek])
+  }, [streamUrl, streamNonce, isPlaying, isReady, load, unload, play, pause, seek])
 
   useEffect(() => {
     setVolume(volume)
@@ -87,7 +91,7 @@ export function PlayerBar({ audio, onAudioElement }: PlayerBarProps) {
   // seek 指令 → 跳转
   useEffect(() => {
     const t = usePlayerStore.getState().seekTarget
-    if (t != null) seek(t)
+    if (t != null && usePlayerStore.getState().streamUrl) seek(t)
   }, [seekNonce, seek])
 
   return (
