@@ -99,7 +99,7 @@ jobs:
 
     steps:
       # 在 main 上检出（cliff.toml 存在于 main；老 tag 的树里没有，checkout tag 会导致找不到配置）。
-      # git-cliff 用「上一 tag..目标 tag」区间参数生成，与 HEAD 位置无关。
+      # git-cliff 用「上一正式版 tag..目标 tag」区间参数生成，与 HEAD 位置无关。
       - name: Checkout (main)
         uses: actions/checkout@v7
         with:
@@ -110,8 +110,9 @@ jobs:
         id: rel
         run: |
           TAG="${{ inputs.tag || github.ref_name }}"
-          # 目标 tag 的上一个 tag；取不到（首个 tag，理论上不会发生）时退回 --latest
-          PREV=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)
+          # 预发布说明累计展示自上一正式版的变化；正式发布也保留 preview 阶段的功能。
+          # 取不到（首个 tag，理论上不会发生）时退回 --latest。
+          PREV=$(git describe --tags --abbrev=0 --exclude='*-*' "${TAG}^" 2>/dev/null || true)
           if [ -n "$PREV" ]; then RANGE="${PREV}..${TAG}"; else RANGE="--latest"; fi
           {
             echo "tag=${TAG}"
