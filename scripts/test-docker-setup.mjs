@@ -12,7 +12,15 @@ function docker(...args) {
   return execFileSync('docker', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 120_000 }).trim()
 }
 async function request(path, options) {
-  return fetch(`${baseUrl}${path}`, { ...options, signal: AbortSignal.timeout(10_000) })
+  // AbortSignal.timeout 的计时器不会保持事件循环；Node 20 在容器刚启动、
+  // fetch 尚无活动 socket 时可能提前以 13 退出。显式计时器确保超时可靠触发。
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(new Error('Request timed out')), 10_000)
+  try {
+    return await fetch(`${baseUrl}${path}`, { ...options, signal: controller.signal })
+  } finally {
+    clearTimeout(timeout)
+  }
 }
 async function waitForReady() {
   for (let i = 0; i < 90; i++) {
@@ -29,6 +37,7 @@ try {
     '--mount', `type=volume,src=${volume},dst=/app/prisma/prisma/data`, image)
   baseUrl = `http://${docker('port', id, '3000/tcp')}`
   await waitForReady()
+  process.stdout.write('Docker ready; checking first-run setup.\n')
   assert.equal((await request('/api/health')).status, 200)
   assert.equal((await request('/setup')).status, 200)
   assert.equal((await (await request('/api/auth/me')).json()).data.setupRequired, true)
@@ -46,6 +55,7 @@ try {
   assert.ok(!docker('logs', id).includes(password), 'Password must not appear in logs')
   docker('restart', id)
   await waitForReady()
+  process.stdout.write('Docker restarted; checking persisted session.\n')
   const restarted = (await (await request('/api/auth/me', { headers: { Cookie: cookie } })).json()).data
   assert.equal(restarted.authenticated, true)
   assert.equal(restarted.setupRequired, false)
