@@ -54,6 +54,9 @@ try {
   assert.equal(me.setupRequired, false)
   assert.ok(!docker('logs', id).includes(password), 'Password must not appear in logs')
   docker('restart', id)
+  // Docker 重启可能重新分配随机宿主端口；会话 cookie 本身不绑定端口。
+  baseUrl = `http://${docker('port', id, '3000/tcp')}`
+  options.headers.Origin = baseUrl
   await waitForReady()
   process.stdout.write('Docker restarted; checking persisted session.\n')
   const restarted = (await (await request('/api/auth/me', { headers: { Cookie: cookie } })).json()).data
@@ -61,6 +64,9 @@ try {
   assert.equal(restarted.setupRequired, false)
   assert.equal((await request('/api/setup', options)).status, 409)
   process.stdout.write('Docker setup smoke passed: SPA, health, anonymous API gate, concurrent setup, session, restart, closed setup.\n')
+} catch (error) {
+  try { process.stderr.write(`Docker setup smoke failed; container logs:\n${docker('logs', id)}\n`) } catch { /* 容器可能尚未创建 */ }
+  throw error
 } finally {
   try { docker('rm', '-f', id) } catch { /* 可能尚未成功创建容器 */ }
   try { docker('volume', 'rm', volume) } catch { /* 保留清理异常供 CI 环境统一回收 */ }
