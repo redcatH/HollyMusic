@@ -16,5 +16,5 @@ export function buildSubsonicSearchCacheKey(
   songCount: number = 50,
   songOffset: number = 0
 ): string {
-  return `subsonic-search:${encodeURIComponent(query)}:${songCount}:${songOffset}:${sources.join(',')}`
+  return `subsonic-search:v2:${encodeURIComponent(query)}:${songCount}:${songOffset}:${sources.join(',')}`
 }

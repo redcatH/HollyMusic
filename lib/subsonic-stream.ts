@@ -1,17 +1,14 @@
 import { NextRequest } from 'next/server'
 import { resolveMusicInfoById } from '@/lib/db'
 import { subsonicError } from '@/lib/subsonic'
-import { selectQuality } from '@/lib/subsonic-media'
+import { getAvailableQualities, resolveQuality } from '@/lib/quality-options'
+import { parseSubsonicQualityPreference } from '@/lib/subsonic-quality'
 import { musicSourceManager } from '@/lib/music-source-manager'
 import { audioServe } from '@/lib/audio-serve'
 import { logger } from '@/lib/logger'
 import { cacheNativeLyricForMusic } from '@/lib/services/lyrics'
-import type { MusicInfo, QualityType } from '@/lib/types/music'
+import type { MusicInfo } from '@/lib/types/music'
 import { parseIntervalToSeconds } from '@/lib/types/player'
-
-// ============================================================================
-// QUALITY SELECTION —— selectQuality 实现已迁至 lib/subsonic-media.ts（与元数据端点共用同一条回退链）
-// ============================================================================
 
 // ============================================================================
 // STREAM HANDLER
@@ -26,7 +23,7 @@ import { parseIntervalToSeconds } from '@/lib/types/player'
 export async function handleStream(request: NextRequest): Promise<Response> {
   const url = new URL(request.url)
   const id = url.searchParams.get('id') || ''
-  const maxBitRate = parseInt(url.searchParams.get('maxBitRate') || '0', 10)
+  const preference = parseSubsonicQualityPreference(url.searchParams)
 
   try {
     logger.debug(
@@ -36,6 +33,9 @@ export async function handleStream(request: NextRequest): Promise<Response> {
     // ========== STEP 1: 解析 id → MusicInfo ==========
     if (!id) {
       return subsonicError(request, 70, 'Missing id')
+    }
+    if (preference === null) {
+      return subsonicError(request, 10, 'Invalid maxBitRate: expected a non-negative safe integer')
     }
 
     const musicInfo = await resolveMusicInfoById(id)
@@ -56,19 +56,19 @@ export async function handleStream(request: NextRequest): Promise<Response> {
     }
 
     // ========== STEP 3: 确定音质 ==========
-    let idealQuality: QualityType = '320k'
-    if (maxBitRate >= 800) idealQuality = 'flac'
-    else if (maxBitRate >= 500) idealQuality = '320k'
-    else if (maxBitRate >= 200) idealQuality = '128k'
-    else if (maxBitRate > 0) idealQuality = '128k'
-
-    const supportedQualities: QualityType[] = musicInfo.types.map(t => t.type)
+    const supportedQualities = getAvailableQualities(musicInfo.types)
     if (supportedQualities.length === 0) {
       logger.warn(`[handleStream] No supported qualities for ${musicInfo.songmid}`)
       return subsonicError(request, 0, 'No supported audio quality available')
     }
 
-    const quality = selectQuality(idealQuality, supportedQualities)
+    const quality = resolveQuality(preference, musicInfo.types)
+    logger.debug('[handleStream] Quality selection', {
+      format: url.searchParams.get('format'),
+      maxBitRate: url.searchParams.get('maxBitRate'),
+      preference,
+      quality,
+    })
     logger.info(
       `[handleStream] Stream request: ${musicInfo.name} - ${musicInfo.singer} (quality: ${quality})`
     )

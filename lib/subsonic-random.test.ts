@@ -24,6 +24,7 @@ describe('handleGetRandomSongs', () => {
       singer: '测试歌手',
       albumName: '测试专辑',
       interval: '3:00',
+      types: [{ type: '320k', size: '8M' }, { type: 'flac', size: '25M' }],
       _types: { '320k': { size: 1 } },
     }])
 
@@ -36,7 +37,7 @@ describe('handleGetRandomSongs', () => {
 
     expect(getRandomMusicInfoList).toHaveBeenCalledWith(21, ['kw'])
     expect(payload['subsonic-response'].randomSongs.song).toEqual([
-      expect.objectContaining({ id: 'kw-123' }),
+      expect.objectContaining({ id: 'kw-123', suffix: 'flac', size: 25 * 1024 * 1024 }),
     ])
   })
 })

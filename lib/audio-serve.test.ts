@@ -264,7 +264,8 @@ describe('AudioServe.serve() 缓存 miss → 跟随交付', () => {
 // ===========================================================================
 
 describe('AudioServe.serve() 命中磁盘缓存（回归保护）', () => {
-  it('无 Range → 200 完整文件', async () => {
+  it.each(['320k', 'flac'])('请求 %s 命中 MP3 缓存时返回缓存的 MIME 与完整内容，不伪装成请求格式', async quality => {
+    const cacheKey = `kw:hit1:${quality}`
     const data = Buffer.from('cached-audio-bytes-0123456789')
     const relative = 'ab/cdef0123.mp3'
     const filePath = path.join(cacheDir, relative)
@@ -273,21 +274,24 @@ describe('AudioServe.serve() 命中磁盘缓存（回归保护）', () => {
     vi.mocked(prisma.audioCache.findUnique).mockImplementation(
       async () =>
         ({
-          cacheKey: 'kw:hit1:320k',
+          cacheKey,
           filePath: relative,
           size: data.length,
           contentType: 'audio/mpeg',
         }) as never
     )
 
+    const upstreamUrlResolver = vi.fn(resolver())
     const resp = await audioServe.serve({
-      cacheKey: 'kw:hit1:320k',
-      upstreamUrlResolver: resolver(),
+      cacheKey,
+      upstreamUrlResolver,
       rangeHeader: null,
       isHead: false,
     })
 
     expect(resp.status).toBe(200)
+    expect(resp.headers.get('content-type')).toBe('audio/mpeg')
+    expect(upstreamUrlResolver).not.toHaveBeenCalled()
     expect(resp.headers.get('content-length')).toBe(String(data.length))
     expect(Buffer.from(await resp.arrayBuffer()).equals(data)).toBe(true)
   })

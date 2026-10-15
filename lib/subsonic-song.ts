@@ -50,7 +50,7 @@ export async function handleGetSongAsync(request: NextRequest, authRes: AuthResu
       return subsonicError(request, 70, 'Song not found')
     }
 
-    // bitRate/size/suffix/contentType 按默认播放音质真实推断（无数据时字段省略，不编造）
+    // 描述最高支持档位；指定码率播放或音源降级时，实际音频可能不同。
     const meta = resolveSubsonicMediaMeta(musicInfo)
 
     const song: SubsonicSongNode = {
@@ -68,7 +68,7 @@ export async function handleGetSongAsync(request: NextRequest, authRes: AuthResu
       suffix: meta.suffix,
       contentType: meta.contentType,
       isVideo: false,
-      path: `${musicInfo.singer || 'Unknown'}/${musicInfo.albumName || 'Unknown'}/${musicInfo.name || 'Unknown'}.${meta.suffix ?? 'mp3'}`,
+      path: `${musicInfo.singer || 'Unknown'}/${musicInfo.albumName || 'Unknown'}/${musicInfo.name || 'Unknown'}${meta.suffix ? `.${meta.suffix}` : ''}`,
       albumId: id,
     }
 

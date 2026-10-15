@@ -22,6 +22,15 @@ describe('resolveQuality - 偏好高于歌曲支持时必须降级到可播放�
     expect(resolveQuality('320k', types('128k'))).toBe('128k')
   })
 
+  it('目标缺失时先向下选，有 FLAC 也优先使用 128k', () => {
+    expect(resolveQuality('320k', types('flac', '128k'))).toBe('128k')
+  })
+
+  it('只有更高档时选最低档，与列表顺序无关', () => {
+    expect(resolveQuality('320k', types('flac24bit', 'flac'))).toBe('flac')
+    expect(resolveQuality('128k', types('flac', '320k'))).toBe('320k')
+  })
+
   it('偏好 Hi-Res，歌曲仅 [128k] → 降级到 128k（不会返回不支持的高档）', () => {
     expect(resolveQuality('flac24bit', types('128k'))).toBe('128k')
   })
@@ -51,6 +60,11 @@ describe('getAvailableQualities', () => {
   it('types 空 → 返回空数组', () => {
     expect(getAvailableQualities([])).toEqual([])
     expect(getAvailableQualities(undefined)).toEqual([])
+  })
+
+  it('过滤未知档位并去重，按品质排序', () => {
+    expect(getAvailableQualities(types('128k', 'flac', 'unknown' as QualityType, '320k', 'flac')))
+      .toEqual(['flac', '320k', '128k'])
   })
 })
 

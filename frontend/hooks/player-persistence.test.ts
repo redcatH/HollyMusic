@@ -35,6 +35,15 @@ afterEach(() => {
 })
 
 describe('播放器偏好', () => {
+  it('单首解码失败降档，下一首仍按原音质偏好播放', async () => {
+    usePlayerStore.setState({ quality: 'flac24bit', codecCap: 'flac24bit' })
+    await usePlayerStore.getState().playTrack(first)
+    usePlayerStore.getState().handleTrackError('decode', 3, true)
+    expect(usePlayerStore.getState()).toMatchObject({ quality: 'flac24bit', effectiveQuality: 'flac' })
+    await usePlayerStore.getState().playTrack(second)
+    expect(usePlayerStore.getState()).toMatchObject({ quality: 'flac24bit', effectiveQuality: 'flac24bit' })
+  })
+
   it('刷新读取音量、静音、播放模式、音质，零音量不会被默认值覆盖', () => {
     const player = usePlayerStore.getState()
     player.setVolume(0)

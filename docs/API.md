@@ -42,6 +42,21 @@
 - `getPlaylists`、`getPlaylist`、`createPlaylist`、`updatePlaylist`、`deletePlaylist`：歌单及歌单曲目管理
 - `getAlbumList2`、`getAlbum`、`getLyricsBySongId`、`getOpenSubsonicExtensions`：专辑、结构化歌词与 OpenSubsonic 客户端兼容
 
+### 播放音质与原格式
+
+`stream` 与网页共用选档规则：优先指定档位，其次选择不高于该档位的最高支持档；如果只有更高档位，则选择其中最低档以保证可播放。
+
+| 请求参数 | 起始音质偏好 |
+|---|---|
+| `format=raw` | 最高档 `flac24bit`；优先于同时传入的码率参数 |
+| 码率缺省、空值或 `maxBitRate=0` | 最高档；`format=mp3` 时偏好 320k |
+| `maxBitRate>=320` | 320k |
+| `0<maxBitRate<320` | 128k |
+
+无损不可用时仍允许降级。服务选择现有音质，不进行实时转码；因此 `maxBitRate` 在本项目是可播放优先的偏好，向上兜底或请求低于 128kbps 时可能超过指定值。正数码率不用于推测 FLAC 档位。非 raw 请求的码率必须是非负安全整数，非法值返回 Subsonic 参数错误。
+
+搜索、详情、专辑、歌单及收藏中的格式和大小描述歌曲声明的最高支持档位，未知无损码率省略。客户端指定较低码率或上游解析降级后，实际音频可能不同。升级后应刷新客户端歌曲信息；已有离线音频也可能继续使用旧版本。
+
 ### 在 Subsonic 客户端指定搜索源
 
 在 Subsonic 客户端的搜索框中，为关键词添加搜索源前缀即可仅搜索对应来源；前缀会自动从实际搜索词中移除。未使用前缀时，仍按当前配置执行原有的多源聚合搜索。

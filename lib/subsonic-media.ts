@@ -1,10 +1,8 @@
 /**
  * Subsonic 歌曲媒体元数据推断（单一事实来源）
  *
- * 背景：stream 实际播放音质由客户端 maxBitRate + 回退链动态决定，而 getSong/search3 等
- * 元数据端点没有请求上下文，只能按「默认播放档位」展示——即复用 stream 的同一条
- * selectQuality 回退链（客户端不传 maxBitRate 时目标为 320k），保证
- * 「客户端显示的码率/格式」=「不主动请求无损时实际听到的」。
+ * getSong/search3 等展示歌曲声明的最高支持档位，与原格式请求的起始选档一致。
+ * 指定码率或音源解析失败可能使实际播放降级，资源元数据不代表本次音频流的实测值。
  *
  * 输入适配两种形态：
  * - 反序列化后的 MusicInfo（types/_types 直接可用，search3/stream 等路径）
@@ -13,7 +11,7 @@
  * 无有效音质数据时返回空对象，undefined 字段由响应渲染层自动省略——不编造数据。
  */
 import type { MusicInfo, QualityInfo, QualityType } from './types/music'
-import { QUALITY_ORDER } from './quality-options'
+import { getAvailableQualities, resolveQuality } from './quality-options'
 import { normalizeSizeToBytes } from './utils'
 import { parseIntervalToSeconds } from './types/player'
 import { logger } from './logger'
@@ -45,29 +43,6 @@ export type MediaMetaSource =
   | { data?: unknown; typesJson?: unknown; typesMapJson?: unknown }
   | null
   | undefined
-
-/**
- * 播放音质回退选择（自 subsonic-stream.ts 迁出的唯一实现，stream 与元数据端点共用，
- * 保证展示档位与实际播放永远同一条链）。
- * - 请求档位受支持 → 直接用
- * - 否则按 flac24bit → flac → 320k → 128k 从高到低取第一个支持的（可能高于请求档）
- * - 全不支持（异常数据）→ 第一个可用（调用方需保证列表非空）
- */
-export function selectQuality(requestedQuality: QualityType, supportedTypes: QualityType[]): QualityType {
-  if (supportedTypes.includes(requestedQuality)) {
-    return requestedQuality
-  }
-
-  for (const q of QUALITY_ORDER) {
-    if (supportedTypes.includes(q)) {
-      logger.debug(`[selectQuality] Requested ${requestedQuality} not available, downgrading to ${q}`)
-      return q
-    }
-  }
-
-  logger.warn(`[selectQuality] No matching quality found, using first available: ${supportedTypes[0]}`)
-  return supportedTypes[0]
-}
 
 /** 从各种输入形态提取 types 数组与 _types 映射 */
 function extractTypes(source: MediaMetaSource): {
@@ -110,17 +85,15 @@ function extractTypes(source: MediaMetaSource): {
 
 /**
  * 推断歌曲的 Subsonic 展示元数据（bitRate/size/suffix/contentType）。
- * 档位 = selectQuality('320k', 支持列表)，与 stream 默认播放路径一致。
+ * 选择最高支持档位；未知码率不编造，实际播放可能因客户端偏好或音源故障降级。
  */
 export function resolveSubsonicMediaMeta(source: MediaMetaSource): SubsonicMediaMeta {
   const { types, _types } = extractTypes(source)
 
-  const supported = (types || [])
-    .map(t => t?.type)
-    .filter((t): t is QualityType => !!t && QUALITY_ORDER.includes(t))
+  const supported = getAvailableQualities(types)
   if (supported.length === 0) return {}
 
-  const quality = selectQuality('320k', supported)
+  const quality = resolveQuality('flac24bit', types)
   const format = QUALITY_FORMAT[quality]
   const rawSize = _types?.[quality]?.size ?? types?.find(t => t?.type === quality)?.size
   const size = Number(normalizeSizeToBytes(rawSize)) || undefined

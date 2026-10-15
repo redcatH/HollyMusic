@@ -75,6 +75,7 @@ describe('handleGetPlaylists', () => {
           singer: '测试歌手',
           albumName: '测试专辑',
           durationSeconds: 180,
+          typesJson: JSON.stringify([{ type: '320k', size: '8M' }, { type: 'flac', size: '25M' }]),
         },
       }],
     })
@@ -92,7 +93,7 @@ describe('handleGetPlaylists', () => {
 
     expect(response.headers.get('content-type')).toContain('application/json')
     expect(payload['subsonic-response'].playlist.entry).toEqual([
-      expect.objectContaining({ id: 'tx-song-id', starred: '2026-08-22T01:02:03' }),
+      expect.objectContaining({ id: 'tx-song-id', starred: '2026-08-22T01:02:03', suffix: 'flac', size: 25 * 1024 * 1024 }),
     ])
     expect(payload['subsonic-response'].playlist.coverArt).toBe('pl-1')
   })

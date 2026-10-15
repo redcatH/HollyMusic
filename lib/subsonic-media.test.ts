@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest'
 import {
-  selectQuality,
   resolveSubsonicMediaMeta,
   toDurationSeconds,
   QUALITY_FORMAT,
@@ -10,31 +9,6 @@ import type { QualityInfo, QualityType } from './types/music'
 function typesOf(...list: Array<[QualityType, string]>): QualityInfo[] {
   return list.map(([type, size]) => ({ type, size }))
 }
-
-describe('selectQuality（自 stream 迁出，行为必须等价）', () => {
-  it('请求档位受支持 → 直接返回', () => {
-    expect(selectQuality('320k', ['128k', '320k'])).toBe('320k')
-  })
-
-  it('请求档位不支持 → 按高→低回退链取第一个支持的（可能高于请求档）', () => {
-    // 320k 不支持、有 flac → 升到 flac（与 stream 实际行为一致）
-    expect(selectQuality('320k', ['flac', '128k'])).toBe('flac')
-    // 320k/flac 都不支持 → 128k
-    expect(selectQuality('320k', ['128k'])).toBe('128k')
-    // 请求 128k 但只有无损 → 回退链取 flac24bit 优先
-    expect(selectQuality('128k', ['flac24bit', 'flac'])).toBe('flac24bit')
-  })
-
-  it('回退按高→低固定顺序扫描，与列表顺序无关', () => {
-    // 请求 320k 不在列表 → 应取列表中的最高档 flac24bit（而非列表第一个）
-    expect(selectQuality('320k', ['128k', 'flac24bit', 'flac'])).toBe('flac24bit')
-    expect(selectQuality('320k', ['flac', 'flac24bit'])).toBe('flac24bit')
-  })
-
-  it('全不支持 → 第一个可用', () => {
-    expect(selectQuality('320k', ['128k'])).toBe('128k')
-  })
-})
 
 describe('QUALITY_FORMAT', () => {
   it('有损档位给真实码率 + mp3', () => {
@@ -50,7 +24,17 @@ describe('QUALITY_FORMAT', () => {
 })
 
 describe('resolveSubsonicMediaMeta', () => {
-  it('MusicInfo 形态：默认目标 320k，size 从 _types 换算字节（单字母单位）', () => {
+  it('同时有 MP3 和无损时展示最高档，大小也取同一档', () => {
+    const meta = resolveSubsonicMediaMeta({
+      types: typesOf(['320k', '8M'], ['flac', '25M'], ['flac24bit', '50M']),
+    })
+    expect(meta).toEqual({
+      quality: 'flac24bit', bitRate: undefined, size: 50 * 1024 * 1024,
+      suffix: 'flac', contentType: 'audio/flac',
+    })
+  })
+
+  it('仅有 MP3：选择最高档，size 从 _types 换算字节', () => {
     const meta = resolveSubsonicMediaMeta({
       types: typesOf(['320k', '3.45M'], ['128k', '1.4M']),
       _types: { '320k': { size: '3.45M' }, '128k': { size: '1.4M' } },
@@ -81,7 +65,7 @@ describe('resolveSubsonicMediaMeta', () => {
     })
   })
 
-  it('320k 不支持但有 flac → 与 stream 回退一致升到 flac', () => {
+  it('默认选择最高支持档位 FLAC', () => {
     const meta = resolveSubsonicMediaMeta({ types: typesOf(['flac', '26.5M'], ['128k', '1.4M']) })
     expect(meta.quality).toBe('flac')
     expect(meta.suffix).toBe('flac')

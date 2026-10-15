@@ -135,7 +135,7 @@ export async function handleGetPlaylist(request: NextRequest, authRes: AuthResul
                 suffix: meta.suffix,
                 contentType: meta.contentType,
                 isVideo: false,
-                path: `${mi.singer || 'Unknown'}/${mi.albumName || 'Unknown'}/${mi.name || 'Unknown'}.${meta.suffix ?? 'mp3'}`,
+                path: `${mi.singer || 'Unknown'}/${mi.albumName || 'Unknown'}/${mi.name || 'Unknown'}${meta.suffix ? `.${meta.suffix}` : ''}`,
                 albumId: entryId,
                 artistId: '',
                 type: 'music',

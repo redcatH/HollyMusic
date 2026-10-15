@@ -124,6 +124,18 @@ describe('handleSearch — 空 query（客户端"随便听听"预加载）', () 
     expect(search).not.toHaveBeenCalled()
   })
 
+  it('歌曲同时有 MP3 和 FLAC 时，返回最高档位的媒体信息', async () => {
+    const music = sourceSong('无损歌曲')
+    vi.mocked(getRandomMusicInfoList).mockResolvedValue([{
+      ...music, types: [...music.types, { type: 'flac', size: '25M' }],
+    }] as never)
+    const body = await (await handleSearch(req('?query=&f=json'))).json()
+    expect(body['subsonic-response'].searchResult3.song[0]).toMatchObject({
+      suffix: 'flac', contentType: 'audio/flac', size: 25 * 1024 * 1024,
+    })
+    expect(body['subsonic-response'].searchResult3.song[0].bitRate).toBeUndefined()
+  })
+
   it('songCount 生效：请 1 首只向 DB 抽 1 首', async () => {
     vi.mocked(getRandomMusicInfoList).mockResolvedValue([sourceSong('歌A')] as never)
     await handleSearch(req('?query=&songCount=1&f=json'))
@@ -214,6 +226,7 @@ describe('handleSearch — 非空 query（聚合搜索，行为保持不变）',
     const res = await handleSearch(req('?query=测试&f=json'))
     const body = JSON.parse(await res.text())
     expect(body['subsonic-response'].searchResult3.song).toEqual([{ id: 'cached' }])
+    expect(searchCache.get).toHaveBeenCalledWith(expect.stringMatching(/^subsonic-search:v2:/))
 
     const { search } = await import('./music-core/music-search')
     expect(search).not.toHaveBeenCalled()
