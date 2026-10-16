@@ -121,6 +121,35 @@ pnpm -C frontend build
 
 保持现有 React、TypeScript 和 Tailwind 风格；日志使用 `logger`，缓存复用现有单例。音源兼容层改动需单独说明。
 
+## Docker 多架构发布
+
+发布配置见 [docker-publish.yml](../.github/workflows/docker-publish.yml)。流程为：
+
+1. 合并修改后，在包含修改的提交上推送新的 `v*` Git tag。建议先发布一个新的 `vX.Y.Z-preview.N`，验证完成后再发布正式版；不要复用或移动已发布的版本 tag。
+2. GitHub Actions 分别使用 `ubuntu-24.04` 和 `ubuntu-24.04-arm` 原生构建 `linux/amd64`、`linux/arm64`。每个平台独立安装依赖、生成 Prisma 引擎并构建，不跨架构复用 `node_modules` 或 standalone 产物。
+3. 两个平台分别运行 `scripts/test-docker-setup.mjs`，验证 nginx SPA、API、数据库迁移、首次设置、会话和重启，再上传各自的 `build-<run_id>-<arch>` 暂存镜像。
+4. 两边均通过后，合并镜像清单，检查平台列表，再发布具体版本标签和通道标签。预发布更新 `preview`，正式版更新 `latest`；任何一个构建或容器测试失败，都不会覆盖这些标签。
+5. 镜像清单发布成功后，才创建 GitHub Release。ARM64 用户可先用预发布验证拉取、启动、搜索和播放，正式镜像发布并确认部署正常后再关闭相关 issue。
+
+`workflow_dispatch` 的“手动运行”仍然只补发 GitHub Release，**不会构建镜像或补上 ARM64 清单**。旧版本标签不会自动获得新架构；解决旧 `latest` 的 ARM64 拉取失败，需要完成一次包含此配置的正式版本发布。
+
+发布后检查实际要交付的标签：
+
+```bash
+docker buildx imagetools inspect ghcr.io/redcath/hollymusic:preview
+# 正式发布后再检查 latest
+docker buildx imagetools inspect ghcr.io/redcath/hollymusic:latest
+```
+
+预期至少包含 `linux/amd64`、`linux/arm64`。本地有 Docker 时，也可在对应架构主机验证尚未发布的源码：
+
+```bash
+docker build -t hollymusic:setup-test .
+node scripts/test-docker-setup.mjs hollymusic:setup-test
+```
+
+Prisma 的 `native` 会随构建平台选择引擎，schema 同时显式包含 Debian AMD64 和 Linux ARM64 的 OpenSSL 3 引擎。修改 `binaryTargets` 仅影响生成产物，不涉及数据库表结构，无需新增数据库迁移。
+
 - [贡献与 PR 流程](../CONTRIBUTING.md)
 - [VS Code 调试指南](DEBUG-GUIDE.md)
 - [音源配置热重载](CONFIG-HOT-RELOAD.md)

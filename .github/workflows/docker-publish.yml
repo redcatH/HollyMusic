@@ -1,6 +1,6 @@
 name: Build and Push Docker Image
 
-# 推送 v 开头的 tag（如 v1.0.0）时：构建镜像 → 发布 GitHub Release → 同步 CHANGELOG.md
+# 推送 v 开头的 tag：双架构构建与测试 → 合并镜像清单 → 发布 Release → 同步 CHANGELOG.md
 # 手动触发（workflow_dispatch）时：仅为指定 tag 补发 Release，不重建镜像
 on:
   push:
@@ -17,7 +17,18 @@ jobs:
   build-and-push:
     # 手动补发时跳过镜像构建：避免用当前 Dockerfile 重建并覆盖历史 tag 的镜像
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    # 各架构原生构建和运行测试，避免 Next.js / Prisma 在 QEMU 下构建过慢。
+    runs-on: ${{ matrix.runner }}
 
     # GITHUB_TOKEN 默认无 packages:write 权限，需显式声明
     permissions:
@@ -40,7 +51,7 @@ jobs:
 
       # ghcr.io 镜像名必须全小写；仓库所有者 redcatH 需转小写
       - name: Set image name (lowercase)
-        run: echo "IMAGE_NAME=ghcr.io/$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')/hollymusic" >> $GITHUB_ENV
+        run: echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/hollymusic" >> "$GITHUB_ENV"
 
       - name: Log in to ghcr.io
         uses: docker/login-action@v4
@@ -49,49 +60,85 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}   # 自动提供，无需手动建 secret
 
-      # 从 GITHUB_REF（refs/tags/v1.0.0）提取 tag 名
-      - name: Extract tag name
-        id: tag
-        run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          echo "name=${TAG}" >> "$GITHUB_OUTPUT"
-          # 预发布仅更新 preview 通道，正式版才更新 latest。
-          if [[ "$TAG" == *-* ]]; then CHANNEL=preview; else CHANNEL=latest; fi
-          echo "channel=${CHANNEL}" >> "$GITHUB_OUTPUT"
-
       - name: Build release image
         uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
+          platforms: ${{ matrix.platform }}
+          # 每个 job 只加载一个架构，保留发布前的真实容器测试。
           load: true
           tags: |
             hollymusic:release-test
-            ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.name }}
-            ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.channel }}
-          # GitHub Actions 缓存加速，二次构建只重建变化层
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            ${{ env.IMAGE_NAME }}:build-${{ github.run_id }}-${{ matrix.arch }}
+          # 缓存按架构隔离，避免两个 job 相互覆盖。
+          cache-from: type=gha,scope=docker-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=docker-${{ matrix.arch }}
+
+      - name: Verify image architecture
+        run: test "$(docker image inspect hollymusic:release-test --format '{{.Os}}/{{.Architecture}}')" = "${{ matrix.platform }}"
 
       - name: Verify first-run and restart before publishing
         run: node scripts/test-docker-setup.mjs hollymusic:release-test
 
-      - name: Push verified image
+      # 只上传本次 run 的暂存标签。任何一边失败都不会覆盖版本或通道标签。
+      # 不使用 run_attempt，允许仅重跑失败的 job 后复用另一架构已验证的镜像。
+      - name: Push verified platform image
+        run: docker push "${IMAGE_NAME}:build-${{ github.run_id }}-${{ matrix.arch }}"
+
+  publish-manifest:
+    needs: build-and-push
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Set image name (lowercase)
+        run: echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/hollymusic" >> "$GITHUB_ENV"
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish verified multi-platform image
         run: |
-          docker push "${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.name }}"
-          docker push "${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.channel }}"
+          TAG="${GITHUB_REF#refs/tags/}"
+          # 预发布仅更新 preview 通道，正式版才更新 latest。
+          if [[ "$TAG" == *-* ]]; then CHANNEL=preview; else CHANNEL=latest; fi
+          docker buildx imagetools create --dry-run \
+            "${IMAGE_NAME}:build-${{ github.run_id }}-amd64" \
+            "${IMAGE_NAME}:build-${{ github.run_id }}-arm64" > "$RUNNER_TEMP/manifest.json"
+          # 发布前确认两个平台都存在；后续按不可变 digest 合并同一批已验证镜像。
+          jq -e '[.manifests[].platform | .os + "/" + .architecture] | sort == ["linux/amd64", "linux/arm64"]' "$RUNNER_TEMP/manifest.json"
+          SOURCES=()
+          while IFS= read -r digest; do
+            SOURCES+=("${IMAGE_NAME}@${digest}")
+          done < <(jq -r '.manifests[].digest' "$RUNNER_TEMP/manifest.json")
+          docker buildx imagetools create \
+            --tag "${IMAGE_NAME}:${TAG}" \
+            --tag "${IMAGE_NAME}:${CHANNEL}" \
+            "${SOURCES[@]}"
+          docker buildx imagetools inspect --raw "${IMAGE_NAME}:${TAG}" | \
+            jq -e '[.manifests[].platform | .os + "/" + .architecture] | sort == ["linux/amd64", "linux/arm64"]'
 
   # 发布 GitHub Release：基于 Conventional Commits 自动生成中文分组更新说明，
   # 并把 CHANGELOG.md / package.json 版本号同步提交回 main
   release:
-    needs: build-and-push
+    needs: publish-manifest
     # push 发布：镜像构建成功才发 Release（镜像失败不发，避免用户拉不到对应版本）
-    # 手动补发：build 被跳过，直接发
+    # 手动补发：build 与 manifest 被跳过，直接发
     # 注意：必须显式 always()，否则 if 隐式加 success() 前缀，build 被 skip 时本 job 也会被跳过
     if: >-
       always() &&
-      (needs.build-and-push.result == 'success' ||
-      (github.event_name == 'workflow_dispatch' && needs.build-and-push.result == 'skipped'))
+      (needs.publish-manifest.result == 'success' ||
+      (github.event_name == 'workflow_dispatch' && needs.publish-manifest.result == 'skipped'))
     runs-on: ubuntu-latest
 
     permissions:

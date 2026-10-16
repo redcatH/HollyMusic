@@ -8,6 +8,20 @@
 
 镜像通过 GitHub Actions 自动构建并推送至 ghcr.io，无需 clone 源码，按以下步骤即可启动。
 
+**CPU 架构与 ARM64 部署**
+
+镜像发布流程同时构建 `linux/amd64`（常见 Intel/AMD 服务器）和 `linux/arm64`（包括 Oracle Cloud ARM、64 位 ARM NAS），两种架构共用一个镜像标签，Docker / 1Panel 会自动选择匹配的镜像。`linux/arm64/v8` 属于这里的 ARM64 平台，无需在 Compose 中强制指定 `platform`。
+
+旧镜像标签不会自动增加 ARM64 支持。若出现 `no matching manifest for linux/arm64/v8`，说明所拉取的标签缺少匹配架构；需选用已完成双架构发布的版本。可先检查目标标签（使用预发布时将 `latest` 换成 `preview` 或具体版本）：
+
+```bash
+docker buildx imagetools inspect ghcr.io/redcath/hollymusic:latest
+```
+
+输出应包含 `linux/amd64` 和 `linux/arm64`（也可能显示为 `linux/arm64/v8`）。更新镜像发布流程后，仍需实际发布新版本：预发布只更新 `preview`，正式发布才更新 `latest`。详见[维护者发布流程](DEVELOPMENT.md#docker-多架构发布)。
+
+新版发布后，在原部署目录运行 `docker compose pull && docker compose up -d`；1Panel 用户重新拉取对应标签并重建容器，保留原环境变量和数据挂载。强制 `platform: linux/amd64` 依赖额外模拟环境，不是 ARM64 原生支持的修复方式。暂未发布兼容镜像时，可在 ARM64 主机上按下文从源码构建。
+
 **1. 创建部署目录并进入**
 
 ```bash
@@ -116,10 +130,12 @@ docker compose up --build -d
 
 ## 运行时架构说明
 
-镜像采用**三阶段构建**（见 [`Dockerfile`](../Dockerfile)）：
-1. `frontend-builder` — Vite 构建前端 SPA 产物到 `frontend/dist`
-2. `backend-builder` — Next.js 构建 API
-3. 运行时镜像 — `node:20-bullseye-slim` + nginx，复制两阶段产物
+镜像采用**四阶段构建**（见 [`Dockerfile`](../Dockerfile)），各阶段均使用目标平台的镜像与依赖：
+
+1. `deps` — 安装前后端依赖，供两个 builder 共享
+2. `frontend-builder` — Vite 构建前端 SPA 产物到 `frontend/dist`
+3. `backend-builder` — Next.js 构建 API，并生成 Prisma Client 与查询引擎
+4. 运行时镜像 — `node:20-bookworm-slim` + nginx，复制两阶段产物
 
 运行时架构（`scripts/start-spa.sh`）：
 - Next.js API 监听 **3001**（仅容器内）

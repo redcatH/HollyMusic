@@ -4,9 +4,9 @@
 generator client {
   provider      = "prisma-client-js"
   output        = "../lib/generated/prisma"
-  // 同时生成 Windows(native, 本地开发) 与 Linux(Debian 12 bookworm, Docker 运行时) 引擎
+  // native 覆盖本地开发环境；Docker Debian 12 分别使用 AMD64 / ARM64 的 OpenSSL 3 引擎。
   // 缺少 linux target 时，容器内会报 dlopen failed: cannot find libquery_engine-*.so.node
-  binaryTargets = ["native", "debian-openssl-3.0.x"]
+  binaryTargets = ["native", "debian-openssl-3.0.x", "linux-arm64-openssl-3.0.x"]
 }
 
 datasource db {
