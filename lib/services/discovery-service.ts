@@ -710,9 +710,60 @@ async function getSongsByIds(ids: number[]): Promise<Song[]> {
   return songs.sort((a, b) => (order.get(Number(a.songId)) ?? 999) - (order.get(Number(b.songId)) ?? 999))
 }
 
+type TxPlaylistBasic = {
+  tid?: number | string
+  title?: string
+  creator?: { nick?: string }
+  desc?: string
+  cover?: { medium_url?: string; default_url?: string }
+  play_cnt?: number
+  song_cnt?: number
+}
+
 async function getTxRecommendedPlaylists(limit: number, page = 1, filter: DiscoveryPlaylistFilter = {}): Promise<DiscoveryPlaylist[]> {
   const safeLimit = Math.max(1, Math.min(limit, 30))
   const safePage = Math.max(1, Math.floor(page))
+
+  // 与 LX 一致：推荐流用于全部分类，具体标签仍使用分类接口。
+  if (!filter.tag && (filter.sort || 'recommend') === 'recommend') {
+    const offset = (safePage - 1) * safeLimit
+    const payload = await requestMusicu<{
+      code?: number
+      playlist?: { code?: number; data?: { FeedRsp?: {
+        List?: Array<{ Playlist?: { basic?: TxPlaylistBasic } }> | null
+        FromLimit?: number
+        HasMore?: boolean
+      } } }
+    }>({
+      comm: { cv: 1602, ct: 20 },
+      playlist: {
+        module: 'music.playlist.PlaylistSquare',
+        method: 'GetRecommendWhole',
+        param: { IsReqFeed: true, FeedReq: { From: offset, Size: safeLimit } },
+      },
+    })
+    const feed = payload.playlist?.data?.FeedRsp
+    if (payload.code !== 0 || payload.playlist?.code !== 0 || !feed
+      || (!Array.isArray(feed.List) && !(feed.List == null && feed.HasMore === false))) {
+      throw new Error(`QQ 推荐歌单接口失败：code=${payload.code ?? 'missing'}, playlist.code=${payload.playlist?.code ?? 'missing'}`)
+    }
+    // 上游超出 FromLimit 后仍可能返回 code=0/List=null；尾页也可能返回整页。
+    const remaining = feed.FromLimit === undefined ? safeLimit : Math.max(0, feed.FromLimit - offset)
+    return (feed.List || []).slice(0, Math.min(safeLimit, remaining)).flatMap(item => {
+      const basic = item.Playlist?.basic
+      if (!basic?.tid || !basic.title) return []
+      return [{
+        id: String(basic.tid),
+        name: he.decode(basic.title),
+        author: he.decode(basic.creator?.nick || 'QQ 音乐'),
+        description: he.decode(basic.desc || '').replace(/<br\s*\/?>/gi, '\n'),
+        cover: normalizeCover(basic.cover?.medium_url || basic.cover?.default_url),
+        playCount: basic.play_cnt || 0,
+        ...(basic.song_cnt !== undefined ? { songCount: basic.song_cnt } : {}),
+        source: 'tx' as const,
+      }]
+    })
+  }
 
   if (filter.tag) {
     const payload = await requestMusicu<{ playlist?: { code?: number; data?: { content?: { v_item?: Array<{ basic?: { tid?: number; title?: string; creator?: { nick?: string }; desc?: string; cover?: { medium_url?: string; default_url?: string }; play_cnt?: number; song_cnt?: number } }> } } } }>({
@@ -1281,7 +1332,7 @@ export async function getRecommendedPlaylists(source: DiscoverySource = 'tx', li
   const safePage = Math.max(1, Math.floor(page))
   const keyword = filter.keyword?.trim().slice(0, 100) || ''
   // keyword 存在时使用各音乐平台的搜索接口；空关键词才是歌单广场/推荐列表。
-  const cacheKey = `discovery:v9:${source}:${keyword ? 'playlist-search' : 'playlist-list'}:${safeLimit}:${safePage}:${filter.tag || ''}:${filter.sort || 'recommend'}:${keyword}`
+  const cacheKey = `discovery:v10:${source}:${keyword ? 'playlist-search' : 'playlist-list'}:${safeLimit}:${safePage}:${filter.tag || ''}:${filter.sort || 'recommend'}:${keyword}`
   const cached = getCached<DiscoveryPlaylist[]>(cacheKey)
   if (cached) return cached
   if (keyword) {

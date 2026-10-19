@@ -119,6 +119,21 @@ it('首页查询参数变化时正常加载新内容，账号变化会清除旧�
   expect(getToplists).toHaveBeenCalledTimes(3)
 })
 
+it('QQ 歌单提供推荐选项，切换后重置页码并可恢复原有排序', async () => {
+  await render('/?source=tx&sort=hot&page=4')
+  const select = container.querySelector<HTMLSelectElement>('[aria-label="歌单排序"]')!
+  expect([...select.options].map(option => option.textContent)).toEqual(['推荐', '最热', '最新'])
+  await act(async () => {
+    select.value = 'recommend'
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+  expect(new URLSearchParams(currentUrl.split('?')[1]).get('page')).toBe('1')
+  expect(getRecommendedPlaylists).toHaveBeenLastCalledWith('tx', 12, 1, expect.objectContaining({ sort: 'recommend' }))
+  await act(async () => { await navigate('/?source=tx&sort=new&page=2') })
+  expect(select.value).toBe('new')
+  expect(getRecommendedPlaylists).toHaveBeenLastCalledWith('tx', 12, 2, expect.objectContaining({ sort: 'new' }))
+})
+
 it.each(['playlists/list', 'toplists/0'])('从搜索结果进入 %s 后点击发现音乐，保留搜索、筛选、页码及滚动位置', async detail => {
   const url = '/?source=kw&keyword=音乐&category=2189-10000&sort=new&page=2'
   await render(url)

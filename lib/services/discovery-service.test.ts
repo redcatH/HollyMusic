@@ -332,6 +332,72 @@ describe('getRecommendedPlaylists', () => {
     get.mockReturnValue(undefined)
   })
 
+  it('QQ 推荐使用 LX 推荐流，按偏移分页并直接解析列表元数据', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ code: 0, playlist: { code: 0, data: { FeedRsp: {
+      FromLimit: 400, HasMore: true, List: [
+        { Playlist: { basic: { tid: 7922374693, title: '精选 &amp; 热门', creator: { nick: '作者 &amp; 歌迷' }, desc: '第一行<br/>第二行&nbsp;介绍', cover: { medium_url: 'http://example.com/medium.jpg' }, play_cnt: 123456, song_cnt: 1195 } } },
+        { Playlist: { basic: { tid: '123', title: '默认封面', cover: { default_url: 'http://example.com/default.jpg' } } } },
+        { Playlist: {} },
+      ],
+    } } } }))
+    vi.stubGlobal('fetch', fetchMock)
+    const playlists = await getRecommendedPlaylists('tx', 12, 2, { sort: 'recommend' })
+    expect(playlists).toEqual([
+      { id: '7922374693', name: '精选 & 热门', author: '作者 & 歌迷', description: '第一行\n第二行\u00a0介绍', cover: 'https://example.com/medium.jpg', playCount: 123456, songCount: 1195, source: 'tx' },
+      { id: '123', name: '默认封面', author: 'QQ 音乐', description: '', cover: 'https://example.com/default.jpg', playCount: 0, source: 'tx' },
+    ])
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      comm: { cv: 1602, ct: 20 },
+      playlist: { module: 'music.playlist.PlaylistSquare', method: 'GetRecommendWhole', param: { IsReqFeed: true, FeedReq: { From: 12, Size: 12 } } },
+    })
+    expect(upsertMusicInfosInTransaction).not.toHaveBeenCalled()
+    expect(set).toHaveBeenCalledWith(expect.stringContaining(':recommend:'), playlists, 600000)
+  })
+
+  it.each([
+    { code: 1 },
+    { code: 0, playlist: { code: 1 } },
+    { code: 0, playlist: { code: 0, data: {} } },
+    { code: 0, playlist: { code: 0, data: { FeedRsp: { HasMore: true } } } },
+  ])('QQ 推荐异常不能当作空列表缓存：%j', async body => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(body)))
+    await expect(getRecommendedPlaylists('tx', 12, 1, { sort: 'recommend' })).rejects.toThrow('QQ 推荐歌单接口失败')
+    expect(set).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    { page: 1, feed: { List: [], HasMore: false, FromLimit: 0 } },
+    { page: 1, feed: { HasMore: false, FromLimit: 0 } },
+    { page: 35, feed: { List: null, HasMore: false, FromLimit: 400 } },
+    { page: 35, feed: { List: [{ Playlist: { basic: { tid: 1, title: '重复首页' } } }], FromLimit: 400 } },
+  ])('QQ 推荐空列表或超出上游范围时正常结束分页：$page', async ({ page, feed }) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ code: 0, playlist: { code: 0, data: { FeedRsp: feed } } })))
+    expect(await getRecommendedPlaylists('tx', 12, page, { sort: 'recommend' })).toEqual([])
+  })
+
+  it('QQ 推荐尾页按 FromLimit 截取，避免总量 400 时仍返回完整 12 条', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ code: 0, playlist: { code: 0, data: { FeedRsp: {
+      FromLimit: 400, HasMore: false,
+      List: Array.from({ length: 12 }, (_, index) => ({ Playlist: { basic: { tid: 397 + index, title: '推荐歌单' } } })),
+    } } } })))
+    expect((await getRecommendedPlaylists('tx', 12, 34, { sort: 'recommend' })).map(item => item.id)).toEqual(['397', '398', '399', '400'])
+  })
+
+  it.each([{ sort: 'hot', order: 5 }, { sort: 'new', order: 2 }] as const)('QQ $sort 继续读取对应列表', async ({ sort, order }) => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ code: 0, playlist: { code: 0, data: { v_playlist: [{ tid: 123, title: '歌单' }] } } }))
+    vi.stubGlobal('fetch', fetchMock)
+    expect(await getRecommendedPlaylists('tx', 12, 2, { sort })).toHaveLength(1)
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).playlist).toMatchObject({ method: 'get_playlist_by_tag', param: { sin: 12, order } })
+  })
+
+  it('QQ 推荐下选择具体分类时，按 LX 规则读取分类列表', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ code: 0, playlist: { code: 0, data: { content: { v_item: [{ basic: { tid: 123, title: '官方歌单' } }] } } } }))
+    vi.stubGlobal('fetch', fetchMock)
+    expect(await getRecommendedPlaylists('tx', 12, 1, { sort: 'recommend', tag: '3317' })).toHaveLength(1)
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).playlist).toMatchObject({ method: 'get_category_content', param: { category_id: 3317 } })
+  })
+
   it.each([12, 20, 30])('酷狗每页 %i 个时连续翻页不遗漏、不重复，并保留分类与排序', async limit => {
     const all = Array.from({ length: 103 }, (_, index) => ({ specialid: index + 1, specialname: `歌单${index + 1}` }))
     const fetchMock = vi.fn().mockImplementation(async (url: string) => {
@@ -384,7 +450,7 @@ describe('getRecommendedPlaylists', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    const playlists = await getRecommendedPlaylists('tx', 12, 2, { keyword: '周杰伦', tag: '3317', sort: 'hot' })
+    const playlists = await getRecommendedPlaylists('tx', 12, 2, { keyword: '周杰伦', tag: '3317', sort: 'recommend' })
 
     expect(playlists).toEqual([expect.objectContaining({
       id: '123', name: '周杰伦精选', author: '测试用户', source: 'tx', cover: 'https://example.com/cover.jpg', songCount: 30,

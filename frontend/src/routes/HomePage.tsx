@@ -25,7 +25,7 @@ const PLAYLIST_CATEGORIES: Partial<Record<DiscoverySource, Array<{ id: string; n
   mg: [{ id: '', name: '全部分类' }, { id: '1000001672', name: '流行' }, { id: '1000001674', name: '摇滚' }, { id: '1000001775', name: '民谣' }, { id: '1000001682', name: '电子' }, { id: '1000001795', name: '伤感' }, { id: '1000001762', name: '国语' }],
 }
 const PLAYLIST_SORTS: Record<DiscoverySource, Array<{ id: DiscoveryPlaylistSort; name: string }>> = {
-  tx: [{ id: 'hot', name: '最热' }, { id: 'new', name: '最新' }],
+  tx: [{ id: 'recommend', name: '推荐' }, { id: 'hot', name: '最热' }, { id: 'new', name: '最新' }],
   wy: [{ id: 'hot', name: '最热' }],
   kw: [{ id: 'new', name: '最新' }, { id: 'hot', name: '最热' }],
   kg: [{ id: 'recommend', name: '推荐' }, { id: 'hot', name: '最热' }, { id: 'new', name: '最新' }, { id: 'collect', name: '热藏' }, { id: 'soar', name: '飙升' }],
