@@ -305,6 +305,69 @@
 .appearance-switch:checked::before { background: var(--primary-foreground); transform: translateX(16px); }
 .appearance-switch:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
 
+/* 均衡器按内容区宽度布局，侧栏展开或平板分屏时仍保留足够的推子触控区域。 */
+.eq-settings { container-type: inline-size; }
+.eq-settings button { font-size: 14px; }
+.eq-settings .eq-band-value { font-size: 12px; }
+.eq-settings .eq-preset-select select { min-height: 44px; font-size: 22px; }
+.eq-preset-select option { background: var(--card); color: var(--foreground); font-size: 16px; }
+.eq-surface { box-shadow: 0 3px 16px color-mix(in oklch, var(--surface-shadow) 45%, transparent); }
+.eq-enable { width: auto; }
+.eq-heading-desktop { display: none; }
+.eq-preset-title, .eq-reset-copy { display: none; }
+.eq-curve-slot { order: 3; margin-top: 16px; border-top: 1px solid var(--border); }
+.eq-curve-content { display: none; }
+.eq-curve-slot[data-expanded="true"] .eq-curve-content { display: block; }
+.eq-preset-rail { display: none; }
+.eq-band { display: flex; }
+.eq-band[data-band-group="hidden"] { display: none; }
+.eq-fader { appearance: none; -webkit-appearance: none; writing-mode: vertical-lr; direction: rtl; width: 44px; height: 176px; margin: 0; background: transparent; cursor: ns-resize; touch-action: none; }
+.eq-fader::-webkit-slider-runnable-track { width: 4px; height: 100%; border-radius: 8px; background: var(--input); }
+.eq-fader::-webkit-slider-thumb { appearance: none; -webkit-appearance: none; width: 20px; height: 20px; margin-left: -8px; border: 3px solid var(--card); border-radius: 50%; background: var(--primary); box-shadow: 0 1px 5px var(--surface-shadow), 0 0 0 1px color-mix(in oklch, var(--primary) 25%, transparent); }
+.eq-fader::-moz-range-track { width: 4px; height: 100%; border-radius: 8px; background: var(--input); }
+.eq-fader::-moz-range-thumb { width: 14px; height: 14px; border: 3px solid var(--card); border-radius: 50%; background: var(--primary); box-shadow: 0 0 0 1px color-mix(in oklch, var(--primary) 25%, transparent); }
+.eq-fader:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; border-radius: 8px; }
+.eq-fader:disabled { opacity: .3; cursor: not-allowed; }
+.eq-step-button { display: flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); color: var(--foreground); }
+.eq-step-button:hover:not(:disabled) { color: var(--primary); background: var(--accent); }
+.eq-step-button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.eq-step-button:disabled { opacity: .35; }
+.eq-horizontal-slider { display: block; width: 100%; height: 44px; margin: 0; accent-color: var(--primary); cursor: pointer; }
+@container (min-width: 640px) {
+  .eq-enable { width: auto; }
+  .eq-heading-desktop { display: block; }
+  .eq-heading-mobile { display: none; }
+  .eq-workbench { padding: 24px 28px; }
+  .eq-reset-copy { display: inline; }
+  .eq-curve-slot { order: 1; margin-top: 0; border-top: 0; }
+  .eq-curve-toggle { display: none; }
+  .eq-curve-content { display: block; }
+  .eq-current-label { display: none; }
+  .eq-curve { height: 56px; }
+  .eq-fader, .eq-band-axis { height: 144px; }
+  .eq-band-groups { display: none; }
+  .eq-band-grid { grid-template-columns: repeat(10, minmax(0, 1fr)); }
+  .eq-band[data-band-group="hidden"] { display: flex; }
+  .eq-output-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .eq-protection { padding-top: 0; padding-left: 24px; border-top: 0; border-left: 1px solid var(--border); }
+}
+@container (max-width: 639px) {
+  .eq-enable { min-height: 44px; min-width: 44px; }
+  .eq-enable-icon, .eq-enable-copy { display: none; }
+  .eq-tabs { display: flex; }
+  .eq-tabs button { flex: 1; }
+}
+@container (max-width: 360px) {
+  .eq-band-grid { gap: 0; }
+  .eq-band-groups button { flex-direction: column; gap: 0; }
+}
+@container (min-width: 860px) {
+  .eq-workspace { grid-template-columns: 196px minmax(0, 1fr); }
+  .eq-preset-select { display: none; }
+  .eq-preset-title { display: block; }
+  .eq-preset-rail { display: block; }
+}
+
 /* 封面只参与背景颜色，主题底色遮罩保证歌词对比度；失败时回退主题背景。 */
 /* 氛围背景超出面板边界；clip 只裁剪、不创建滚动容器，避免歌词 scrollIntoView
    连带滚动整个面板，把底部控制区上移并露出空白（hidden 仍允许程序滚动）。 */

@@ -11,7 +11,7 @@ import { ProgressBar } from './ProgressBar'
 import { PlayerButton } from './PlayerButton'
 import { Mic2, ListMusic, Timer, Volume2, VolumeX } from 'lucide-react'
 
-export function PlayerTools({ audio }: { audio: HTMLAudioElement | null }) {
+export function PlayerTools({ onOpenEqualizer }: { onOpenEqualizer?: () => void }) {
   const volume = usePlayerStore(s => s.volume)
   const isMuted = usePlayerStore(s => s.isMuted)
   const setVolume = usePlayerStore(s => s.setVolume)
@@ -25,7 +25,7 @@ export function PlayerTools({ audio }: { audio: HTMLAudioElement | null }) {
 
   return (
     <div className="hidden min-w-0 items-center justify-end gap-0.5 desktop:flex xl:gap-1">
-      <EqualizerButton audio={audio} />
+      <EqualizerButton onClick={onOpenEqualizer} />
       <PlayerButton icon={Mic2} label="歌词" onClick={toggleLyrics} showLabel />
       <PlayerButton icon={ListMusic} label="队列" onClick={toggleQueue} showLabel />
       <PlayerButton

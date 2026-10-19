@@ -1,10 +1,12 @@
-import { act } from 'react'
+import { act, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { MemoryRouter, useNavigate } from 'react-router-dom'
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { App } from '../src/App'
 import { useContextMenuStore } from '@/lib/store/context-menu-store'
 import type { Track } from '@/lib/types/player'
+
+const playerLifecycle = vi.hoisted(() => ({ mounts: 0, unmounts: 0 }))
 
 vi.mock('../src/components/Layout', () => ({ Sidebar: () => null, MobileSidebar: () => null }))
 vi.mock('../src/components/MobileHeader', () => ({ MobileHeader: () => null }))
@@ -12,7 +14,14 @@ vi.mock('../src/components/ServiceWorkerRegister', () => ({ ServiceWorkerRegiste
 vi.mock('../src/hooks/useLyricsHistory', () => ({
   useLyricsHistory: () => ({ isOpen: false, open: () => {}, close: () => {}, toggle: () => {} }),
 }))
-vi.mock('@/components/player/PlayerBar', () => ({ PlayerBar: () => null }))
+vi.mock('@/components/player/PlayerBar', () => ({ PlayerBar: ({ onAudioElement, onOpenEqualizer }: { onAudioElement: (audio: HTMLAudioElement) => void; onOpenEqualizer: () => void }) => {
+  useEffect(() => {
+    playerLifecycle.mounts++
+    onAudioElement(new Audio())
+    return () => { playerLifecycle.unmounts++ }
+  }, [onAudioElement])
+  return <button data-open-equalizer onClick={onOpenEqualizer}>均衡器</button>
+} }))
 vi.mock('@/components/player/QueuePanel', () => ({ QueuePanel: () => null }))
 vi.mock('@/components/player/LyricsPanel', () => ({ LyricsPanel: () => null }))
 vi.mock('@/components/toast/ToastContainer', () => ({ ToastContainer: () => null }))
@@ -48,7 +57,8 @@ let container: HTMLDivElement
 let navigate: ReturnType<typeof useNavigate>
 function TestApp() {
   navigate = useNavigate()
-  return <App />
+  const location = useLocation()
+  return <><App /><output data-route>{location.pathname + location.search}</output></>
 }
 function page() {
   return <MemoryRouter initialEntries={['/playlists/1', '/playlists/2']} initialIndex={1}>
@@ -56,6 +66,8 @@ function page() {
   </MemoryRouter>
 }
 beforeEach(() => {
+  playerLifecycle.mounts = 0
+  playerLifecycle.unmounts = 0
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   container = document.createElement('div')
   root = createRoot(container)
@@ -91,4 +103,23 @@ it('查询参数变化时关闭菜单，同一路由普通重渲染不关闭', a
   expect(useContextMenuStore.getState().menu).not.toBeNull()
   await act(async () => { await navigate('/playlists/2?source=share') })
   expect(useContextMenuStore.getState().menu).toBeNull()
+})
+
+it('进入声音设置和返回原页面不重建播放器，重复点击入口不增加历史记录', async () => {
+  await act(async () => root.render(page()))
+  await act(async () => navigate('/playlists/2?source=share'))
+  await act(async () => container.querySelector<HTMLButtonElement>('[data-open-equalizer]')!.click())
+  expect(container.querySelector('[data-route]')?.textContent).toBe('/equalizer')
+  expect(container.querySelector('h1')?.textContent).toBe('声音设置')
+  expect(container.querySelector('dialog')).toBeNull()
+  await act(async () => container.querySelector<HTMLButtonElement>('[data-open-equalizer]')!.click())
+  await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="返回"]')!.click())
+  expect(container.querySelector('[data-route]')?.textContent).toBe('/playlists/2?source=share')
+  expect(playerLifecycle).toEqual({ mounts: 1, unmounts: 0 })
+})
+
+it('直接打开声音设置后返回首页，不退出应用', async () => {
+  await act(async () => root.render(<MemoryRouter initialEntries={['/equalizer']}><TestApp /></MemoryRouter>))
+  await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="返回"]')!.click())
+  expect(container.querySelector('[data-route]')?.textContent).toBe('/')
 })

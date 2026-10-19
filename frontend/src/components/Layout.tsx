@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Home, Search, Heart, ListMusic, History, Music2, LogIn, LogOut, User, ChevronUp, Settings, KeyRound, Shuffle, Download } from 'lucide-react'
+import { Home, Search, Heart, ListMusic, History, Music2, LogIn, LogOut, User, ChevronUp, Settings, KeyRound, Shuffle, Download, SlidersHorizontal } from 'lucide-react'
 import { useAuthStore } from '@/hooks/useAuth'
 import { usePwaInstall } from '@/hooks/usePwaInstall'
 import { isOfflineStorageAvailable } from '@/lib/offline-audio'
@@ -85,6 +85,7 @@ function NavLink({
  */
 function SidebarContent({ onNavigate }: ContentProps) {
   const navigate = useNavigate()
+  const location = useLocation()
   const authenticated = useAuthStore(s => s.authenticated)
   const offlineUsername = useAuthStore(s => s.offlineUsername)
   const username = useAuthStore(s => s.offlineUsername ?? s.username)
@@ -137,6 +138,8 @@ function SidebarContent({ onNavigate }: ContentProps) {
       </nav>
 
       <div className="relative mt-auto border-t border-border/60 px-1 pt-3">
+        <Link to="/equalizer" state={location.pathname === '/equalizer' ? location.state : { equalizerEntry: true }} replace={location.pathname === '/equalizer'} onClick={onNavigate} aria-current={location.pathname === '/equalizer' ? 'page' : undefined}
+          className={`flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-sm transition-colors ${location.pathname === '/equalizer' ? 'bg-sidebar-accent text-primary' : 'text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground'}`}><SlidersHorizontal className="h-5 w-5" />声音设置</Link>
         <AppearanceButton />
         {authenticated === true || offlineUsername ? (
           <>

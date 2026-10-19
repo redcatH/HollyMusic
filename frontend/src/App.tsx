@@ -37,6 +37,7 @@ import { LoginPage } from './routes/LoginPage'
 import { SetupPage } from './routes/SetupPage'
 import { AuthLayout } from './components/AuthLayout'
 import { ChangePasswordPage } from './routes/ChangePasswordPage'
+import { EqualizerPage } from './routes/EqualizerPage'
 
 export function App() {
   const location = useLocation()
@@ -195,9 +196,11 @@ export function App() {
             {!offlineUsername && <CachedHomePage key={username} />}
             <main hidden={!offlineUsername && location.pathname === '/'} className="app-main min-h-0 min-w-0 flex-1 overflow-y-auto" tabIndex={0} aria-label="页面内容">
               {offlineUsername ? <Routes>
+                <Route path="/equalizer" element={<EqualizerPage audio={audioElement} />} />
                 <Route path="/offline" element={<OfflinePage />} />
                 <Route path="*" element={<Navigate to="/offline" replace />} />
               </Routes> : <Routes>
+                <Route path="/equalizer" element={<EqualizerPage audio={audioElement} />} />
                 <Route path="/offline" element={<OfflinePage />} />
                 <Route path="/" element={null} />
                 <Route path="/recommend" element={<RecommendedMusicPage />} />
@@ -219,7 +222,9 @@ export function App() {
             </main>
           </div>
         </div>
-        <PlayerBar audio={audioElement} onAudioElement={setAudioElement} />
+        <PlayerBar audio={audioElement} onAudioElement={setAudioElement} onOpenEqualizer={() => {
+          if (location.pathname !== '/equalizer') void navigate('/equalizer', { state: { equalizerEntry: true } })
+        }} />
         <MobileSidebar open={drawerOpen} onClose={() => setDrawerOpen(false)} />
         <QueuePanel />
         <LyricsPanel audio={audioElement} />

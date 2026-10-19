@@ -18,6 +18,21 @@ function Location() {
   return <output data-route>{useLocation().pathname}</output>
 }
 
+it('离线可直接打开声音设置，返回后回到本地歌曲', async () => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  useAuthStore.setState(useAuthStore.getInitialState(), true)
+  offlineIdentity.write('alice')
+  const container = document.createElement('div')
+  const root = createRoot(container)
+  try {
+    await act(async () => root.render(<MemoryRouter initialEntries={['/equalizer']}><App /><Location /></MemoryRouter>))
+    expect(container.querySelector('[data-route]')?.textContent).toBe('/equalizer')
+    expect(container.querySelector('h1')?.textContent).toBe('声音设置')
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="返回"]')!.click())
+    expect(container.querySelector('[data-route]')?.textContent).toBe('/offline')
+  } finally { await act(async () => root.unmount()) }
+})
+
 it.each(['/?source=pwa', '/recommend', '/search', '/favorites', '/playlists/1', '/history', '/admin', '/change-password', '/setup', '/login'])('断网从 %s 冷启动保留布局并跳转到本地歌曲', async route => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   localStorage.clear()

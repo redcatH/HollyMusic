@@ -2,7 +2,11 @@
 
 ## 架构与入口
 
-实际架构为 Next.js 16 API + Vite/React 19 SPA，共享组件、hooks 和 Zustand store；界面使用 Tailwind v4、Lucide 和自有 Modal/PlayerButton，无新增依赖。外观支持跟随系统、明暗及三套配色。EQ 入口位于桌面播放栏和手机「更多」菜单。
+实际架构为 Next.js 16 API + Vite/React 19 SPA，共享组件、hooks 和 Zustand store；界面使用 Tailwind v4、Lucide 和自有 PlayerButton，无新增依赖。外观支持跟随系统、明暗及三套配色。声音设置使用独立路由 `/equalizer`，入口位于导航侧栏、桌面播放栏和手机「更多」菜单，离线模式同样可用。
+
+页面分为「音效调节」和「输出与预设」，点击标签切换，不使用横向滑动手势。桌面同时显示 10 段推子，宽屏增加预设侧栏；手机按低频/高频每组 5 段显示，曲线可展开。推子可用方向键调节，当前频段也支持 ±0.5dB 按钮微调和点击数值归零。输出增益、防削波和用户预设管理放在第二个分区。容器查询按实际内容宽度布局，避免侧栏或分屏挤压触控区域。
+
+进入/退出声音设置或切换分区不会卸载 PlayerBar、重建 Audio 元素或重置播放进度。从站内进入时返回来源页面；直接访问时返回首页，离线模式返回本地页面。页面内键盘操作不会触发播放器全局快捷键。
 
 播放器由 `hooks/useAudioPlayer.ts` 管理单一 HTMLAudioElement，`PlayerBar` 对接 Zustand 播放队列、播放意图、URL/音质切换和进度恢复。歌曲通过同源 `/api/audio` 的 Range 代理，完整离线歌曲使用 blob URL。EQ 未改变这些机制。
 
@@ -32,7 +36,7 @@ EQ 运行状态使用 `EqualizerStatus`，提示文案集中在 `equalizer-statu
 
 ## 网页与 PWA
 
-继续使用现有 manifest（standalone）、Service Worker 及 Modal 安全区域处理，无另一套 PWA 或 standalone 分支。配置独立于 SW 内存，网页刷新及 PWA 重启从 localStorage 恢复，等待浏览器允许的交互启用音频图。
+继续使用现有 manifest（standalone）、Service Worker 及应用布局的安全区域处理，无另一套 PWA 或 standalone 分支。配置独立于 SW 内存，网页刷新及 PWA 重启从 localStorage 恢复，等待浏览器允许的交互启用音频图。
 
 Service Worker 原本仅缓存构建清单资源，跳过 `/api/`、`/rest/`、跨域和写入请求；本次额外明确跳过 Range、Authorization 和 audio destination。离线歌曲仍由原有离线缓存负责。
 
@@ -79,7 +83,7 @@ CI 在已有 required `check` job 内执行此脚本；应用原有检查使用 
 4. 开关 EQ 的两种状态下，分别播放/暂停/继续、seek 到已缓冲及未缓冲区、前后切歌、快速切歌、切换队列、切音质/音源、音量/静音、自然结束与循环。原有进度与队列应稳定。
 5. 刷新、完全关闭重开 PWA，核对参数及用户预设恢复；浏览器阻止自动播放时按提示交互恢复，不应因恢复音效重置进度或额外播放。
 6. 前后台切换、锁屏后解锁、电话/其他音频应用中断后返回，核对 context 提示及通过播放按钮恢复的行为。单独记录 iOS 后台限制；关闭 EQ 并刷新后核对原生播放行为。
-7. Android/iOS 竖屏和横屏检查滑块横向滚动、弹窗内部滚动、安全区域、预设名称输入时键盘及深浅主题；检查关闭/ESC/焦点恢复。
+7. Android/iOS 竖屏和横屏检查频段分组切换、页面纵向滚动、安全区域、预设名称输入时键盘及深浅主题；检查页面返回来源、标签键盘导航、推子方向键与底部播放栏互不干扰。
 8. 联网播放后断网播放已缓存歌曲，确认 EQ 可用；在网络面板检查音频 206 Range、授权接口不进入 SW 应用壳缓存。模拟拒绝 CORS、网络失败及 Web Audio 权限失败，应看到提示，不能把无法加载的源误报为正在正常处理。
 
 尚未声称完成上述实机验收，尤其是 iOS/Android standalone、系统中断和锁屏背景行为。
@@ -94,7 +98,11 @@ CI 在已有 required `check` job 内执行此脚本；应用原有检查使用 
 | 新增 | `lib/client/audio-param-smoother.test.ts` | 重调度连续性与未来事件清理测试 |
 | 新增 | `lib/client/equalizer.ts` | 配置校验/迁移、频段、系统预设、频响及保护算法 |
 | 新增 | `lib/store/equalizer-store.ts` | Zustand 状态、自定义预设、持久化 |
-| 新增 | `components/player/EqualizerPanel.tsx` | 面板、曲线与入口按钮 |
+| 新增 | `components/player/EqualizerPanel.tsx` | 声音设置布局、预设选择、分区与入口按钮 |
+| 新增 | `components/player/EqualizerBands.tsx` | 频段推子、手机分组及微调 |
+| 新增 | `components/player/EqualizerCurve.tsx` | 输出响应曲线 |
+| 新增 | `components/player/EqualizerOutputSettings.tsx` | 输出增益、防削波及预设管理 |
+| 新增 | `frontend/src/routes/EqualizerPage.tsx` | 在线/离线共用页面与返回导航 |
 | 修改 | `lib/client/audio-analysis.ts` | 扩展共享链路、恢复与清理 |
 | 修改 | `hooks/useAudioPlayer.ts` | 播放器绑定 EQ 生命周期 |
 | 修改 | `components/player/PlayerBar.tsx` | 传递共享 Audio 元素 |
@@ -137,3 +145,10 @@ Web Audio 接口参考：[createMediaElementSource](https://developer.mozilla.or
 - 仅修改预设标识、保存预设或换成内容相同的频段数组，不再重调度节点，保持已有自动化继续运行。
 - iOS 等待 context.resume() 后，再次确认 EQ 仍启用；已关闭则释放尚未接管的 context，不创建媒体源。超时后已关闭 EQ 的场景也不再发送无关的恢复提示。
 - 这些行为由负前级保护、预设元数据不触发重调度、iOS 初始化竞态用例持续覆盖；原生验证使用成对波形检查负前级下重复保存预设，不包含实际 iOS 后台实机验收。
+
+## 声音设置页面与开关修复验证（2026-10-19）
+
+- EQ 生命周期及频谱的全局 click 监听改为冒泡阶段，避免音频状态通知先于 React onChange 重渲染受控开关，覆盖浏览器刚切换的 checked。回归用例覆盖桌面和 iOS 分支、点击开关及其标签反复切换。
+- 前端全量 30 个文件、294 项测试通过，包含进入/返回声音设置不卸载播放器、重复入口不增加历史记录、直接访问与离线返回、频段分组与微调、低采样率禁用、标签键盘导航及预设管理。
+- `pnpm typecheck`、`pnpm build:web`、`git diff --check` 通过；`pnpm lint` 为 0 errors、37 条既有或本地非本次变更文件 warnings。Vite 保留主包大于 500kB 的提示。
+- Edge 浏览器检查 1440×900、390×844 和 320×740 布局及深浅主题，确认开关、预设、频段切换、方向键调节和曲线展开正常。320px 视口中推子操作宽度为 44px，页面无横向溢出。移动视口检查不能替代 iOS PWA 真机触摸、软键盘及后台播放验收。

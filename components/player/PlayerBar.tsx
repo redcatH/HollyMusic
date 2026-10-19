@@ -18,9 +18,10 @@ import { ListMusic } from 'lucide-react'
 interface PlayerBarProps {
   audio: HTMLAudioElement | null
   onAudioElement: (audio: HTMLAudioElement | null) => void
+  onOpenEqualizer?: () => void
 }
 
-export function PlayerBar({ audio, onAudioElement }: PlayerBarProps) {
+export function PlayerBar({ audio, onAudioElement, onOpenEqualizer }: PlayerBarProps) {
   const streamUrl = usePlayerStore(s => s.streamUrl)
   const streamNonce = usePlayerStore(s => s.streamNonce)
   const isPlaying = usePlayerStore(s => s.isPlaying)
@@ -176,11 +177,11 @@ export function PlayerBar({ audio, onAudioElement }: PlayerBarProps) {
         <div className="flex items-center desktop:hidden">
           <TransportButtons compact />
           <PlayerButton icon={ListMusic} label="队列" onClick={toggleQueue} size="sm" />
-          <MobilePlayerMenu audio={audio} />
+          <MobilePlayerMenu onOpenEqualizer={onOpenEqualizer} />
         </div>
       </div>
       <PlayerControls audio={audio} isPlaying={isPlaying} />
-      <PlayerTools audio={audio} />
+      <PlayerTools onOpenEqualizer={onOpenEqualizer} />
     </footer>
   )
 }
