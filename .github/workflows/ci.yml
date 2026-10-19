@@ -62,3 +62,20 @@ jobs:
 
       - name: Verify Docker first-run and restart
         run: node scripts/test-docker-setup.mjs hollymusic:setup-test
+
+      # 原生音频验收使用内置 WebSocket；此前的应用构建仍验证 Node 20。
+      - name: Set up Node.js for native audio checks
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      # GitHub Ubuntu runner 自带 Chrome；版本随镜像更新并记录在日志中。
+      # 放在 required check 内，音频验收失败也会阻止合并。
+      - name: Verify native equalizer response and automation
+        timeout-minutes: 2
+        env:
+          CHROME_BIN: google-chrome
+        run: |
+          "$CHROME_BIN" --version
+          node scripts/check-equalizer-response.mjs

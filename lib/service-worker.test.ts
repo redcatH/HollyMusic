@@ -680,7 +680,7 @@ it('断网深层路由及带查询参数的安装启动地址均回退首页壳'
   const { handlers, cache } = worker()
   for (const route of ['/playlists/2', '/?source=pwa']) {
     let result!: Promise<Response>
-    handlers.fetch({ request: { method: 'GET', mode: 'navigate', url: `https://holly.test${route}` },
+    handlers.fetch({ request: { headers: new Headers(), method: 'GET', mode: 'navigate', url: `https://holly.test${route}` },
       respondWith: (value: Promise<Response>) => { result = value } })
     expect(await (await result).text()).toBe('offline shell')
   }
@@ -693,6 +693,17 @@ it('API、Subsonic、跨域和写入请求不会写入应用壳缓存', () => {
   for (const [url, method] of [
     ['https://holly.test/api/audio?uid=kw-1', 'GET'], ['https://holly.test/rest/stream', 'GET'],
     ['https://upstream.test/file.mp3', 'GET'], ['https://holly.test/', 'POST'],
-  ]) handlers.fetch({ request: { method, url }, respondWith })
+  ]) handlers.fetch({ request: { headers: new Headers(), method, url }, respondWith })
+  expect(respondWith).not.toHaveBeenCalled()
+})
+
+it('Range、授权请求与音频 destination 不经过应用壳缓存', () => {
+  const { handlers } = worker()
+  const respondWith = vi.fn()
+  for (const request of [
+    { headers: new Headers({ Range: 'bytes=0-10' }) },
+    { headers: new Headers({ Authorization: 'Bearer test' }) },
+    { headers: new Headers(), destination: 'audio' },
+  ]) handlers.fetch({ request: { method: 'GET', url: 'https://holly.test/icon.svg', ...request }, respondWith })
   expect(respondWith).not.toHaveBeenCalled()
 })

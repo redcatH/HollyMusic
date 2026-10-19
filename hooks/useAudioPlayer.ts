@@ -18,6 +18,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { logger } from '@/lib/logger'
+import { bindEqualizerLifecycle } from '@/lib/client/audio-analysis'
 
 interface UseAudioPlayerOptions {
   /** 音频元素创建/销毁通知，供频谱等附属能力接入同一播放实例。 */
@@ -117,6 +118,7 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
     // 正常 /api/audio 同源请求不受影响，部分 Android 内核会据此决定是否向 Web Audio 暴露样本数据。
     audio.crossOrigin = 'anonymous'
     audio.preload = 'auto'
+    const cleanupEqualizer = bindEqualizerLifecycle(audio)
     audioRef.current = audio
     optsRef.current.onAudioElement?.(audio)
 
@@ -288,6 +290,7 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
       audio.pause()
       audio.removeAttribute('src')
       audio.load()
+      cleanupEqualizer()
       audioRef.current = null
       optsRef.current.onAudioElement?.(null)
     }

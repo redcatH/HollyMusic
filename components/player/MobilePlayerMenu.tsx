@@ -11,13 +11,14 @@ import { useLyricsPanel } from '@/hooks/useLyricsPanel'
 import { useFavoritesStore } from '@/lib/store/favorites-store'
 import { shareContent, buildSongShareUrl } from '@/lib/share'
 import { toast } from '@/lib/toast'
+import { EqualizerButton } from './EqualizerPanel'
 import { ProgressBar } from './ProgressBar'
 import { PlayerButton } from './PlayerButton'
 import { QualityList } from './QualityList'
 import { MoreHorizontal, Repeat, Repeat1, Shuffle, Timer, Volume2, VolumeX, ChevronDown, SkipBack, SkipForward, Heart, Share2, Mic2 } from 'lucide-react'
 import { QUALITY_LABEL, QUALITY_ORDER } from '@/lib/quality-options'
 
-export function MobilePlayerMenu() {
+export function MobilePlayerMenu({ audio }: { audio: HTMLAudioElement | null }) {
   const [open, setOpen] = useState(false)
   const [qualityOpen, setQualityOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -88,6 +89,7 @@ export function MobilePlayerMenu() {
             <PlayerButton icon={Heart} label={isFav ? '取消收藏' : '收藏'} active={isFav} disabled={!currentTrack} onClick={() => {
               if (currentTrack) void toggleFavorite(currentTrack.uid).catch(() => toast.error('收藏操作失败，请重试'))
             }} />
+            <EqualizerButton audio={audio} />
             <PlayerButton icon={Share2} label="分享" disabled={!currentTrack} onClick={() => {
               if (currentTrack) void shareContent({ title: currentTrack.name, text: `${currentTrack.name} - ${currentTrack.artist}`, url: buildSongShareUrl(currentTrack.uid) })
             }} />

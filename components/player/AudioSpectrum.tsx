@@ -17,7 +17,7 @@ interface AudioSpectrumProps {
  * 播放、暂停之间保留短暂的视觉过渡；画布隐藏后停止绘制，避免后台耗电。
  *
  * 管线所有权在 lib/client/audio-analysis.ts：只允许在手势内把元素接入已确认
- * running 的音频图。拿不到 analyser 时（iOS 禁止接管、其他内核接管失败或
+ * running 的音频图。拿不到 analyser 时（iOS 默认不接管、其他内核接管失败或
  * 尚未完成）降级为 spectrum-synth 合成动画——纯视觉，不触碰音频链路。
  */
 export function AudioSpectrum({ audio, isPlaying, className = '' }: AudioSpectrumProps) {
@@ -69,7 +69,7 @@ export function AudioSpectrum({ audio, isPlaying, className = '' }: AudioSpectru
     window.addEventListener('touchend', onGesture, { capture: true, passive: true })
     window.addEventListener('click', onGesture, { capture: true, passive: true })
     // 详情页后挂载时复用底栏已初始化的管线，立即开始绘制；尚无管线则渲染合成动画，
-    // 等下个手势接管（iOS 永远走合成，见 audio-analysis 的禁用说明）。
+    // 等下个手势接管（iOS 未明确开启 EQ 时走合成，见 audio-analysis 的说明）。
     bind(getExistingAnalysisPipeline(audio))
 
     return () => {
@@ -88,7 +88,7 @@ export function AudioSpectrum({ audio, isPlaying, className = '' }: AudioSpectru
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    // null = 尚无/无法接管分析管线（iOS、接管失败的内核、手势前的首帧）→ 合成动画。
+    // null = 尚无/无法接管分析管线（iOS 默认模式、接管失败的内核、手势前的首帧）→ 合成动画。
     const analyser = analyserRef.current
 
     const context = canvas.getContext('2d')

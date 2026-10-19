@@ -176,11 +176,11 @@ export function PlayerBar({ audio, onAudioElement }: PlayerBarProps) {
         <div className="flex items-center desktop:hidden">
           <TransportButtons compact />
           <PlayerButton icon={ListMusic} label="队列" onClick={toggleQueue} size="sm" />
-          <MobilePlayerMenu />
+          <MobilePlayerMenu audio={audio} />
         </div>
       </div>
       <PlayerControls audio={audio} isPlaying={isPlaying} />
-      <PlayerTools />
+      <PlayerTools audio={audio} />
     </footer>
   )
 }

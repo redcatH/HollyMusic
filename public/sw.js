@@ -668,7 +668,8 @@ self.addEventListener('fetch', event => {
   }
   // Vite 开发环境只复用音频响应，页面、模块和 HMR 资源全部直接请求开发服务器。
   if (DEVELOPMENT) return
-  if (request.method !== 'GET' || url.origin !== self.location.origin
+  if (request.headers.has('range') || request.headers.has('authorization') || request.destination === 'audio'
+    || request.method !== 'GET' || url.origin !== self.location.origin
     || url.pathname.startsWith('/api/') || url.pathname.startsWith('/rest/')) return
   if (request.mode === 'navigate') {
     event.respondWith((async () => {
