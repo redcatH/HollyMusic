@@ -22,9 +22,18 @@ class Logger {
 
   private formatMessage(level: string, message: string, ...args: unknown[]): string {
     const timestamp = new Date().toISOString()
-    const argsStr = args.length > 0 ? ' ' + args.map(arg => 
-      typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
-    ).join(' ') : ''
+    const argsStr = args.length > 0 ? ' ' + args.map(arg => {
+      // Error 的 message/stack 不可枚举，直接 JSON.stringify 会丢失原因并输出 {}。
+      if (arg instanceof Error) {
+        return JSON.stringify({
+          name: arg.name,
+          message: arg.message,
+          stack: arg.stack,
+          ...('code' in arg ? { code: arg.code } : {}),
+        })
+      }
+      return typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+    }).join(' ') : ''
     return `[${timestamp}] [${level}] ${message}${argsStr}`
   }
 

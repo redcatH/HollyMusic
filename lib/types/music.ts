@@ -30,6 +30,7 @@ export interface MusicInfo {
   typeUrl: Record<string, string>
   // 特定音源的额外字段
   hash?: string // kg
+  albumAudioId?: string | number // kg：专辑内歌曲标识，独立于 songmid
   copyrightId?: string // mg
   songId?: string | number // tx, wy
   strMediaMid?: string // tx
