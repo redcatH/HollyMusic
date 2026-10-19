@@ -63,11 +63,12 @@ export function AudioSpectrum({ audio, isPlaying, className = '' }: AudioSpectru
     audio.addEventListener('playing', onStart)
     audio.addEventListener('pause', onStop)
     audio.addEventListener('ended', onStop)
-    // capture 阶段早于 React 的播放按钮 click，确保仍处在用户手势上下文中。
+    // pointer/touch 提前准备链路；click 留在冒泡阶段，避免音频状态更新
+    // 在 React 处理复选框前还原其 checked。冒泡阶段仍处于真实用户手势内。
     window.addEventListener('pointerdown', onGesture, { capture: true, passive: true })
     window.addEventListener('touchstart', onGesture, { capture: true, passive: true })
     window.addEventListener('touchend', onGesture, { capture: true, passive: true })
-    window.addEventListener('click', onGesture, { capture: true, passive: true })
+    window.addEventListener('click', onGesture, { passive: true })
     // 详情页后挂载时复用底栏已初始化的管线，立即开始绘制；尚无管线则渲染合成动画，
     // 等下个手势接管（iOS 未明确开启 EQ 时走合成，见 audio-analysis 的说明）。
     bind(getExistingAnalysisPipeline(audio))
@@ -80,7 +81,7 @@ export function AudioSpectrum({ audio, isPlaying, className = '' }: AudioSpectru
       window.removeEventListener('pointerdown', onGesture, { capture: true })
       window.removeEventListener('touchstart', onGesture, { capture: true })
       window.removeEventListener('touchend', onGesture, { capture: true })
-      window.removeEventListener('click', onGesture, { capture: true })
+      window.removeEventListener('click', onGesture)
       analyserRef.current = null
     }
   }, [audio])

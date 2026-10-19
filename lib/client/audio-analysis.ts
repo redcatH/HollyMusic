@@ -215,7 +215,9 @@ export function bindEqualizerLifecycle(audio: HTMLAudioElement): () => void {
   }
   const visible = () => { if (!document.hidden && !audio.paused) void resumeAudioPipeline(audio) }
   const play = () => { void resumeAudioPipeline(audio) }
-  window.addEventListener('click', gesture, true)
+  // click 冒泡到 window 时 React 已提交复选框的新值。捕获阶段报告音频状态
+  // 会先触发外部 store 重渲染，还原浏览器刚切换的 checked，导致开关无法切换。
+  window.addEventListener('click', gesture)
   window.addEventListener('touchend', gesture, true)
   window.addEventListener('keydown', gesture, true)
   window.addEventListener('pageshow', visible)
@@ -224,7 +226,7 @@ export function bindEqualizerLifecycle(audio: HTMLAudioElement): () => void {
   // 不订阅媒体 error/playing：它们不能证明 Web Audio 链路失败或恢复。
   return () => {
     stopStatus()
-    window.removeEventListener('click', gesture, true)
+    window.removeEventListener('click', gesture)
     window.removeEventListener('touchend', gesture, true)
     window.removeEventListener('keydown', gesture, true)
     window.removeEventListener('pageshow', visible)
