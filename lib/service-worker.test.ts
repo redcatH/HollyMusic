@@ -349,6 +349,45 @@ it.each(['open', 'chunk', 'manifest'])('临时存储 %s 挂起时先交付播放
   } finally { unblock(); port.onmessage!({ data: { type: 'cancel' } }); await vi.advanceTimersByTimeAsync(0); vi.useRealTimers() }
 })
 
+it.each([16 * 1024, 256 * 1024])('快速下载（每块 %s 字节）遇到正常的写盘延迟时，仍能完成整首缓存且保持内存有界', async chunkBytes => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  const storage = memoryCaches()
+  const temporary = await storage.open('holly-playback-data-v1')
+  const put = temporary.put.getMockImplementation()!
+  let peakWriteBytes = 0
+  temporary.put.mockImplementation(async (key, response) => {
+    peakWriteBytes = Math.max(peakWriteBytes, current.inspect().writeBytes)
+    await new Promise(resolve => setTimeout(resolve, 10))
+    await put(key, response)
+  })
+  const open = storage.open.getMockImplementation()!
+  storage.open.mockImplementation(async name => name === 'holly-playback-data-v1' ? temporary : open(name))
+  const current = worker(false, storage)
+  const port = registerAudio(current.handlers, 'alice-tab', 'fast-download', 'holly-audio-v1:alice', 500_000_000)
+  await port.persisted
+  const bytes = new Uint8Array(4 * 1024 * 1024).fill(97)
+  let offset = 0
+  const stream = new ReadableStream({ pull(controller) {
+    if (offset === bytes.length) { controller.close(); return }
+    controller.enqueue(bytes.slice(offset, offset + chunkBytes))
+    offset += chunkBytes
+  } })
+  current.fetch.mockResolvedValueOnce(new Response(stream, { headers: { 'content-type': 'audio/mpeg', 'content-length': String(bytes.length) } }))
+  try {
+    const { response, finished } = requestAudio(current.handlers, 'bytes=0-')
+    const body = (await response).arrayBuffer()
+    await vi.advanceTimersByTimeAsync(4_000)
+    await finished
+    expect(Buffer.from(await body).equals(Buffer.from(bytes))).toBe(true)
+    expect(current.inspect().writeBytes).toBe(0)
+    expect(peakWriteBytes).toBeLessThanOrEqual(2 * 1024 * 1024)
+    expect(current.inspect().bytes).toBeLessThanOrEqual(8 * 1024 * 1024)
+    expect(port.postMessage.mock.calls.some(([data]) => data.type === 'complete')).toBe(true)
+    expect(port.postMessage.mock.calls.some(([data]) => data.type === 'unavailable')).toBe(false)
+    expect(current.fetch).toHaveBeenCalledOnce()
+  } finally { port.onmessage!({ data: { type: 'cancel' } }); await vi.advanceTimersByTimeAsync(0); vi.useRealTimers() }
+})
+
 it('写盘挂起时队列保持有界，积压只停止缓存，网络数据继续交给播放', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   const storage = memoryCaches()
@@ -367,7 +406,7 @@ it('写盘挂起时队列保持有界，积压只停止缓存，网络数据继�
     const body = (await response).arrayBuffer()
     await vi.advanceTimersByTimeAsync(0)
     expect(current.inspect().writeBytes).toBeLessThanOrEqual(2 * 1024 * 1024)
-    await vi.advanceTimersByTimeAsync(1)
+    await vi.advanceTimersByTimeAsync(250)
     expect(Buffer.from(await body).equals(Buffer.from(bytes))).toBe(true)
     await finished
     expect(port.postMessage).toHaveBeenCalledWith({ type: 'unavailable' })

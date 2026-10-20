@@ -18,7 +18,9 @@ const AUDIO_MEMORY_BYTES = 8 * 1024 * 1024
 const AUDIO_CHUNK_BYTES = PROTOCOL.chunkBytes
 const AUDIO_WRITE_BYTES = 2 * 1024 * 1024
 const AUDIO_WRITE_MS = 5_000
+const AUDIO_WRITE_WAIT_MS = 250
 const hotChunks = new Map()
+const audioWriteWaiters = new Set()
 let audioMemoryBytes = 0
 let audioWriteBytes = 0
 
@@ -35,6 +37,22 @@ async function reportAudioDiagnostic(operation, error, clientId) {
   } catch { /* 页面已关闭或消息不可用时，诊断不能影响播放和清理。 */ }
 }
 
+function notifyAudioWriteRoom() {
+  for (const wake of audioWriteWaiters) wake()
+}
+
+function waitForAudioWriteRoom(entry, length) {
+  if (audioWriteBytes + length <= AUDIO_WRITE_BYTES || entry.writesStopped) return true
+  return new Promise(resolve => {
+    const done = available => { clearTimeout(timer); audioWriteWaiters.delete(check); resolve(available) }
+    const check = () => {
+      if (entry.writesStopped || audioWriteBytes + length <= AUDIO_WRITE_BYTES) done(true)
+    }
+    const timer = setTimeout(() => done(false), AUDIO_WRITE_WAIT_MS)
+    audioWriteWaiters.add(check)
+  })
+}
+
 function stopAudioWrites(entry) {
   if (entry.writesStopped) return
   entry.writesStopped = true
@@ -44,6 +62,7 @@ function stopAudioWrites(entry) {
     chunk.pending = null
   }
   entry.writeQueue = []
+  notifyAudioWriteRoom()
 }
 
 async function audioWrite(entry, action) {
@@ -57,10 +76,19 @@ async function audioWrite(entry, action) {
 
 async function queueAudioWrite(entry, chunk, data) {
   if (entry.writesStopped) return
-  // 到达全局队列上限时只让出一次事件循环，不能等待存储腾出空间。
-  if (audioWriteBytes + data.byteLength > AUDIO_WRITE_BYTES) await new Promise(resolve => setTimeout(resolve, 0))
+  // 快速下载可能短暂领先 Cache Storage；等待有界时间，避免正常写盘延迟被当成失败。
+  // 已读数据仍立即供 Audio 使用；存储挂起时至多等待 250ms，再回退为仅播放。
+  while (!entry.writesStopped && audioWriteBytes + data.byteLength > AUDIO_WRITE_BYTES) {
+    const available = await waitForAudioWriteRoom(entry, data.byteLength)
+    if (entry.writesStopped) return
+    if (!available && audioWriteBytes + data.byteLength > AUDIO_WRITE_BYTES) {
+      void reportAudioDiagnostic('write-queue', new Error('音频写盘队列持续积压，已跳过本次缓存'), entry.clientId)
+      entry.diskFailed = true
+      entry.unavailable()
+      return
+    }
+  }
   if (entry.writesStopped) return
-  if (audioWriteBytes + data.byteLength > AUDIO_WRITE_BYTES) { entry.diskFailed = true; entry.unavailable(); return }
   chunk.pending = data
   audioWriteBytes += chunk.length
   entry.writeQueue.push(chunk)
@@ -82,7 +110,7 @@ async function queueAudioWrite(entry, chunk, data) {
           entry.diskFailed = true
           entry.unavailable()
         }
-        finally { next.pending = null; audioWriteBytes -= next.length }
+        finally { next.pending = null; audioWriteBytes -= next.length; notifyAudioWriteRoom() }
       }
     } finally { entry.diskDrain = null }
   })()
