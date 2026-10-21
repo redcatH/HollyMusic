@@ -1,5 +1,6 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams, Navigate } from 'react-router-dom'
+import { Users, Music, Database, Sparkles, ListTodo, ShieldOff, Settings } from 'lucide-react'
 import { useAuthStore } from '@/hooks/useAuth'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { UsersPanel } from '@/components/admin/UsersPanel'
@@ -8,7 +9,7 @@ import { CachePanel } from '@/components/admin/CachePanel'
 import { RecommendPanel } from '@/components/admin/RecommendPanel'
 import { RecommendTaskPanel } from '@/components/admin/RecommendTaskPanel'
 import { LoginLocksPanel } from '@/components/admin/LoginLocksPanel'
-import { Users, Music, Database, Sparkles, ListTodo, ShieldOff } from 'lucide-react'
+import { SiteSettingsPanel } from '@/components/admin/SiteSettingsPanel'
 
 const TABS = [
   { key: 'users', label: '用户管理', icon: Users },
@@ -17,12 +18,13 @@ const TABS = [
   { key: 'recommend', label: '推荐管理', icon: Sparkles },
   { key: 'recommend-tasks', label: '推荐任务', icon: ListTodo },
   { key: 'cache', label: '缓存管理', icon: Database },
+  { key: 'site', label: '站点设置', icon: Settings },
 ] as const
 
 type TabKey = (typeof TABS)[number]['key']
 
 function isValidTab(v: string | null): v is TabKey {
-  return v === 'users' || v === 'login-locks' || v === 'sources' || v === 'recommend' || v === 'recommend-tasks' || v === 'cache'
+  return TABS.some(tab => tab.key === v)
 }
 
 export function AdminPage() {
@@ -30,9 +32,14 @@ export function AdminPage() {
   const [searchParams] = useSearchParams()
   const authenticated = useAuthStore(s => s.authenticated)
   const currentUsername = useAuthStore(s => s.username)
+  const activeTabRef = useRef<HTMLButtonElement>(null)
 
   const tabRaw = searchParams.get('tab')
   const tab: TabKey = isValidTab(tabRaw) ? tabRaw : 'users'
+
+  useEffect(() => {
+    activeTabRef.current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+  }, [tab, authenticated, currentUsername])
 
   // 鉴权：未登录踢登录页，非 admin 踢首页
   useEffect(() => {
@@ -59,15 +66,17 @@ export function AdminPage() {
 
   return (
     <div className="p-6">
-      <div className="mb-6 flex gap-1 border-b border-border">
+      <div className="mb-6 flex gap-1 overflow-x-auto border-b border-border">
         {TABS.map(t => {
           const active = tab === t.key
           const Icon = t.icon
           return (
             <button
               key={t.key}
+              ref={active ? activeTabRef : undefined}
+              aria-current={active ? 'page' : undefined}
               onClick={() => switchTab(t.key)}
-              className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+              className={`flex shrink-0 items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
                 active
                   ? 'border-primary text-primary'
                   : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -87,6 +96,7 @@ export function AdminPage() {
         {tab === 'recommend' && <RecommendPanel />}
         {tab === 'recommend-tasks' && <RecommendTaskPanel />}
         {tab === 'cache' && <CachePanel />}
+        {tab === 'site' && <SiteSettingsPanel />}
       </div>
     </div>
   )

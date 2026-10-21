@@ -2,11 +2,13 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowRight, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { useAuthStore } from '@/hooks/useAuth'
+import { useSiteSettingsStore } from '@/lib/store/site-settings-store'
 import { AuthLayout } from '../components/AuthLayout'
 
 const INPUT_CLASS = 'h-12 w-full rounded-xl border border-border bg-background/45 px-3.5 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:opacity-60'
 
 export function SetupPage() {
+  const siteName = useSiteSettingsStore(s => s.settings.name)
   const navigate = useNavigate()
   const setup = useAuthStore(s => s.setup)
   const tokenRequired = useAuthStore(s => s.setupTokenRequired)
@@ -45,7 +47,7 @@ export function SetupPage() {
   }
 
   return (
-    <AuthLayout title="欢迎使用 Holly Music" description="设置管理员密码，开启你的音乐时光。" footer="管理员可管理账号与音源。完成设置后即可开始使用。">
+    <AuthLayout title={`欢迎使用 ${siteName}`} description="设置管理员密码，开启你的音乐时光。" footer="管理员可管理账号与音源。完成设置后即可开始使用。">
       <form onSubmit={submit} className="flex flex-col gap-5">
         <div>
           <label htmlFor="setup-username" className="mb-2 block text-sm font-medium">管理员账号</label>

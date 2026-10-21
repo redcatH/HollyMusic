@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
 import { Music2, Heart, ListMusic, Headphones } from 'lucide-react'
+import { useSiteSettingsStore } from '@/lib/store/site-settings-store'
+import { ProjectAttribution } from '@/components/shared/ProjectAttribution'
 import { AppearanceButton } from './AppearanceSettings'
 
 /** 登录与首次设置共享品牌、配色、插画和响应式布局。 */
@@ -9,10 +11,11 @@ export function AuthLayout({ title, description, footer, children }: {
   footer: string
   children: ReactNode
 }) {
+  const settings = useSiteSettingsStore(s => s.settings)
   return (
     <div className="app-atmosphere login-page safe-form-page flex min-h-dvh flex-col px-5 py-5 sm:px-10 sm:py-7">
       <header className="mx-auto flex w-full max-w-6xl items-center justify-between">
-        <div className="flex items-center gap-2.5"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground"><Music2 className="h-5 w-5" /></span><span className="text-base font-bold tracking-tight">Holly Music</span></div>
+        <div className="flex min-w-0 items-center gap-2.5"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground"><Music2 className="h-5 w-5" /></span><span className="truncate text-base font-bold tracking-tight" title={settings.name}>{settings.name}</span></div>
         <AppearanceButton compact />
       </header>
       <main className="mx-auto grid w-full max-w-5xl flex-1 items-center gap-10 py-9 md:grid-cols-[1.1fr_1fr] md:gap-14 md:py-12">
@@ -30,15 +33,18 @@ export function AuthLayout({ title, description, footer, children }: {
             <span className="flex items-center gap-1.5"><ListMusic className="h-4 w-4 text-primary" /> 专属歌单</span>
           </div>
         </section>
-        <section className="login-form-card mx-auto w-full max-w-md rounded-3xl border border-border/60 bg-card/90 p-6 sm:p-9">
+        <section className="login-form-card mx-auto w-full min-w-0 max-w-md rounded-3xl border border-border/60 bg-card/90 p-6 sm:p-9">
           <span className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary"><Headphones className="h-6 w-6" /></span>
-          <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-          <p className="mb-8 mt-2 text-sm leading-relaxed text-muted-foreground">{description}</p>
+          <h1 className="break-words text-2xl font-semibold tracking-tight">{title}</h1>
+          <p className="mb-8 mt-2 break-words text-sm leading-relaxed text-muted-foreground">{description}</p>
           {children}
           <p className="mt-7 border-t border-border/50 pt-5 text-center text-xs leading-relaxed text-muted-foreground">{footer}</p>
         </section>
       </main>
-      <p className="text-center text-xs tracking-wide text-muted-foreground/80">Holly Music · 把时间交给音乐</p>
+      <footer className="space-y-2 text-center">
+        {settings.description && <p className="break-words text-xs tracking-wide text-muted-foreground/80">{settings.description}</p>}
+        <ProjectAttribution />
+      </footer>
     </div>
   )
 }

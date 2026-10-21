@@ -6,7 +6,7 @@ import { logger } from '@/lib/logger'
 /** 首装期间同时约束 Web API 与显式关闭认证的 Subsonic 入口。 */
 export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname
-  if (['/api/health', '/api/auth/me', '/api/setup'].includes(path)) return NextResponse.next()
+  if (['/api/health', '/api/auth/me', '/api/setup', '/api/site/settings', '/api/site/manifest'].includes(path)) return NextResponse.next()
   try {
     if ((await getInitializationStatus()).setupRequired) {
       return createErrorResponse('SETUP_REQUIRED', '请先在网页完成管理员设置', 428)

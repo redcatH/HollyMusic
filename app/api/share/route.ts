@@ -1,6 +1,9 @@
 import { NextRequest } from 'next/server'
 import { resolveMusicInfoById } from '@/lib/db'
 import type { QualityType } from '@/lib/types/music'
+import { logger } from '@/lib/logger'
+import { DEFAULT_SITE_SETTINGS, PROJECT_URL } from '@/lib/site-settings'
+import { getSiteSettings } from '@/lib/services/site-settings'
 
 /**
  * 分享落地页（服务端渲染，自包含页内播放页）。
@@ -42,6 +45,11 @@ function pickShareQuality(types: { type: QualityType }[]): string {
 }
 
 export async function GET(request: NextRequest) {
+  const site = await getSiteSettings().catch(error => {
+    logger.warn('[share] 使用默认站点设置:', error)
+    return DEFAULT_SITE_SETTINGS
+  })
+  const siteNameE = escapeHtml(site.name)
   const url = new URL(request.url)
   const host = request.headers.get('host') || url.host
   const proto = request.headers.get('x-forwarded-proto') || url.protocol.replace(':', '')
@@ -49,9 +57,9 @@ export async function GET(request: NextRequest) {
   const uid = url.searchParams.get('uid')
 
   // 默认值（查不到歌时降级）
-  let title = 'Holly Music'
-  let songName = 'Holly Music'
-  let artist = '多源在线音乐播放器'
+  let title = site.name
+  let songName = site.name
+  let artist = site.description
   let metaLine = ''
   let interval = ''
   let ogImage = `${origin}/icons/apple-touch-icon.png`
@@ -66,7 +74,7 @@ export async function GET(request: NextRequest) {
       found = true
       songName = mi.name
       artist = mi.singer
-      title = `${mi.name} - ${mi.singer}`
+      title = `${mi.name} - ${mi.singer} · ${site.name}`
       interval = mi.interval || ''
       ogImage = `${origin}/api/cover/${encodeURIComponent(uid)}`
       coverSrc = `/api/cover/${encodeURIComponent(uid)}`
@@ -93,7 +101,7 @@ export async function GET(request: NextRequest) {
   const coverSrcE = escapeHtml(coverSrc)
   const audioSrcE = escapeHtml(audioSrc)
   const intervalE = escapeHtml(interval || '--:--')
-  const openAppLabelMobileE = escapeHtml(found ? '打开 App 听更多' : '打开 Holly Music')
+  const openAppLabelMobileE = escapeHtml(found ? '打开 App 听更多' : `打开 ${site.name}`)
   const openAppLabelPcE = escapeHtml(found ? '进入网页版播放器' : '进入网页版')
 
   // found=true：可点击的播放按钮（<button>，不导航）
@@ -141,7 +149,7 @@ export async function GET(request: NextRequest) {
 <meta property="og:description" content="${artistE}">
 <meta property="og:image" content="${img}">
 <meta property="og:url" content="${ogUrl}">
-<meta property="og:site_name" content="Holly Music">
+<meta property="og:site_name" content="${siteNameE}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${t}">
 <meta name="twitter:description" content="${artistE}">
@@ -177,7 +185,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica N
 .open-app-btn:active{transform:scale(.96);background:#1ed760}
 .open-app-icon{display:block;width:18px;height:18px;fill:currentColor}
 .label-pc{display:none}
-.brand{margin-top:40px;font-size:13px;color:#6a6a6a;letter-spacing:.5px}
+.brand{margin-top:40px;max-width:100%;padding:0 24px;text-align:center;overflow-wrap:anywhere;font-size:13px;color:#6a6a6a;letter-spacing:.5px}
+.brand a{display:block;margin-top:10px;color:inherit;text-decoration:none;font-size:12px}
+.open-app-btn{max-width:100%;overflow-wrap:anywhere}
 .brand b{color:#1DB954;font-weight:700}
 @media (min-width:768px){
 .card{max-width:440px}
@@ -205,7 +215,7 @@ ${infoBlock}
 <span class="label-pc">${openAppLabelPcE}</span>
 </a>
 </div>
-<div class="brand"><b>♪</b> Holly Music</div>
+<div class="brand"><b>♪</b> ${siteNameE}<a href="${PROJECT_URL}" target="_blank" rel="noopener noreferrer">Powered by Holly Music</a></div>
 <script>
 (function(){
   var audio = document.getElementById('audio');
@@ -336,7 +346,7 @@ ${infoBlock}
   return new Response(html, {
     headers: {
       'Content-Type': 'text/html; charset=utf-8',
-      'Cache-Control': 'public, max-age=300',
+      'Cache-Control': 'no-cache',
     },
   })
 }

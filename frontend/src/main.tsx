@@ -4,6 +4,7 @@ import { AppRouter } from './components/AppRouter'
 import { App } from './App'
 import { ThemeProvider } from './components/ThemeProvider'
 import { ServiceWorkerRegister } from './components/ServiceWorkerRegister'
+import { SiteMetadata } from './components/SiteMetadata'
 import './globals.css'
 
 createRoot(document.getElementById('root')!).render(
@@ -11,6 +12,7 @@ createRoot(document.getElementById('root')!).render(
     <ThemeProvider>
       <ServiceWorkerRegister />
       <AppRouter>
+        <SiteMetadata />
         <App />
       </AppRouter>
     </ThemeProvider>

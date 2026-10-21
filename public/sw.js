@@ -699,6 +699,25 @@ self.addEventListener('fetch', event => {
   if (request.headers.has('range') || request.headers.has('authorization') || request.destination === 'audio'
     || request.method !== 'GET' || url.origin !== self.location.origin
     || url.pathname.startsWith('/api/') || url.pathname.startsWith('/rest/')) return
+  // 站点名称可在不发布新前端的情况下修改；清单优先联网，离线回退最近的成功响应。
+  if (url.pathname === '/manifest.json') {
+    event.respondWith((async () => {
+      try {
+        const response = await fetch(request, { cache: 'no-cache', signal: AbortSignal.timeout(4000) })
+        if (response.ok && /application\/(manifest\+)?json/i.test(response.headers.get('content-type') || '')) {
+          const settings = await response.clone().json()
+          if (typeof settings.name === 'string' && typeof settings.start_url === 'string') {
+            try { await (await caches.open(SHELL_CACHE)).put('/manifest.json', response.clone()) }
+            catch { /* 存储不可用仍返回成功的联网响应。 */ }
+            return response
+          }
+        }
+      } catch { /* 断网、超时或无效清单时保留最近成功的名称。 */ }
+      try { return await (await caches.open(SHELL_CACHE)).match('/manifest.json') || Response.error() }
+      catch { return Response.error() }
+    })())
+    return
+  }
   if (request.mode === 'navigate') {
     event.respondWith((async () => {
       try {

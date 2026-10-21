@@ -6,7 +6,7 @@ vi.mock('@/lib/logger', () => ({ logger: { error: vi.fn() } }))
 const { proxy } = await import('../proxy')
 it('首装保持健康检查和初始化可用，拦截业务 API 及匿名 Subsonic', async () => {
   status.mockResolvedValue({ setupRequired: true })
-  for (const url of ['/api/health', '/api/auth/me', '/api/setup']) {
+  for (const url of ['/api/health', '/api/auth/me', '/api/setup', '/api/site/settings', '/api/site/manifest']) {
     expect((await proxy(new NextRequest(`http://localhost${url}`))).headers.get('x-middleware-next')).toBe('1')
   }
   for (const url of ['/api/search', '/rest/createPlaylist.view']) {

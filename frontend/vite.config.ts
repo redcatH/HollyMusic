@@ -32,6 +32,11 @@ export default defineConfig({
     ...(process.platform === 'win32' ? { watch: { usePolling: true, interval: 1000 } } : {}),
     // 开发时代理 /api 到 Next.js dev server (端口 3000)
     proxy: {
+      '/manifest.json': {
+        target: 'http://localhost:3000',
+        changeOrigin: false,
+        rewrite: url => url.replace(/^\/manifest\.json/, '/api/site/manifest'),
+      },
       '/api': {
         target: 'http://localhost:3000',
         // changeOrigin: false 保留原始 Host（localhost:5173），让 /api/share 构造的跳转 URL 指回前端 SPA，而非 next 端口

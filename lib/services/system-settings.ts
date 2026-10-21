@@ -1,5 +1,6 @@
 import type { Prisma } from '@/lib/generated/prisma'
 import { prisma } from '@/lib/db'
+import { DEFAULT_SITE_SETTINGS, parseSiteSettings } from '@/lib/site-settings'
 
 export interface InitializationSetting {
   version: 1
@@ -12,6 +13,7 @@ export interface SystemSettingValues {
   'system.initialization': InitializationSetting
   'music.enabledPlatforms': Array<'tx' | 'wy' | 'kw' | 'kg' | 'mg'>
   'site.name': string
+  'site.description': string
 }
 
 export type SettingDatabase = Pick<Prisma.TransactionClient, 'systemSetting'>
@@ -41,8 +43,12 @@ function validateSetting<K extends keyof SystemSettingValues>(key: K, value: unk
         value.every(platform => PLATFORMS.some(known => known === platform))
       break
     case 'site.name':
-      valid = typeof value === 'string' && value.trim().length > 0 && value.length <= 100
-      break
+    case 'site.description':
+      try {
+        const field = key === 'site.name' ? 'name' : 'description'
+        const settings = parseSiteSettings({ ...DEFAULT_SITE_SETTINGS, [field]: value })
+        return settings[field] as SystemSettingValues[K]
+      } catch { throw new SystemSettingError(`设置项格式无效: ${key}`) }
   }
   if (!valid) throw new SystemSettingError(`设置项格式无效: ${key}`)
   return value as SystemSettingValues[K]
@@ -69,7 +75,7 @@ export async function setSystemSetting<K extends EditableSettingKey>(
   value: SystemSettingValues[K],
   db: SettingDatabase = prisma,
 ): Promise<void> {
-  if (key !== 'music.enabledPlatforms' && key !== 'site.name') {
+  if (key !== 'music.enabledPlatforms' && key !== 'site.name' && key !== 'site.description') {
     throw new SystemSettingError('该设置项不能通过通用设置服务修改')
   }
   const valueJson = JSON.stringify(validateSetting(key, value))

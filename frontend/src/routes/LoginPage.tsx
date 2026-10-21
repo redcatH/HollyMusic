@@ -2,9 +2,11 @@ import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { ArrowRight, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { useAuthStore } from '@/hooks/useAuth'
+import { useSiteSettingsStore } from '@/lib/store/site-settings-store'
 import { AuthLayout } from '../components/AuthLayout'
 
 export function LoginPage() {
+  const siteName = useSiteSettingsStore(s => s.settings.name)
   const navigate = useNavigate()
   const location = useLocation()
   const login = useAuthStore(s => s.login)
@@ -39,7 +41,7 @@ export function LoginPage() {
   }
 
   return (
-    <AuthLayout title="欢迎回来" description="登录 Holly Music，继续你的音乐旅程。" footer="账号由管理员提供，登录后即可使用音乐库。">
+    <AuthLayout title="欢迎回来" description={`登录 ${siteName}，继续你的音乐旅程。`} footer="账号由管理员提供，登录后即可使用音乐库。">
       <form onSubmit={submit} className="flex flex-col gap-5">
         <div>
           <label htmlFor="login-username" className="mb-2 block text-sm font-medium">用户名</label>

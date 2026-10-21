@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Home, Search, Heart, ListMusic, History, Music2, LogIn, LogOut, User, ChevronUp, Settings, KeyRound, Shuffle, Download, SlidersHorizontal } from 'lucide-react'
+import { Home, Search, Heart, ListMusic, History, Music2, LogIn, LogOut, User, ChevronUp, Settings, KeyRound, Shuffle, Download, SlidersHorizontal, Info } from 'lucide-react'
 import { useAuthStore } from '@/hooks/useAuth'
 import { usePwaInstall } from '@/hooks/usePwaInstall'
 import { isOfflineStorageAvailable } from '@/lib/offline-audio'
-import { AppearanceButton } from './AppearanceSettings'
+import { useSiteSettingsStore } from '@/lib/store/site-settings-store'
 import { ModalMask } from '@/components/shared/ModalMask'
+import { AppearanceButton } from './AppearanceSettings'
 
 const nav = [
   { href: '/', label: '首页', icon: Home, protected: false },
@@ -18,6 +19,7 @@ const nav = [
 ]
 
 interface ContentProps {
+  onAbout: () => void
   /** 导航/登出动作后回调（小屏抽屉用于关闭） */
   onNavigate?: () => void
 }
@@ -83,7 +85,8 @@ function NavLink({
 /**
  * Sidebar 共享内容：logo + 主导航 + 底部用户区（含用户管理下拉）。
  */
-function SidebarContent({ onNavigate }: ContentProps) {
+function SidebarContent({ onNavigate, onAbout }: ContentProps) {
+  const siteName = useSiteSettingsStore(s => s.settings.name)
   const navigate = useNavigate()
   const location = useLocation()
   const authenticated = useAuthStore(s => s.authenticated)
@@ -116,9 +119,9 @@ function SidebarContent({ onNavigate }: ContentProps) {
 
   return (
     <>
-      <div className="mb-6 flex shrink-0 items-center gap-2.5 px-2 py-4">
-        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm"><Music2 className="h-5 w-5" /></span>
-        <span className="text-base font-bold tracking-tight">Holly Music</span>
+      <div className="mb-6 flex min-w-0 shrink-0 items-center gap-2.5 px-2 py-4">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm"><Music2 className="h-5 w-5" /></span>
+        <span className="truncate text-base font-bold tracking-tight" title={siteName}>{siteName}</span>
       </div>
       <nav className="flex shrink-0 flex-col gap-1">
         {nav.filter(item => item.href !== '/offline' || canCacheSongs).map(item => (
@@ -183,6 +186,9 @@ function SidebarContent({ onNavigate }: ContentProps) {
                   <KeyRound className="h-5 w-5" />
                   修改密码
                 </button>
+                <button type="button" onClick={() => { setMenuOpen(false); onNavigate?.(); onAbout() }} className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+                  <Info className="h-5 w-5" />关于 Holly Music
+                </button>
                 <button
                   onClick={handleLogout}
                   disabled={!!offlineUsername}
@@ -210,10 +216,10 @@ function SidebarContent({ onNavigate }: ContentProps) {
 }
 
 /** 大屏常驻侧边栏（≥768px） */
-export function Sidebar() {
+export function Sidebar({ onAbout }: Pick<ContentProps, 'onAbout'>) {
   return (
     <aside className="hidden w-48 shrink-0 flex-col overflow-y-auto rounded-[22px] border border-sidebar-border/50 bg-sidebar p-3 text-sidebar-foreground desktop:flex lg:w-52 xl:w-56">
-      <SidebarContent />
+      <SidebarContent onAbout={onAbout} />
     </aside>
   )
 }
@@ -221,7 +227,7 @@ export function Sidebar() {
 /**
  * 小屏导航抽屉（<768px）
  */
-export function MobileSidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function MobileSidebar({ open, onClose, onAbout }: { open: boolean; onClose: () => void; onAbout: () => void }) {
   return (
     <div className="desktop:hidden">
       <ModalMask
@@ -237,7 +243,7 @@ export function MobileSidebar({ open, onClose }: { open: boolean; onClose: () =>
         }`}
         aria-hidden={!open}
       >
-        <SidebarContent onNavigate={onClose} />
+        <SidebarContent onNavigate={onClose} onAbout={onAbout} />
       </aside>
     </div>
   )

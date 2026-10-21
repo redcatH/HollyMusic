@@ -1,35 +1,13 @@
 import { useLocation } from 'react-router-dom'
 import { Menu, Music2 } from 'lucide-react'
+import { useSiteSettingsStore } from '@/lib/store/site-settings-store'
 import { AppearanceButton } from './AppearanceSettings'
-
-const TITLES: Array<{ match: string; title: string }> = [
-  { match: '/discover/toplists/', title: '排行榜' },
-  { match: '/discover/playlists/', title: '歌单详情' },
-  { match: '/playlists/ai-create', title: 'AI 建歌单' },
-  { match: '/admin/users', title: '用户管理' },
-  { match: '/playlists/', title: '歌单详情' },
-  { match: '/playlists', title: '我的歌单' },
-  { match: '/favorites', title: '我的收藏' },
-  { match: '/history', title: '播放历史' },
-  { match: '/offline', title: '本地歌曲' },
-  { match: '/search', title: '搜索' },
-  { match: '/recommend', title: '推荐' },
-  { match: '/', title: '发现音乐' },
-]
-
-function getTitle(pathname: string): string {
-  for (const t of TITLES) {
-    if (t.match === pathname) return t.title
-  }
-  for (const t of TITLES) {
-    if (t.match !== '/' && pathname.startsWith(t.match)) return t.title
-  }
-  return 'Holly Music'
-}
+import { getPageName } from './SiteMetadata'
 
 export function MobileHeader({ onMenuClick }: { onMenuClick: () => void }) {
   const { pathname } = useLocation()
-  const title = getTitle(pathname)
+  const siteName = useSiteSettingsStore(s => s.settings.name)
+  const title = getPageName(pathname) ?? siteName
 
   return (
     <header className="glass-surface safe-header relative z-10 flex shrink-0 items-center gap-3 border-b border-border px-2 desktop:hidden">

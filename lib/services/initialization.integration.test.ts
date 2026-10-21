@@ -11,6 +11,8 @@ vi.stubEnv('DATABASE_URL', databaseUrl)
 const { prisma } = await import('../db')
 const { completeInitialization, getInitializationStatus } = await import('./initialization')
 const { getSystemSetting, setSystemSetting } = await import('./system-settings')
+const { getSiteSettings, updateSiteSettings } = await import('./site-settings')
+const { DEFAULT_SITE_SETTINGS } = await import('../site-settings')
 const migrationName = '20261015000000_add_system_settings'
 const migrationsRoot = path.resolve('prisma/migrations')
 const migrationSql = readFileSync(path.join(migrationsRoot, migrationName, 'migration.sql'), 'utf8')
@@ -41,6 +43,33 @@ afterAll(async () => {
 })
 
 describe('真实 SQLite 初始化与设置', () => {
+  it('站点设置缺省无需落库，保存后新连接仍可读取，并支持空简介与恢复默认', async () => {
+    expect(await getSiteSettings()).toEqual(DEFAULT_SITE_SETTINGS)
+    expect(await prisma.systemSetting.count({ where: { key: { startsWith: 'site.' } } })).toBe(0)
+    await updateSiteSettings({ name: ' 我的音乐 ', description: '' })
+    const anotherConnection = new PrismaClient({ datasourceUrl: databaseUrl })
+    try { expect(await getSiteSettings(anotherConnection)).toEqual({ name: '我的音乐', description: '' }) }
+    finally { await anotherConnection.$disconnect() }
+    await updateSiteSettings(DEFAULT_SITE_SETTINGS)
+    expect(await getSiteSettings()).toEqual(DEFAULT_SITE_SETTINGS)
+  })
+
+  it('站点设置校验失败不写入，第二字段写入故障时回滚名称', async () => {
+    await expect(updateSiteSettings({ name: '新名称', description: 123 })).rejects.toThrow()
+    expect(await getSiteSettings()).toEqual(DEFAULT_SITE_SETTINGS)
+    await prisma.$executeRawUnsafe(`CREATE TRIGGER reject_site BEFORE INSERT ON "SystemSetting" WHEN NEW.key = 'site.description' BEGIN SELECT RAISE(ABORT, 'test failure'); END`)
+    try { await expect(updateSiteSettings({ name: '不应保存', description: '失败' })).rejects.toThrow() }
+    finally { await prisma.$executeRawUnsafe('DROP TRIGGER reject_site') }
+    expect(await getSiteSettings()).toEqual(DEFAULT_SITE_SETTINGS)
+  })
+
+  it('历史实例仅有名称时保留该名称，损坏设置会报告错误而不返回任意内容', async () => {
+    await setSystemSetting('site.name', '旧站点')
+    expect(await getSiteSettings()).toEqual({ ...DEFAULT_SITE_SETTINGS, name: '旧站点' })
+    await prisma.systemSetting.update({ where: { key: 'site.name' }, data: { valueJson: '123' } })
+    await expect(getSiteSettings()).rejects.toThrow('设置项格式无效')
+  })
+
   it('新库迁移即持久化待设置状态，重新连接后仍可继续', async () => {
     expect(await getInitializationStatus()).toMatchObject({ setupRequired: true, setupRecoveryRequired: false })
     const anotherConnection = new PrismaClient({ datasourceUrl: databaseUrl })

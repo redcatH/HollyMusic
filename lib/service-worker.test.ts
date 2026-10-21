@@ -13,7 +13,7 @@ function worker(development = false, storage?: ReturnType<typeof memoryCaches>) 
   const caches = storage ?? { open: vi.fn(async (name: string) => name === 'holly-playback-data-v1' ? chunks.open(name) : cache), keys: vi.fn(async () => [
     'holly-shell-0123456789abcdef', 'holly-shell-old', 'holly-static-v3', 'holly-pages-v3', 'holly-audio-v1:alice', 'other-app',
   ]), delete: vi.fn(async () => true) }
-  const fetch = vi.fn(async () => { throw new TypeError('offline') })
+  const fetch = vi.fn<(request?: Request, init?: RequestInit) => Promise<Response>>(async () => { throw new TypeError('offline') })
   const diagnostics = vi.fn()
   const self = { addEventListener: (name: string, handler: (event: unknown) => void) => { handlers[name] = handler },
     __HOLLY_SW_BUILD__: { version: '0123456789abcdef', precache: ['/', '/theme-init.js'] },
@@ -292,6 +292,28 @@ function memoryCaches() {
     delete: vi.fn(async (name: string) => stores.delete(name)),
   }
 }
+
+it('PWA 清单联网更新名称，断网及服务失败回退最近成功的清单', async () => {
+  const storage = memoryCaches()
+  const current = worker(false, storage)
+  const cache = await storage.open('holly-shell-0123456789abcdef')
+  await cache.put('/manifest.json', Response.json({ name: '旧站点', start_url: '/?source=pwa' }))
+  const requestManifest = async () => {
+    let response!: Promise<Response>
+    current.handlers.fetch({ request: new Request('https://holly.test/manifest.json?name=new'),
+      respondWith: (result: Promise<Response>) => { response = result } })
+    return (await response).json()
+  }
+  current.fetch.mockResolvedValueOnce(Response.json({ name: '新站点', start_url: '/?source=pwa' }, { headers: { 'content-type': 'application/manifest+json' } }))
+  expect(await requestManifest()).toMatchObject({ name: '新站点' })
+  expect(await requestManifest()).toMatchObject({ name: '新站点' })
+  current.fetch.mockResolvedValueOnce(new Response('unavailable', { status: 503 }))
+  expect(await requestManifest()).toMatchObject({ name: '新站点' })
+  current.fetch.mockResolvedValueOnce(new Response('<html>fallback</html>', { headers: { 'content-type': 'text/html' } }))
+  expect(await requestManifest()).toMatchObject({ name: '新站点' })
+  current.fetch.mockResolvedValueOnce(Response.json({ success: false }))
+  expect(await requestManifest()).toMatchObject({ name: '新站点' })
+})
 
 async function seedOffline(storage: ReturnType<typeof memoryCaches>, account = 'alice', body = 'abcdefgh') {
   await (await storage.open(`holly-audio-v1:${account}`)).put('https://holly.test/__offline_audio/kw-1/320k', new Response(body, {

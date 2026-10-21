@@ -35,7 +35,7 @@ afterEach(async () => {
 })
 async function render() {
   await act(async () => {
-    root.render(<MemoryRouter><ServiceWorkerRegister /><Sidebar /><MobileSidebar open onClose={closeDrawer} /></MemoryRouter>)
+    root.render(<MemoryRouter><ServiceWorkerRegister /><Sidebar onAbout={() => {}} /><MobileSidebar open onClose={closeDrawer} onAbout={() => {}} /></MemoryRouter>)
   })
 }
 async function openMenus() {

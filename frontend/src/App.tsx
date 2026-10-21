@@ -19,6 +19,8 @@ import { usePlayerStore } from '@/lib/store/player-store'
 import { useSearchStore } from '@/lib/store/search-store'
 import { useContextMenuStore } from '@/lib/store/context-menu-store'
 import { useAuthStore } from '@/hooks/useAuth'
+import { useSiteSettingsStore } from '@/lib/store/site-settings-store'
+import { AboutDialog } from '@/components/shared/AboutDialog'
 import { usePlayerPersistence } from '@/hooks/usePlayerPersistence'
 import { LyricsPanelContext } from '@/hooks/useLyricsPanel'
 import { useLyricsHistory } from './hooks/useLyricsHistory'
@@ -40,6 +42,8 @@ import { ChangePasswordPage } from './routes/ChangePasswordPage'
 import { EqualizerPage } from './routes/EqualizerPage'
 
 export function App() {
+  const siteName = useSiteSettingsStore(s => s.settings.name)
+  const [aboutOpen, setAboutOpen] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
   const initAuth = useAuthStore(s => s.init)
@@ -161,7 +165,7 @@ export function App() {
       <button onClick={() => void initAuth()} className="h-12 w-full rounded-xl bg-primary text-sm font-semibold text-primary-foreground">重新连接</button>
     </AuthLayout>
   }
-  if (authenticated === null && !offlineUsername) return <div role="status" className="flex min-h-dvh items-center justify-center bg-background text-sm text-muted-foreground">正在连接 Holly Music...</div>
+  if (authenticated === null && !offlineUsername) return <div role="status" className="flex min-h-dvh items-center justify-center bg-background px-5 text-center text-sm text-muted-foreground">正在连接 {siteName}...</div>
   if (setupRequired === true) {
     return location.pathname === '/setup' ? <SetupPage /> : <Navigate to="/setup" replace />
   }
@@ -191,7 +195,7 @@ export function App() {
       <div className="app-atmosphere app-viewport flex h-dvh flex-col text-foreground">
         <MobileHeader onMenuClick={() => setDrawerOpen(true)} />
         <div className="flex min-h-0 flex-1 overflow-hidden desktop:gap-3 desktop:px-3 desktop:pt-3">
-          <Sidebar />
+          <Sidebar onAbout={() => setAboutOpen(true)} />
           <div className="app-main-frame flex min-h-0 min-w-0 flex-1 overflow-hidden">
             {!offlineUsername && <CachedHomePage key={username} />}
             <main hidden={!offlineUsername && location.pathname === '/'} className="app-main min-h-0 min-w-0 flex-1 overflow-y-auto" tabIndex={0} aria-label="页面内容">
@@ -225,7 +229,8 @@ export function App() {
         <PlayerBar audio={audioElement} onAudioElement={setAudioElement} onOpenEqualizer={() => {
           if (location.pathname !== '/equalizer') void navigate('/equalizer', { state: { equalizerEntry: true } })
         }} />
-        <MobileSidebar open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+        <MobileSidebar open={drawerOpen} onClose={() => setDrawerOpen(false)} onAbout={() => setAboutOpen(true)} />
+        <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />
         <QueuePanel />
         <LyricsPanel audio={audioElement} />
         <SongContextMenu />
