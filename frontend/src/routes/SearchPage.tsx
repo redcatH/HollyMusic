@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useSearch } from '@/hooks/useSearch'
 import { useSearchStore } from '@/lib/store/search-store'
@@ -10,7 +10,7 @@ import { toTrack } from '@/lib/types/player'
 import type { SourceType } from '@/lib/types/music'
 
 const SOURCES: { value: SourceType | 'all'; label: string }[] = [
-  { value: 'all', label: '全部' },
+  { value: 'all', label: '全部平台' },
   { value: 'tx', label: 'QQ' },
   { value: 'wy', label: '网易' },
   { value: 'kw', label: '酷我' },
@@ -21,7 +21,8 @@ const SOURCES: { value: SourceType | 'all'; label: string }[] = [
 export function SearchPage() {
   // keyword/source/results/loading 全部来自 search-store（外部状态）：
   // 离开搜索页再回来时输入框与结果都保留。
-  const { results, loading, pendingSources, error, keyword, lastKeyword, source, setKeyword, setSource, run } = useSearch()
+  const { results, loading, pendingSources, error, keyword, lastKeyword, source, lastSource,
+    nextPage, loadingMore, loadMoreError, sourceErrors, loadMore, retrySource, setKeyword, setSource, run } = useSearch()
   const inputRef = useRef<HTMLInputElement>(null)
   const [searchParams, setSearchParams] = useSearchParams()
   const initialized = useRef(false)
@@ -68,7 +69,7 @@ export function SearchPage() {
     inputRef.current?.focus()
   }
 
-  const tracks = results.map(s => toTrack({ uid: s.uid, musicInfo: s }))
+  const tracks = useMemo(() => results.map(s => toTrack({ uid: s.uid, musicInfo: s })), [results])
 
   return (
     <div className="page-shell">
@@ -126,6 +127,15 @@ export function SearchPage() {
         ))}
       </div>
 
+      {lastKeyword && lastSource === 'all' && (
+        <p className="mb-3 text-xs text-muted-foreground">展示各平台的首批结果，查看更多请切换平台。</p>
+      )}
+      {SOURCES.filter(s => s.value !== 'all' && sourceErrors[s.value]).map(s => (
+        <div key={s.value} className="mb-3 flex items-center gap-2 text-sm" role="status">
+          <span className="text-muted-foreground">{s.label}加载失败</span>
+          <button type="button" onClick={() => void retrySource(s.value as SourceType)} className="min-h-9 px-2 text-primary">重试{s.label}</button>
+        </div>
+      ))}
       {tracks.length > 0 && pendingSources > 0 && (
         <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground" role="status">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -137,13 +147,28 @@ export function SearchPage() {
       ) : error ? (
         <EmptyState icon={CloudOff} title="搜索服务不可用" description={error} />
       ) : tracks.length > 0 ? (
-        <SongList tracks={tracks} />
+        <>
+          <p className="mb-3 text-xs text-muted-foreground">已加载 {tracks.length} 首</p>
+          <SongList tracks={tracks} />
+        </>
       ) : lastKeyword ? (
         // 用 lastKeyword（最近一次搜索的词）而非输入框实时文本：
         // 输入过程中/清空再输入时不应显示"未找到结果"
         <EmptyState icon={Search} title="未找到结果" description={`没有找到与“${lastKeyword}”相关的内容`} />
       ) : (
         <EmptyState icon={Music} title="开始搜索" description="输入歌曲名或歌手名开始探索" />
+      )}
+      {!loading && !error && lastKeyword && lastSource !== 'all' && (
+        <div className="mt-5 flex flex-col items-center gap-2 pb-4" aria-live="polite">
+          {loadMoreError && <p className="text-sm text-muted-foreground" role="alert">{loadMoreError}</p>}
+          {nextPage !== null ? (
+            <button type="button" disabled={loadingMore} onClick={() => void loadMore()}
+              className="flex min-h-11 items-center gap-2 rounded-full border border-border px-6 py-2 text-sm hover:bg-accent disabled:opacity-60">
+              {loadingMore && <Loader2 className="h-4 w-4 animate-spin" />}
+              {loadingMore ? '正在加载…' : loadMoreError ? '重试加载' : '加载更多'}
+            </button>
+          ) : tracks.length > 0 ? <p className="text-xs text-muted-foreground">已加载全部可获取结果</p> : null}
+        </div>
       )}
     </div>
   )

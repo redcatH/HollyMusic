@@ -56,6 +56,8 @@ export interface SearchResult {
   allPage: number
   limit: number
   source: SourceType
+  hasMore: boolean
+  nextPage: number | null
 }
 
 // 音源配置

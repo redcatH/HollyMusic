@@ -18,6 +18,13 @@ export function useSearch() {
   const keyword = useSearchStore(s => s.keyword)
   const lastKeyword = useSearchStore(s => s.lastKeyword)
   const source = useSearchStore(s => s.source)
+  const lastSource = useSearchStore(s => s.lastSource)
+  const nextPage = useSearchStore(s => s.nextPage)
+  const loadingMore = useSearchStore(s => s.loadingMore)
+  const loadMoreError = useSearchStore(s => s.loadMoreError)
+  const sourceErrors = useSearchStore(s => s.sourceErrors)
+  const loadMore = useSearchStore(s => s.loadMore)
+  const retrySource = useSearchStore(s => s.retrySource)
   const setKeyword = useSearchStore(s => s.setKeyword)
   const setSource = useSearchStore(s => s.setSource)
   const runStore = useSearchStore(s => s.run)
@@ -27,5 +34,6 @@ export function useSearch() {
     [runStore]
   )
 
-  return { results, loading, pendingSources, error, keyword, lastKeyword, source, setKeyword, setSource, run }
+  return { results, loading, pendingSources, error, keyword, lastKeyword, source, lastSource,
+    nextPage, loadingMore, loadMoreError, sourceErrors, loadMore, retrySource, setKeyword, setSource, run }
 }

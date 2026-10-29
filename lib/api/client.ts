@@ -25,9 +25,10 @@ async function parseJson<T>(res: Response): Promise<T> {
 
 export async function apiGet<T>(
   url: string,
-  params?: Record<string, string | number | undefined>
+  params?: Record<string, string | number | undefined>,
+  signal?: AbortSignal,
 ): Promise<T> {
-  const res = await fetch(`/api/${url}${buildQuery(params)}`)
+  const res = await fetch(`/api/${url}${buildQuery(params)}`, { signal })
   return parseJson<T>(res)
 }
 
