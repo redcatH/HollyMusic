@@ -3,22 +3,18 @@
  */
 
 import { apiGet } from './client'
-import type { Song, SourceType } from '@/lib/types/music'
+import type { SearchResult, Song, SourceType } from '@/lib/types/music'
 
-export interface SearchResultData {
+export interface SearchResultData extends Omit<SearchResult, 'list'> {
   list: Song[]
-  total: number
-  page: number
-  allPage: number
-  limit: number
-  source: SourceType
 }
 
 export function search(
   source: SourceType,
   keyword: string,
   page = 1,
-  limit = 30
+  limit = 30,
+  signal?: AbortSignal,
 ): Promise<SearchResultData> {
-  return apiGet<SearchResultData>('search', { source, keyword, page, limit })
+  return apiGet<SearchResultData>('search', { source, keyword, page, limit }, signal)
 }

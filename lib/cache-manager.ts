@@ -5,15 +5,21 @@
 
 import type { CacheEntry } from './types/music'
 
+export interface CacheBudget { maxEntries: number; maxBytes: number }
+type StoredEntry<T> = CacheEntry<T> & { group: string; bytes: number }
+
 export class CacheManager<T = unknown> {
-  private cache: Map<string, CacheEntry<T>>
+  private cache: Map<string, StoredEntry<T>>
+  private usage = new Map<string, { entries: number; bytes: number }>()
+  private evictions = 0
   private hits: number = 0
   private misses: number = 0
 
-  constructor() {
+  constructor(private budgets?: Record<string, CacheBudget>) {
     this.cache = new Map()
     // 每5分钟清理一次过期缓存
-    setInterval(() => this.cleanExpired(), 5 * 60 * 1000)
+    const timer = setInterval(() => this.cleanExpired(), 5 * 60 * 1000)
+    timer.unref?.()
   }
 
   /**
@@ -28,13 +34,16 @@ export class CacheManager<T = unknown> {
     }
 
     // 检查是否过期
-    if (Date.now() > entry.expireAt) {
-      this.cache.delete(key)
+    if (Date.now() >= entry.expireAt) {
+      this.delete(key)
       this.misses++
       return null
     }
 
     this.hits++
+    // Map 插入顺序即 LRU 顺序，读取时更新。
+    this.cache.delete(key)
+    this.cache.set(key, entry)
     return entry.data
   }
 
@@ -45,17 +54,46 @@ export class CacheManager<T = unknown> {
    * @param ttl 过期时间（毫秒）
    */
   set(key: string, data: T, ttl: number): void {
-    const entry: CacheEntry<T> = {
+    this.delete(key)
+    const group = Object.keys(this.budgets || {}).find(prefix => prefix && key.startsWith(prefix)) || ''
+    const budget = this.budgets?.[group]
+    let bytes = 0
+    if (budget) {
+      try {
+        bytes = Buffer.byteLength(key) + Buffer.byteLength(JSON.stringify(data, (_key, value) => value instanceof Map ? [...value] : value))
+      } catch { return } // 无法估算的数据不进入受限缓存。
+      if (bytes > budget.maxBytes || budget.maxEntries < 1) return
+    }
+    if (budget) this.cleanExpired()
+    const usage = this.usage.get(group) || { entries: 0, bytes: 0 }
+    this.usage.set(group, usage)
+    if (budget) {
+      for (const [oldKey, oldEntry] of this.cache) {
+        if (usage.entries < budget.maxEntries && usage.bytes + bytes <= budget.maxBytes) break
+        if (oldEntry.group !== group) continue
+        this.delete(oldKey)
+        this.evictions++
+      }
+    }
+    const entry: StoredEntry<T> = {
       data,
       expireAt: Date.now() + ttl,
+      group, bytes,
     }
     this.cache.set(key, entry)
+    usage.entries++
+    usage.bytes += bytes
   }
 
   /**
    * 删除缓存
    */
   delete(key: string): boolean {
+    const entry = this.cache.get(key)
+    if (entry) {
+      const usage = this.usage.get(entry.group)
+      if (usage) { usage.entries--; usage.bytes -= entry.bytes }
+    }
     return this.cache.delete(key)
   }
 
@@ -64,6 +102,8 @@ export class CacheManager<T = unknown> {
    */
   clear(): void {
     this.cache.clear()
+    this.usage.clear()
+    this.evictions = 0
     this.hits = 0
     this.misses = 0
   }
@@ -73,17 +113,9 @@ export class CacheManager<T = unknown> {
    */
   private cleanExpired(): void {
     const now = Date.now()
-    let cleaned = 0
 
     for (const [key, entry] of this.cache.entries()) {
-      if (now > entry.expireAt) {
-        this.cache.delete(key)
-        cleaned++
-      }
-    }
-
-    if (cleaned > 0) {
-      console.log(`[Cache] 清理了 ${cleaned} 个过期缓存项`)
+      if (now >= entry.expireAt) this.delete(key)
     }
   }
 
@@ -99,10 +131,25 @@ export class CacheManager<T = unknown> {
       hits: this.hits,
       misses: this.misses,
       hitRate: `${hitRate}%`,
+      evictions: this.evictions,
+      estimatedBytes: [...this.usage.values()].reduce((total, value) => total + value.bytes, 0),
     }
   }
 }
 
 // 创建不同类型的缓存实例
-export const searchCache = new CacheManager()
+function budget(prefix: string, maxEntries: number, maxBytes: number): CacheBudget {
+  const read = (suffix: string, fallback: number) => {
+    const value = Number(process.env[`${prefix}_${suffix}`])
+    return Number.isSafeInteger(value) && value > 0 ? value : fallback
+  }
+  return { maxEntries: read('MAX_ENTRIES', maxEntries), maxBytes: read('MAX_BYTES', maxBytes) }
+}
+
+export const searchCache = new CacheManager({
+  'search:': budget('WEB_SEARCH_CACHE', 1000, 16 * 1024 * 1024),
+  'subsonic-search:': budget('SUBSONIC_SEARCH_CACHE', 1000, 16 * 1024 * 1024),
+  'discovery:': budget('DISCOVERY_CACHE', 200, 32 * 1024 * 1024),
+  '': budget('OTHER_SEARCH_CACHE', 1000, 16 * 1024 * 1024),
+})
 export const urlCache = new CacheManager()

@@ -141,7 +141,7 @@ describe('getRecommendedPlaylistDetail', () => {
   it('酷狗歌单和榜单保留 albumAudioId，不改变歌曲 UID', async () => {
     const fetchMock = vi.fn().mockImplementation(async (url: string) => jsonResponse({ data: url.includes('/special/info')
       ? { specialname: '歌单' }
-      : { info: [{ audio_id: 123, album_audio_id: 456, songname: '歌曲', hash: 'hash', filesize: 1024 }] },
+      : { total: 1, info: [{ audio_id: 123, album_audio_id: 456, songname: '歌曲', hash: 'hash', filesize: 1024 }] },
     }))
     vi.stubGlobal('fetch', fetchMock)
     for (const detail of [await getRecommendedPlaylistDetail('kg', '123'), await getToplistDetail('kg', '8888')]) {

@@ -4,11 +4,14 @@ import { searchCache } from '@/lib/cache-manager'
 import { getStorageSongmidForMusicInfo, upsertMusicInfosInTransaction } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import type { MusicInfo, QualityInfo, QualityType, Song } from '@/lib/types/music'
+import { collectCollectionPages } from './paged-collection'
 
 const QQ_MUSICU_URL = 'https://u.y.qq.com/cgi-bin/musicu.fcg'
 const QQ_SINGLE_SONG_URL = 'https://c.y.qq.com/v8/fcg-bin/fcg_play_single_song.fcg'
 const CACHE_TTL = 10 * 60 * 1000
 const REQUEST_TIMEOUT = 8_000
+const TOPLIST_PAGE_SIZE = 100
+const TX_SONG_DETAIL_BATCH_SIZE = 50
 // 与 lxserver 各音源 songList.limit_song 保持一致。
 const KW_PLAYLIST_TRACK_LIMIT = 1_000
 const KW_PLAYLIST_MAX_TRACKS = 100_000
@@ -160,7 +163,7 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
         'User-Agent': 'Mozilla/5.0',
         ...init?.headers,
       },
-      signal: controller.signal,
+      signal: init?.signal ? AbortSignal.any([controller.signal, init.signal]) : controller.signal,
     })
     if (!response.ok) throw new Error(`音乐平台请求失败: ${response.status}`)
     return await response.json() as T
@@ -196,11 +199,12 @@ async function fetchKwSearchJson<T>(url: string): Promise<T> {
   }
 }
 
-async function requestMusicu<T>(body: unknown, headers: Record<string, string> = {}): Promise<T> {
+async function requestMusicu<T>(body: unknown, headers: Record<string, string> = {}, signal?: AbortSignal): Promise<T> {
   return fetchJson<T>(QQ_MUSICU_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body),
+    signal,
   })
 }
 
@@ -605,8 +609,18 @@ async function getWyToplistDetail(id: string): Promise<DiscoveryCollectionDetail
 }
 
 async function getKwToplistDetail(id: string): Promise<DiscoveryCollectionDetail | null> {
-  const payload = await fetchJson<{ name?: string; info?: string; pic?: string; pub?: string; musiclist?: Parameters<typeof toKwMusicInfo>[0][] }>(`http://kbangserver.kuwo.cn/ksong.s?from=pc&fmt=json&pn=0&rn=100&type=bang&data=content&id=${encodeURIComponent(id)}&show_copyright_off=0&pcmp4=1&isbang=1`)
-  if (!payload.musiclist) return null
+  type KwSong = Parameters<typeof toKwMusicInfo>[0]
+  const { first, items } = await collectCollectionPages(async (page, _offset, _version, signal) => {
+    const payload = await fetchJson<{ name?: string; info?: string; pic?: string; pub?: string; num?: string | number; musiclist?: KwSong[] }>(`http://kbangserver.kuwo.cn/ksong.s?from=pc&fmt=json&pn=${page}&rn=${TOPLIST_PAGE_SIZE}&type=bang&data=content&id=${encodeURIComponent(id)}&show_copyright_off=0&pcmp4=1&isbang=1`, { signal })
+    if (!Array.isArray(payload.musiclist)) throw new Error('酷我未返回榜单歌曲')
+    return { items: payload.musiclist, total: Number(payload.num), version: payload.pub, payload }
+  }, (song: KwSong) => String(song.id || ''), TOPLIST_PAGE_SIZE)
+  const payload = first.payload
+  const songs = items.map(item => {
+    const song = toKwMusicInfo(item)
+    if (!song) throw new Error('酷我榜单存在无法读取的歌曲')
+    return song
+  })
   return {
     id,
     name: payload.name || '',
@@ -614,22 +628,29 @@ async function getKwToplistDetail(id: string): Promise<DiscoveryCollectionDetail
     cover: normalizeCover(payload.pic),
     author: '酷我音乐',
     updateTime: payload.pub,
-    tracks: await enrichMusicInfos(payload.musiclist.map(toKwMusicInfo).filter((item): item is MusicInfo => item !== null)),
+    tracks: await enrichMusicInfos(songs),
   }
 }
 
 async function getKgToplistDetail(id: string): Promise<DiscoveryCollectionDetail | null> {
-  const payload = await fetchJson<{ data?: { total?: number; info?: KgSong[] } }>(`http://mobilecdnbj.kugou.com/api/v3/rank/song?version=9108&ranktype=1&plat=0&pagesize=100&area_code=1&page=1&rankid=${encodeURIComponent(id)}&with_res_tag=0&show_portrait_mv=1`)
+  const { items } = await collectCollectionPages(async (page, _offset, _version, signal) => {
+    const payload = await fetchJson<{ data?: { total?: number; info?: KgSong[] } }>(`http://mobilecdnbj.kugou.com/api/v3/rank/song?version=9108&ranktype=1&plat=0&pagesize=${TOPLIST_PAGE_SIZE}&area_code=1&page=${page + 1}&rankid=${encodeURIComponent(id)}&with_res_tag=0&show_portrait_mv=1`, { signal })
+    if (!Array.isArray(payload.data?.info)) throw new Error('酷狗未返回榜单歌曲')
+    return { items: payload.data.info, total: Number(payload.data.total) }
+  }, (song: KgSong) => song.hash || '', TOPLIST_PAGE_SIZE)
   const board = KG_TOPLISTS.find(item => item.id === id)
-  const songs = payload.data?.info || []
-  if (songs.length === 0) return null
+  const songs = items.map(item => {
+    const song = toKgMusicInfo(item)
+    if (!song) throw new Error('酷狗榜单存在无法读取的歌曲')
+    return song
+  })
   return {
     id,
     name: board?.name || '酷狗音乐榜单',
     description: board?.description || '',
     cover: '',
     author: '酷狗音乐',
-    tracks: await enrichMusicInfos(songs.map(toKgMusicInfo).filter((item): item is MusicInfo => item !== null)),
+    tracks: await enrichMusicInfos(songs),
   }
 }
 
@@ -699,15 +720,27 @@ async function getMgPlaylistDetail(id: string): Promise<DiscoveryCollectionDetai
   }
 }
 
-async function getSongsByIds(ids: number[]): Promise<Song[]> {
-  const uniqueIds = [...new Set(ids.filter(Number.isFinite))].slice(0, 100)
+async function getSongsByIds(ids: number[], signal?: AbortSignal): Promise<Song[]> {
+  const uniqueIds = [...new Set(ids.filter(Number.isFinite))]
   if (uniqueIds.length === 0) return []
-  const query = new URLSearchParams({ songid: uniqueIds.join(','), format: 'json' })
-  const payload = await fetchJson<{ code?: number; data?: QQSong[] }>(`${QQ_SINGLE_SONG_URL}?${query}`)
-  if (payload.code !== 0 || !Array.isArray(payload.data)) throw new Error('QQ 音乐未返回歌曲详情')
-  const songs = await enrichSongs(payload.data)
-  const order = new Map(uniqueIds.map((id, index) => [id, index]))
-  return songs.sort((a, b) => (order.get(Number(a.songId)) ?? 999) - (order.get(Number(b.songId)) ?? 999))
+  const songs = new Map<number, MusicInfo>()
+  // 每批 50，最多三批并发；完成所有批次后一次性入库。
+  for (let start = 0; start < uniqueIds.length; start += TX_SONG_DETAIL_BATCH_SIZE * 3) {
+    const batches = Array.from({ length: 3 }, (_, index) => uniqueIds.slice(start + index * TX_SONG_DETAIL_BATCH_SIZE, start + (index + 1) * TX_SONG_DETAIL_BATCH_SIZE)).filter(batch => batch.length)
+    await Promise.all(batches.map(async batch => {
+      const query = new URLSearchParams({ songid: batch.join(','), format: 'json' })
+      const payload = await fetchJson<{ code?: number; data?: QQSong[] }>(`${QQ_SINGLE_SONG_URL}?${query}`, { signal })
+      if (payload.code !== 0 || !Array.isArray(payload.data)) throw new Error('QQ 音乐未返回歌曲详情')
+      const returned = new Map(payload.data.map(song => [song.id, song]))
+      for (const id of batch) {
+        const raw = returned.get(id)
+        const song = raw && toMusicInfo(raw)
+        if (!song) throw new Error('QQ 榜单歌曲详情获取不完整，请重试')
+        songs.set(id, song)
+      }
+    }))
+  }
+  return enrichMusicInfos(uniqueIds.map(id => songs.get(id)!))
 }
 
 type TxPlaylistBasic = {
@@ -1263,68 +1296,51 @@ export async function getToplists(source: DiscoverySource = 'tx'): Promise<Disco
   return getBoards(source).map(board => ({ ...board, cover: covers.get(board.id) || '' }))
 }
 
-async function fetchToplistDetail(source: DiscoverySource, id: string): Promise<DiscoveryCollectionDetail | null> {
-  const board = getBoards(source).find(item => item.id === id)
-  if (!board) return null
-  // v2：网易云公开接口字段已更新，避免复用旧字段映射写入的缓存。
-  const cacheKey = `discovery:v2:${source}:toplist:${id}`
-  const cached = getCached<DiscoveryCollectionDetail>(cacheKey)
-  if (cached) return cached
-
-  if (source === 'wy') {
-    const detail = await getWyToplistDetail(id)
-    if (detail) searchCache.set(cacheKey, detail, CACHE_TTL)
-    return detail
-  }
-  if (source === 'kw') {
-    const detail = await getKwToplistDetail(id)
-    if (detail) searchCache.set(cacheKey, detail, CACHE_TTL)
-    return detail
-  }
-  if (source === 'kg') {
-    const detail = await getKgToplistDetail(id)
-    if (detail) searchCache.set(cacheKey, detail, CACHE_TTL)
-    return detail
-  }
-  if (source === 'mg') {
-    const detail = await getMgToplistDetail(id)
-    if (detail) searchCache.set(cacheKey, detail, CACHE_TTL)
-    return detail
-  }
-
-  const payload = await requestMusicu<{
-    toplist?: { code?: number; data?: { data?: {
-      title?: string; intro?: string; headPicUrl?: string; updateTime?: string; song?: Array<{ songId?: number }>
-    } } }
-  }>({
-    toplist: {
-      module: 'musicToplist.ToplistInfoServer',
-      method: 'GetDetail',
-      param: { topid: Number(id), num: 100, period: '' },
-    },
-    comm: { uin: 0, format: 'json', ct: 20, cv: 1859 },
-  })
-  const data = payload.toplist?.data?.data
-  const songIds = data?.song?.map(item => item.songId || 0).filter(Boolean) || []
-  if (payload.toplist?.code !== 0 || songIds.length === 0) throw new Error('QQ 音乐未返回榜单歌曲')
-  const detail: DiscoveryCollectionDetail = {
-    id,
-    name: data?.title || board.name,
-    description: data?.intro?.replace(/<br\s*\/?>/gi, '\n') || board.description,
-    cover: normalizeCover(data?.headPicUrl),
-    author: 'QQ 音乐',
-    updateTime: data?.updateTime,
-    tracks: await getSongsByIds(songIds),
-  }
-  searchCache.set(cacheKey, detail, CACHE_TTL)
-  return detail
+type TxToplistData = {
+  title?: string; intro?: string; headPicUrl?: string; updateTime?: string
+  totalNum?: number; period?: string; song?: Array<{ songId?: number }>
 }
 
+async function getTxToplistDetail(id: string): Promise<DiscoveryCollectionDetail> {
+  const { first, items, signal } = await collectCollectionPages(async (_page, offset, version, signal) => {
+    const payload = await requestMusicu<{ toplist?: { code?: number; data?: { data?: TxToplistData } } }>({
+      toplist: {
+        module: 'musicToplist.ToplistInfoServer', method: 'GetDetail',
+        param: { topid: Number(id), num: TOPLIST_PAGE_SIZE, offset, period: version || '' },
+      },
+      comm: { uin: 0, format: 'json', ct: 20, cv: 1859 },
+    }, {}, signal)
+    const data = payload.toplist?.data?.data
+    if (payload.toplist?.code !== 0 || !Array.isArray(data?.song)) throw new Error('QQ 音乐未返回榜单歌曲')
+    return { items: data.song, total: Number(data.totalNum), version: data.period, data }
+  }, (song: { songId?: number }) => String(song.songId || ''), TOPLIST_PAGE_SIZE)
+  return {
+    id, name: first.data.title || TX_TOPLISTS.find(board => board.id === id)?.name || '',
+    description: first.data.intro?.replace(/<br\s*\/?>/gi, '\n') || '',
+    cover: normalizeCover(first.data.headPicUrl), author: 'QQ 音乐', updateTime: first.data.updateTime,
+    tracks: await getSongsByIds(items.map(song => song.songId!), signal),
+  }
+}
+
+const pendingToplists = new Map<string, Promise<DiscoveryCollectionDetail | null>>()
+const toplistFetchers = { tx: getTxToplistDetail, wy: getWyToplistDetail, kw: getKwToplistDetail, kg: getKgToplistDetail, mg: getMgToplistDetail }
+
 export async function getToplistDetail(source: DiscoverySource, id: string): Promise<DiscoveryCollectionDetail | null> {
-  const detail = await fetchToplistDetail(source, id)
-  // kg/mg 榜单接口不返回封面，用第一首歌封面兜底
-  if (detail && !detail.cover) detail.cover = normalizeCover(detail.tracks[0]?.img || '')
-  return detail
+  if (!getBoards(source).some(board => board.id === id)) return null
+  const key = `discovery:v3:${source}:toplist:${id}`
+  const cached = getCached<DiscoveryCollectionDetail>(key)
+  if (cached) return cached
+  const existing = pendingToplists.get(key)
+  if (existing) return existing
+  const pending = toplistFetchers[source](id).then(detail => {
+    if (detail) {
+      if (!detail.cover) detail.cover = normalizeCover(detail.tracks[0]?.img || '')
+      searchCache.set(key, detail, CACHE_TTL)
+    }
+    return detail
+  }).finally(() => pendingToplists.delete(key))
+  pendingToplists.set(key, pending)
+  return pending
 }
 
 export async function getRecommendedPlaylists(source: DiscoverySource = 'tx', limit = 12, page = 1, filter: DiscoveryPlaylistFilter = {}): Promise<DiscoveryPlaylist[]> {
