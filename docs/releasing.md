@@ -71,8 +71,26 @@ docker buildx imagetools inspect ghcr.io/redcath/hollymusic:latest
 ## 依赖维护
 
 Dependabot 同时检查根目录、frontend、GitHub Actions 和 Docker。React/React DOM/类型包、Next/ESLint 配置、Vite/Vitest 按关联关系成组更新。
+配置位于 [`.github/dependabot.yml`](../.github/dependabot.yml)，采用以下维护节奏：
+
+| 更新类型 | 检查节奏 | 同时打开的普通更新 PR 上限 | 分组方式 |
+| --- | --- | --- | --- |
+| npm（根目录与 frontend） | 每月，上海时间 09:00 | 3 | 关联依赖分组，其余依赖由最后的兜底组收集 |
+| GitHub Actions | 每月，上海时间 09:00 | 1 | 所有 Action 合为一组 |
+| Docker | 每月，上海时间 09:00 | 1 | 更新现有基础镜像 |
+
+普通更新设置 7 天冷却期，只在定期检查时选择已过冷却期的版本；上述上限指同时打开的 PR 数量，并非每月总量。
+安全更新保持开启，npm 与 Actions 各设独立安全更新组，不等待月度检查或 7 天冷却期，也不占用普通更新 PR 的额度。
+这些行为参见 GitHub 的 [Dependabot 配置说明](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference)。
+
+npm 与 Docker 的普通更新仅允许 minor/patch；使用 `allow.update-types` 限制普通更新，不限制安全修复需要的版本级别。
+每季度人工评估 npm 与 Node 主版本升级，核对兼容性与支持周期；涉及安全修复时优先处理。
+Actions 的主版本更新仍可进入月度分组，审阅其迁移说明并通过 CI 后再合并。
+所有依赖 PR 均人工审阅合并，不启用自动合并。
+
 锁定 pnpm 10.22.0，Node 主版本记录在 `.node-version`；更改时同步 Dockerfile 与两个 package 的 engines，并运行 `release:check`。
 PR 的 `check` 聚合质量检查和两个架构的容器测试，任一失败、取消或跳过都不能合并。
+Docker 使用浮动的 `node:24-bookworm-slim` 标签，同一标签内容更新不一定产生 Dependabot PR；发布时仍需重新构建镜像，才能带入基础镜像更新。
 
 2026-10-31：生产依赖与 frontend 完整审计无告警；根目录 ESLint 间接依赖 minimatch 仍有 2 项 moderate 告警。
 当前公告只给出 11.0.1 的修复线，强制覆盖 ESLint 所依赖的旧主版本可能破坏 glob 行为，因此保留告警并等待兼容的上游工具链升级。
