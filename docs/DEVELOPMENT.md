@@ -67,7 +67,7 @@ lx-env-simulator/ 洛雪音源兼容层
 ## 本地启动
 
 ### 环境要求
-- Node.js 20+（与 CI、Docker 保持一致）
+- Node.js 24 LTS（与 CI、Docker 保持一致）
 - pnpm 10（版本见根目录 `package.json` 的 `packageManager`）
 
 ### 1. 安装依赖
