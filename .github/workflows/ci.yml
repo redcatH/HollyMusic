@@ -33,6 +33,10 @@ jobs:
           pnpm -C frontend install --frozen-lockfile
       - name: Generate Prisma Client
         run: pnpm prisma:generate
+      - name: Validate release metadata and tooling
+        run: |
+          pnpm release:check
+          pnpm test:release
       - name: Lint
         run: pnpm lint
       - name: Typecheck

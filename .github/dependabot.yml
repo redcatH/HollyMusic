@@ -1,14 +1,38 @@
 version: 2
 updates:
-  - package-ecosystem: "npm"
-    directory: "/"
+  - package-ecosystem: npm
+    directories: ['/', '/frontend']
     schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 10
-    rebase-strategy: "auto"
+      interval: weekly
+      day: monday
+      timezone: Asia/Shanghai
+    cooldown:
+      default-days: 1
+    open-pull-requests-limit: 5
+    rebase-strategy: auto
+    groups:
+      react:
+        patterns: ['react', 'react-dom', '@types/react', '@types/react-dom']
+      next:
+        patterns: ['next', 'eslint-config-next']
+      test-tools:
+        patterns: ['vite', 'vitest', '@vitejs/plugin-react', 'jsdom']
+      shared-runtime:
+        patterns: ['axios', 'qs', 'tailwind-merge']
     ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-major"]
-
-      # - dependency-name: "lodash"
-      # - dependency-name: "webpack"
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: node
+        update-types: ['version-update:semver-major']

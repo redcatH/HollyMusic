@@ -153,10 +153,10 @@ pnpm -C frontend build
 
 发布配置见 [docker-publish.yml](../.github/workflows/docker-publish.yml)。流程为：
 
-1. 合并修改后，在包含修改的提交上推送新的 `v*` Git tag。建议先发布一个新的 `vX.Y.Z-preview.N`，验证完成后再发布正式版；不要复用或移动已发布的版本 tag。
+1. 按[维护者发布指南](releasing.md)运行 `pnpm release:prepare <version>`，先通过 PR 合并版本号与说明，等待对应 main CI 成功后再推送 tag。不要复用或移动已发布的版本 tag。
 2. GitHub Actions 分别使用 `ubuntu-24.04` 和 `ubuntu-24.04-arm` 原生构建 `linux/amd64`、`linux/arm64`。每个平台独立安装依赖、生成 Prisma 引擎并构建，不跨架构复用 `node_modules` 或 standalone 产物。
 3. 两个平台分别运行 `scripts/test-docker-setup.mjs`，验证 nginx SPA、API、数据库迁移、首次设置、会话和重启，再上传各自的 `build-<run_id>-<arch>` 暂存镜像。
-4. 两边均通过后，合并镜像清单，检查平台列表，再发布具体版本标签和通道标签。预发布更新 `preview`，正式版更新 `latest`；任何一个构建或容器测试失败，都不会覆盖这些标签。
+4. 两边均通过后，合并镜像清单并检查平台列表，发布不可覆盖的版本标签。预发布仅向更高版本推进 `preview`，正式版仅向更高版本推进 `latest`；任一构建或容器测试失败都不会发布这些标签。
 5. 镜像清单发布成功后，才创建 GitHub Release。ARM64 用户可先用预发布验证拉取、启动、搜索和播放，正式镜像发布并确认部署正常后再关闭相关 issue。
 
 `workflow_dispatch` 的“手动运行”仍然只补发 GitHub Release，**不会构建镜像或补上 ARM64 清单**。旧版本标签不会自动获得新架构；解决旧 `latest` 的 ARM64 拉取失败，需要完成一次包含此配置的正式版本发布。

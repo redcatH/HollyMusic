@@ -1,6 +1,6 @@
 {
   "name": "holly-music",
-  "version": "0.30.0",
+  "version": "0.30.3",
   "private": true,
   "description": "多源在线音乐聚合播放器 · 自部署 · PWA · 移动端友好",
   "license": "MIT",
@@ -38,7 +38,10 @@
     "prisma:generate": "prisma generate",
     "prisma:studio": "prisma studio",
     "prisma:migrate": "prisma migrate dev",
-    "analyze": "ANALYZE=true next build"
+    "analyze": "ANALYZE=true next build",
+    "release:prepare": "node scripts/prepare-release.mjs",
+    "release:check": "node scripts/check-release-metadata.mjs",
+    "test:release": "node --test scripts/release-utils.test.mjs"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
