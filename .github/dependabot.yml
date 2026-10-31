@@ -3,14 +3,21 @@ updates:
   - package-ecosystem: npm
     directories: ['/', '/frontend']
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
+      time: '09:00'
       timezone: Asia/Shanghai
     cooldown:
-      default-days: 1
-    open-pull-requests-limit: 5
+      default-days: 7
+    open-pull-requests-limit: 3
     rebase-strategy: auto
+    # Restrict routine updates only; security fixes may require a major upgrade.
+    allow:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-minor', 'version-update:semver-patch']
     groups:
+      security:
+        applies-to: security-updates
+        patterns: ['*']
       react:
         patterns: ['react', 'react-dom', '@types/react', '@types/react-dom']
       next:
@@ -19,20 +26,33 @@ updates:
         patterns: ['vite', 'vitest', '@vitejs/plugin-react', 'jsdom']
       shared-runtime:
         patterns: ['axios', 'qs', 'tailwind-merge']
-    ignore:
-      - dependency-name: '*'
-        update-types: ['version-update:semver-major']
+      # Keep this last: the first matching version-update group wins.
+      other-dependencies:
+        patterns: ['*']
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
+      time: '09:00'
+      timezone: Asia/Shanghai
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 1
     groups:
+      actions-security:
+        applies-to: security-updates
+        patterns: ['*']
       actions:
         patterns: ['*']
   - package-ecosystem: docker
     directory: /
     schedule:
-      interval: weekly
-    ignore:
-      - dependency-name: node
-        update-types: ['version-update:semver-major']
+      interval: monthly
+      time: '09:00'
+      timezone: Asia/Shanghai
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 1
+    allow:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-minor', 'version-update:semver-patch']
