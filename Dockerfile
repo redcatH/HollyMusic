@@ -7,19 +7,17 @@
 # ============================================================================
 # 原设计 frontend-builder 与 backend-builder 各装一次根依赖（最慢步骤重复 2 次）
 # 现抽离为公共 deps 阶段，两个 builder 都 FROM deps，BuildKit 还会并行执行它们
-FROM node:20-bookworm-slim AS deps
+FROM node:24-bookworm-slim AS deps
 
 WORKDIR /app
 
-# 安装 pnpm（走淘宝源加速）
-# 注：曾尝试 corepack + COREPACK_NPM_REGISTRY，但淘宝镜像对 corepack 的
-# fetchTarballURL 兼容性差（HTTP 404），改回 npm install -g 更稳
-RUN npm config set registry https://registry.npmmirror.com && npm install -g pnpm
+# 与前后端 packageManager 一致，避免全局最新版改变前端安装策略。
+RUN npm install -g pnpm@10.22.0
 
 # 先复制 package 文件（利用 docker layer cache：源码变动不会使依赖安装缓存失效）
 # .npmrc 必须在 install 之前到位：node-linker=hoisted 影响 needle/cheerio 等传递依赖的解析
 COPY package.json pnpm-lock.yaml .npmrc ./
-COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml frontend/
+COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml frontend/.npmrc frontend/
 
 # 带 pnpm store cache mount 安装依赖：
 # - 首次构建：照常下载
@@ -83,7 +81,7 @@ RUN pnpm build --webpack
 # ============================================================================
 # bookworm（Debian 12, glibc 2.36）：rollup 4.x 的 native 二进制要求 glibc ≥ 2.32，
 # bullseye 只有 2.31 会导致 vite build 时 dlopen 失败
-FROM node:20-bookworm-slim
+FROM node:24-bookworm-slim
 
 # apt 源：默认官方 deb.debian.org（Fastly 全球 CDN，GitHub Actions 海外 runner 访问快；
 # 清华 TUNA 对海外 IP 返回 403，CI 构建不可用，不能再无条件下换）。

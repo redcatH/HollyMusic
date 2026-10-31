@@ -1,77 +1,50 @@
 name: CI
 
-# PR 与 main 直推时的代码质量门禁：lint / 类型检查 / 测试 / 构建
-# main 分支保护将本 job 设为 required check，全部通过才允许合并
 on:
   pull_request:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  check:
-    runs-on: ubuntu-latest
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     env:
-      # Prisma Client 实例化即读取 DATABASE_URL；SQLite file: 路径无需真实库文件，
-      # 构建不连接此库；集成测试使用独立临时数据库并执行真实迁移。
       DATABASE_URL: file:./prisma/data/music.db
-      # 测试专用签名密钥；生产环境必须配置独立的随机值。
       AUTH_SECRET: ci-dummy-secret-not-for-production
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      # pnpm 版本锁定在 package.json 的 packageManager 字段，action 自动读取
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version-file: .node-version
           cache: pnpm
-          # 根目录与 frontend/ 各有一份 lockfile，都纳入缓存 key
           cache-dependency-path: '**/pnpm-lock.yaml'
-
-      - name: Install dependencies (root + frontend)
+      - name: Install dependencies
         run: |
           pnpm install --frozen-lockfile
           pnpm -C frontend install --frozen-lockfile
-
-      # @prisma/client 为生成式产物，typecheck / test / build 前必须先生成
       - name: Generate Prisma Client
         run: pnpm prisma:generate
-
       - name: Lint
         run: pnpm lint
-
       - name: Typecheck
         run: pnpm typecheck
-
-      - name: Test
-        run: |
-          pnpm test
-          pnpm -C frontend test
-
+      - name: Test backend
+        run: pnpm test --reporter=default --reporter=junit --outputFile=test-results/backend.xml
+      - name: Test frontend
+        run: pnpm -C frontend test --reporter=default --reporter=junit --outputFile=../test-results/frontend.xml
       - name: Build
         run: |
           pnpm build
           pnpm -C frontend build
-
-      - name: Build Docker image
-        run: docker build -t hollymusic:setup-test .
-
-      - name: Verify Docker first-run and restart
-        run: node scripts/test-docker-setup.mjs hollymusic:setup-test
-
-      # 原生音频验收使用内置 WebSocket；此前的应用构建仍验证 Node 20。
-      - name: Set up Node.js for native audio checks
-        uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          package-manager-cache: false
-
-      # GitHub Ubuntu runner 自带 Chrome；版本随镜像更新并记录在日志中。
-      # 放在 required check 内，音频验收失败也会阻止合并。
       - name: Verify native equalizer response and automation
         timeout-minutes: 2
         env:
@@ -79,3 +52,66 @@ jobs:
         run: |
           "$CHROME_BIN" --version
           node scripts/check-equalizer-response.mjs
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  docker:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - uses: docker/setup-buildx-action@v4
+      - name: Build Docker image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          platforms: linux/${{ matrix.arch }}
+          tags: hollymusic:setup-test
+          cache-from: type=gha,scope=docker-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=docker-${{ matrix.arch }}
+      - name: Verify architecture and first-run setup
+        env:
+          EXPECTED_PLATFORM: linux/${{ matrix.arch }}
+        run: |
+          test "$(docker image inspect hollymusic:setup-test --format '{{.Os}}/{{.Architecture}}')" = "$EXPECTED_PLATFORM"
+          node scripts/test-docker-setup.mjs hollymusic:setup-test 2>&1 | tee docker-smoke.log
+      - name: Upload smoke log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-smoke-${{ matrix.arch }}
+          path: docker-smoke.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # 保持现有 required check 名称；失败、取消或意外跳过均不能放行。
+  check:
+    if: always()
+    needs: [quality, docker]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require every gate
+        env:
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          DOCKER_RESULT: ${{ needs.docker.result }}
+        run: test "$QUALITY_RESULT" = success && test "$DOCKER_RESULT" = success
