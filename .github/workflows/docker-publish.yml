@@ -1,246 +1,183 @@
 name: Build and Push Docker Image
 
-# 推送 v 开头的 tag：双架构构建与测试 → 合并镜像清单 → 发布 Release → 同步 CHANGELOG.md
-# 手动触发（workflow_dispatch）时：仅为指定 tag 补发 Release，不重建镜像
 on:
   push:
-    tags:
-      - 'v*'
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       tag:
-        description: '要补发 Release 的 tag（如 v0.21.1）'
+        description: '已有双架构镜像的 tag；只恢复 Release，不重建或覆盖镜像'
         required: true
         type: string
 
+permissions:
+  contents: read
+
+# 串行更新版本、通道和 Release，防止较旧运行覆盖新版本。
+concurrency:
+  group: docker-release
+  cancel-in-progress: false
+  queue: max
+
+env:
+  RELEASE_MODE: ${{ github.event_name == 'workflow_dispatch' && 'recover' || 'publish' }}
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+
 jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+    outputs:
+      tag: ${{ steps.validate.outputs.tag }}
+      sha: ${{ steps.validate.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Validate tag, metadata, main CI and image state
+        id: validate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/release.mjs preflight "$RELEASE_TAG"
+
   build-and-push:
-    # 手动补发时跳过镜像构建：避免用当前 Dockerfile 重建并覆盖历史 tag 的镜像
+    needs: preflight
     if: github.event_name == 'push'
     strategy:
       fail-fast: false
       matrix:
         include:
           - arch: amd64
-            platform: linux/amd64
             runner: ubuntu-24.04
           - arch: arm64
-            platform: linux/arm64
             runner: ubuntu-24.04-arm
-    # 各架构原生构建和运行测试，避免 Next.js / Prisma 在 QEMU 下构建过慢。
     runs-on: ${{ matrix.runner }}
-
-    # GITHUB_TOKEN 默认无 packages:write 权限，需显式声明
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: write
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
         with:
-          node-version: 20
-          # 此任务只执行无依赖的容器测试，不安装 pnpm，也不需要依赖缓存。
+          ref: ${{ needs.preflight.outputs.sha }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .node-version
           package-manager-cache: false
-
-      # ghcr.io 镜像名必须全小写；仓库所有者 redcatH 需转小写
-      - name: Set image name (lowercase)
-        run: echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/hollymusic" >> "$GITHUB_ENV"
-
-      - name: Log in to ghcr.io
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}   # 自动提供，无需手动建 secret
-
-      - name: Build release image
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: ./Dockerfile
-          platforms: ${{ matrix.platform }}
-          # 每个 job 只加载一个架构，保留发布前的真实容器测试。
-          load: true
-          tags: |
-            hollymusic:release-test
-            ${{ env.IMAGE_NAME }}:build-${{ github.run_id }}-${{ matrix.arch }}
-          # 缓存按架构隔离，避免两个 job 相互覆盖。
-          cache-from: type=gha,scope=docker-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=docker-${{ matrix.arch }}
-
-      - name: Verify image architecture
-        run: test "$(docker image inspect hollymusic:release-test --format '{{.Os}}/{{.Architecture}}')" = "${{ matrix.platform }}"
-
-      - name: Verify first-run and restart before publishing
-        run: node scripts/test-docker-setup.mjs hollymusic:release-test
-
-      # 只上传本次 run 的暂存标签。任何一边失败都不会覆盖版本或通道标签。
-      # 不使用 run_attempt，允许仅重跑失败的 job 后复用另一架构已验证的镜像。
-      - name: Push verified platform image
-        run: docker push "${IMAGE_NAME}:build-${{ github.run_id }}-${{ matrix.arch }}"
-
-  publish-manifest:
-    needs: build-and-push
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    permissions:
-      packages: write
-
-    steps:
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Set image name (lowercase)
-        run: echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/hollymusic" >> "$GITHUB_ENV"
-
-      - name: Log in to ghcr.io
-        uses: docker/login-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - name: Set image name
+        run: echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Publish verified multi-platform image
+      - name: Build release image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          load: true
+          tags: |
+            hollymusic:release-test
+            ${{ env.IMAGE_NAME }}:build-${{ github.run_id }}-${{ matrix.arch }}
+          cache-from: type=gha,scope=docker-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=docker-${{ matrix.arch }}
+      - name: Verify architecture and first-run setup
+        env:
+          EXPECTED_PLATFORM: linux/${{ matrix.arch }}
         run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          # 预发布仅更新 preview 通道，正式版才更新 latest。
-          if [[ "$TAG" == *-* ]]; then CHANNEL=preview; else CHANNEL=latest; fi
-          docker buildx imagetools create --dry-run \
-            "${IMAGE_NAME}:build-${{ github.run_id }}-amd64" \
-            "${IMAGE_NAME}:build-${{ github.run_id }}-arm64" > "$RUNNER_TEMP/manifest.json"
-          # 发布前确认两个平台都存在；后续按不可变 digest 合并同一批已验证镜像。
-          jq -e '[.manifests[].platform | .os + "/" + .architecture] | sort == ["linux/amd64", "linux/arm64"]' "$RUNNER_TEMP/manifest.json"
-          SOURCES=()
-          while IFS= read -r digest; do
-            SOURCES+=("${IMAGE_NAME}@${digest}")
-          done < <(jq -r '.manifests[].digest' "$RUNNER_TEMP/manifest.json")
-          docker buildx imagetools create \
-            --tag "${IMAGE_NAME}:${TAG}" \
-            --tag "${IMAGE_NAME}:${CHANNEL}" \
-            "${SOURCES[@]}"
-          docker buildx imagetools inspect --raw "${IMAGE_NAME}:${TAG}" | \
-            jq -e '[.manifests[].platform | .os + "/" + .architecture] | sort == ["linux/amd64", "linux/arm64"]'
+          test "$(docker image inspect hollymusic:release-test --format '{{.Os}}/{{.Architecture}}')" = "$EXPECTED_PLATFORM"
+          node scripts/test-docker-setup.mjs hollymusic:release-test 2>&1 | tee docker-smoke.log
+      - name: Push verified platform image
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: docker push "${IMAGE_NAME}:build-${GITHUB_RUN_ID}-${ARCH}"
+      - name: Upload smoke log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-smoke-${{ matrix.arch }}
+          path: docker-smoke.log
+          if-no-files-found: ignore
+          retention-days: 7
 
-  # 发布 GitHub Release：基于 Conventional Commits 自动生成中文分组更新说明，
-  # 并把 CHANGELOG.md / package.json 版本号同步提交回 main
-  release:
-    needs: publish-manifest
-    # push 发布：镜像构建成功才发 Release（镜像失败不发，避免用户拉不到对应版本）
-    # 手动补发：build 与 manifest 被跳过，直接发
-    # 注意：必须显式 always()，否则 if 隐式加 success() 前缀，build 被 skip 时本 job 也会被跳过
-    if: >-
-      always() &&
-      (needs.publish-manifest.result == 'success' ||
-      (github.event_name == 'workflow_dispatch' && needs.publish-manifest.result == 'skipped'))
-    runs-on: ubuntu-latest
-
+  publish-manifest:
+    needs: [preflight, build-and-push]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
-      contents: write   # 创建 Release 与提交回 main 均需写权限
-
+      contents: read
+      packages: write
+    outputs:
+      promoted: ${{ steps.publish.outputs.promoted }}
     steps:
-      # 在 main 上检出（cliff.toml 存在于 main；老 tag 的树里没有，checkout tag 会导致找不到配置）。
-      # git-cliff 用「上一正式版 tag..目标 tag」区间参数生成，与 HEAD 位置无关。
-      - name: Checkout (main)
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           ref: main
-          fetch-depth: 0   # 全量历史与全部 tag，供 git-cliff 解析版本区间
-
-      - name: Resolve tag and commit range
-        id: rel
-        run: |
-          TAG="${{ inputs.tag || github.ref_name }}"
-          # 预发布说明累计展示自上一正式版的变化；正式发布也保留 preview 阶段的功能。
-          # 取不到（首个 tag，理论上不会发生）时退回 --latest。
-          PREV=$(git describe --tags --abbrev=0 --exclude='*-*' "${TAG}^" 2>/dev/null || true)
-          if [ -n "$PREV" ]; then RANGE="${PREV}..${TAG}"; else RANGE="--latest"; fi
-          {
-            echo "tag=${TAG}"
-            echo "range=${RANGE}"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Generate release notes (git-cliff)
-        uses: orhun/git-cliff-action@v4
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
         with:
-          config: cliff.toml
-          args: ${{ steps.rel.outputs.range }} --strip header -o RELEASE_NOTES.md
+          node-version-file: .node-version
+          package-manager-cache: false
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish immutable version and advance channel
+        id: publish
         env:
-          GITHUB_REPO: ${{ github.repository }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EXPECTED_SHA: ${{ needs.preflight.outputs.sha }}
+        run: node scripts/release.mjs publish "$RELEASE_TAG"
 
-      # 预发布不更新 latest；补发（dispatch）时只提示具体版本。
-      - name: Prepend Docker image hint
-        run: |
-          {
-            if [ "${{ github.event_name }}" = "push" ]; then
-              if [[ "${{ steps.rel.outputs.tag }}" == *-* ]]; then CHANNEL=preview; else CHANNEL=latest; fi
-              echo "🐳 **Docker 镜像**：\`ghcr.io/redcath/hollymusic:${{ steps.rel.outputs.tag }}\`（\`${CHANNEL}\` 已同步更新）"
-            else
-              echo "🐳 **Docker 镜像**：\`ghcr.io/redcath/hollymusic:${{ steps.rel.outputs.tag }}\`"
-            fi
-            echo ""
-            cat RELEASE_NOTES.md
-          } > RELEASE_BODY.md
-
-      - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+  release:
+    needs: [preflight, publish-manifest]
+    if: >-
+      always() && needs.preflight.result == 'success' &&
+      (needs.publish-manifest.result == 'success' ||
+       (github.event_name == 'workflow_dispatch' && needs.publish-manifest.result == 'skipped'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      packages: read
+    steps:
+      - uses: actions/checkout@v7
         with:
-          tag_name: ${{ steps.rel.outputs.tag }}
-          body_path: RELEASE_BODY.md
-          # tag 含 "-"（如 v0.20.0-beta.1）视为预发布
-          prerelease: ${{ contains(steps.rel.outputs.tag, '-') }}
-          # 仅 push 正式发布时标记 Latest；补发与 beta 不改变 Latest
-          make_latest: ${{ github.event_name == 'push' && !contains(steps.rel.outputs.tag, '-') && 'true' || 'false' }}
-
-      # ---- 同步 CHANGELOG.md 与 package.json 版本号，提交回 main ----
-
-      - name: Regenerate CHANGELOG.md (git-cliff)
-        if: github.event_name == 'push' && !contains(steps.rel.outputs.tag, '-')
-        uses: orhun/git-cliff-action@v4
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
         with:
-          config: cliff.toml
-          # 范围 v0.17.0..：v0.17.0 及更早历史固定在 cliff.toml header 手工段，不自动展开
-          args: v0.17.0.. -o CHANGELOG.md
+          node-version-file: .node-version
+          package-manager-cache: false
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish reviewed release notes
         env:
-          GITHUB_REPO: ${{ github.repository }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # 仅正式发布回写 main；预发布和补发不修改正式版本元数据。
-      - name: Sync package.json version
-        if: github.event_name == 'push' && !contains(steps.rel.outputs.tag, '-')
-        run: |
-          VERSION="${{ steps.rel.outputs.tag }}"
-          VERSION="${VERSION#v}"
-          node -e "
-            const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-            pkg.version = process.argv[1];
-            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
-          " "$VERSION"
-
-      # GITHUB_TOKEN 的 push 不会触发其他 workflow，无循环构建风险
-      - name: Commit and push to main
-        if: github.event_name == 'push' && !contains(steps.rel.outputs.tag, '-')
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add CHANGELOG.md package.json
-          if git diff --cached --quiet; then
-            echo "CHANGELOG 与版本号无变化，跳过提交"
-          else
-            git commit -m "chore(release): 同步 ${{ steps.rel.outputs.tag }} 更新日志与版本号"
-            git pull --rebase origin main
-            # main 已启用分支保护（required check: CI），GITHUB_TOKEN 直推会被拒绝。
-            # 回写失败仅告警不挂 job：Release 与镜像此时已交付，cliff 按区间全量幂等
-            # 生成 CHANGELOG，下次成功回写时自动补齐；彻底解决需换 PAT / GitHub App 令牌。
-            if ! git push origin main; then
-              echo "::warning::CHANGELOG 回写被 main 分支保护拒绝（预期内），版本号与日志待下次回写补齐"
-            fi
-          fi
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EXPECTED_SHA: ${{ needs.preflight.outputs.sha }}
+          CHANNEL_PROMOTED: ${{ needs.publish-manifest.outputs.promoted }}
+        run: node scripts/release.mjs release "$RELEASE_TAG"

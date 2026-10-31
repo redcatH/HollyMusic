@@ -105,7 +105,7 @@ PR 提交后 CI 会自动运行 **lint / 类型检查 / 测试 / 构建**（根�
 - `MINOR`：向后兼容的新功能
 - `PATCH`：向后兼容的 Bug 修复
 
-更新日志（[CHANGELOG.md](CHANGELOG.md) 与 GitHub Release）由 [git-cliff](https://git-cliff.org) 基于合入 `main` 的提交标题自动生成并分组——这也是要求遵循约定式提交的直接原因。发布由维护者打 tag 触发，贡献者无需关心。
+更新日志由 git-cliff 根据提交标题生成草稿，经发布准备 PR 审阅后，与两个 package 的版本号一起合入 `main`。目标提交的 CI 成功后再打 tag，发布双架构镜像和 GitHub Release；发布任务不向受保护分支回写。具体命令和失败恢复见[维护者发布指南](docs/releasing.md)。
 
 ---
 

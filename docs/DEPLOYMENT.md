@@ -135,7 +135,7 @@ docker compose up --build -d
 1. `deps` — 安装前后端依赖，供两个 builder 共享
 2. `frontend-builder` — Vite 构建前端 SPA 产物到 `frontend/dist`
 3. `backend-builder` — Next.js 构建 API，并生成 Prisma Client 与查询引擎
-4. 运行时镜像 — `node:20-bookworm-slim` + nginx，复制两阶段产物
+4. 运行时镜像 — `node:24-bookworm-slim` + nginx，复制两阶段产物
 
 运行时架构（`scripts/start-spa.sh`）：
 - Next.js API 监听 **3001**（仅容器内）

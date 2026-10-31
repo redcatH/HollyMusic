@@ -1,6 +1,6 @@
 {
   "name": "holly-music-frontend",
-  "version": "0.1.0",
+  "version": "0.30.3",
   "private": true,
   "type": "module",
   "scripts": {

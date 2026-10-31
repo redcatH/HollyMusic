@@ -21,7 +21,7 @@ jobs:
       AUTH_SECRET: ci-dummy-secret-not-for-production
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v5
         with:
           node-version-file: .node-version
@@ -33,6 +33,10 @@ jobs:
           pnpm -C frontend install --frozen-lockfile
       - name: Generate Prisma Client
         run: pnpm prisma:generate
+      - name: Validate release metadata and tooling
+        run: |
+          pnpm release:check
+          pnpm test:release
       - name: Lint
         run: pnpm lint
       - name: Typecheck
@@ -54,7 +58,7 @@ jobs:
           node scripts/check-equalizer-response.mjs
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-results
           path: test-results/
@@ -96,7 +100,7 @@ jobs:
           node scripts/test-docker-setup.mjs hollymusic:setup-test 2>&1 | tee docker-smoke.log
       - name: Upload smoke log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: docker-smoke-${{ matrix.arch }}
           path: docker-smoke.log
