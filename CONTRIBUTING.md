@@ -14,8 +14,8 @@
 
 ### 环境要求
 
-- Node.js 20+（与 CI、Docker 镜像一致）
-- pnpm 10（版本由 `package.json` 的 `packageManager` 字段锁定，`corepack enable` 后自动匹配）
+- Node.js 24 LTS（版本范围见 `.node-version`，与 CI、Docker 镜像一致）
+- pnpm 10.22.0（前后端版本均由 `package.json` 的 `packageManager` 字段锁定，`corepack enable` 后自动匹配）
 
 ### 本地启动
 

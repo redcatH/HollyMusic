@@ -76,6 +76,7 @@ const { audioServe } = await import('@/lib/audio-serve')
 
 describe('GET /api/download (uid 模式)', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
     authMode = 'ok'
     resolveResult = {
       songmid: '196030664',
