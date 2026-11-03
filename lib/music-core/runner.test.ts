@@ -34,6 +34,10 @@ const { EVENT_NAMES, on, send } = globalThis.lx
 on(EVENT_NAMES.request, ({ action, info }) => {
   if (action === 'musicUrl') {
     if (info && info.type === 'hang') return new Promise(() => {})
+    console.group('musicUrl')
+    console.groupCollapsed('response')
+    console.groupEnd()
+    console.groupEnd()
     return Promise.resolve('https://example.com/stream.mp3')
   }
   if (action === 'lyric') return Promise.resolve({ lyric: 'lyric-ok', tlyric: null })
