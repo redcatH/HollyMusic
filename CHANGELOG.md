@@ -4,6 +4,26 @@
 
 版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。v0.30.3 及以前缺失的正式版记录已按 GitHub Release 补齐；历史预发布说明保留在对应版本内。
 
+## v0.30.4（2026-11-03）
+
+**完整对比**：[v0.30.3 → v0.30.4](https://github.com/redcatH/HollyMusic/compare/v0.30.3...v0.30.4)
+
+### 🐛 问题修复
+
+- 修复部分音源调用分组日志方法时解析播放地址失败、未缓存歌曲无法播放的问题。（[#134](https://github.com/redcatH/HollyMusic/pull/134)）
+- 修复搜索页未选中渠道按钮的边框被横向滚动容器裁切的问题。（[#134](https://github.com/redcatH/HollyMusic/pull/134)）
+- 修正版本号与历史更新日志，发布前校验版本元数据和 main CI，避免发布信息与实际代码不一致。（[#131](https://github.com/redcatH/HollyMusic/pull/131)）
+
+### 🔧 工程与依赖
+
+- 统一前后端依赖和工具链，增加 amd64、arm64 两种架构的容器验证。（[#130](https://github.com/redcatH/HollyMusic/pull/130)）
+- 将 CI 的 setup-node 升级至 v7。（[#132](https://github.com/redcatH/HollyMusic/pull/132)）
+- 调整 Dependabot 为按月分组更新，安全更新继续保持开启。（[#133](https://github.com/redcatH/HollyMusic/pull/133)）
+
+### 升级说明
+
+- 源码部署请使用 Node.js 24 和 pnpm 10.22.0；Docker 部署可更新至本版本镜像。
+
 ## v0.30.3（2026-10-30）
 
 **完整对比**：[v0.30.2 → v0.30.3](https://github.com/redcatH/HollyMusic/compare/v0.30.2...v0.30.3)
