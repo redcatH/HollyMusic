@@ -193,6 +193,33 @@ describe('createScriptSandbox', () => {
     expect(Object.getPrototypeOf(host)).toBe(Object.prototype)
   })
 
+  it('分组日志不阻断播放地址解析，方法保留在沙箱域内', async () => {
+    const onLog = vi.fn()
+    const env = createScriptSandbox({ onLog })
+    try {
+      const result = await env.runScript(`
+        (async () => {
+          console.group('musicUrl')
+          console.groupCollapsed('response', { code: 200 })
+          const body = await Promise.resolve({ code: 200, url: 'https://example.com/audio.mp3' })
+          console.groupEnd()
+          console.groupEnd()
+          console.groupEnd()
+          return body.url
+        })()
+      `)
+      expect(result).toBe('https://example.com/audio.mp3')
+      expect(onLog).toHaveBeenCalledWith('log', 'musicUrl')
+      expect(onLog).toHaveBeenCalledWith('log', 'response {"code":200}')
+      expect(env.runScript(`
+        [console.group, console.groupCollapsed, console.groupEnd].every(fn => fn instanceof Function)
+      `)).toBe(true)
+      expect(() => env.runScript(`console.groupEnd.constructor('return process')()`)).toThrow()
+    } finally {
+      env.dispose()
+    }
+  })
+
   it('console 转发到 onLog 且截断', () => {
     const onLog = vi.fn()
     const env = createScriptSandbox({ onLog })

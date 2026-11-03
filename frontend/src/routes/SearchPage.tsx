@@ -119,7 +119,7 @@ export function SearchPage() {
             className={`shrink-0 rounded-full px-3.5 py-1.5 text-sm transition-colors ${
               source === s.value
                 ? 'bg-primary text-primary-foreground'
-                : 'bg-card text-muted-foreground ring-1 ring-border hover:text-foreground'
+                : 'bg-card text-muted-foreground ring-1 ring-inset ring-border hover:text-foreground'
             }`}
           >
             {s.label}
