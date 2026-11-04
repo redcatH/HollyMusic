@@ -4,6 +4,20 @@
 
 版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。v0.30.3 及以前缺失的正式版记录已按 GitHub Release 补齐；历史预发布说明保留在对应版本内。
 
+## v0.30.5（2026-11-04）
+
+**完整对比**：[v0.30.3 → v0.30.5](https://github.com/redcatH/HollyMusic/compare/v0.30.3...v0.30.5)
+
+### 🐛 问题修复
+
+- 修复发布镜像清单丢失版本号与来源提交注解、导致发布流程中断的问题。显式发布 OCI 多架构索引，并增加回归测试。
+- 包含 v0.30.4 的全部修复：部分音源分组日志导致播放地址解析失败，以及搜索渠道按钮边框裁切。（[#134](https://github.com/redcatH/HollyMusic/pull/134)）
+
+### 升级说明
+
+- v0.30.4 的镜像已上传，但发布流程因清单注解缺失中断，未更新 latest 或创建 GitHub Release；其标签和镜像保持不变。
+- 建议从 v0.30.3 直接升级至本版本。源码部署使用 Node.js 24 和 pnpm 10.22.0；工程与依赖更新详见 [v0.30.4 说明](https://github.com/redcatH/HollyMusic/blob/v0.30.4/docs/releases/v0.30.4.md)。
+
 ## v0.30.4（2026-11-03）
 
 **完整对比**：[v0.30.3 → v0.30.4](https://github.com/redcatH/HollyMusic/compare/v0.30.3...v0.30.4)
