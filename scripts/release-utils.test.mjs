@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseTag, compareTags, changelogSection, validateMetadata, latestCiRun, validatePlatforms } from './release-utils.mjs'
+import { parseTag, compareTags, changelogSection, validateMetadata, latestCiRun, validatePlatforms, pushReleaseIndex } from './release-utils.mjs'
 
 test('reject unsafe, ambiguous and non-semver release inputs', () => {
   for (const tag of ['v01.2.3', 'v1.2', 'v1.2.3+build', 'v1.2.3-beta.01', '../v1.2.3', 'v1.2.3\nx=y', '$(whoami)', '--help']) assert.throws(() => parseTag(tag))
@@ -35,4 +35,44 @@ test('single architecture, duplicate architectures and invalid digests block rel
   assert.throws(() => validatePlatforms({ manifests: [item('amd64')] }))
   assert.throws(() => validatePlatforms({ manifests: [item('amd64'), item('amd64')] }))
   assert.throws(() => validatePlatforms({ manifests: [item('arm64'), { ...item('amd64'), digest: 'latest' }] }))
+})
+
+const dockerManifest = {
+  mediaType: 'application/vnd.docker.distribution.manifest.list.v2+json',
+  manifests: ['amd64', 'arm64'].map(architecture => ({
+    mediaType: 'application/vnd.docker.distribution.manifest.v2+json',
+    platform: { os: 'linux', architecture }, digest: `sha256:${'a'.repeat(64)}`, size: 4081,
+  })),
+}
+const revision = 'a'.repeat(40)
+const credentials = { username: 'maintainer', token: 'test-token' }
+
+test('Docker schema2 sources publish an annotated OCI index without changing verified descriptors', async () => {
+  const requests = []
+  await pushReleaseIndex('owner/music', 'v1.2.3', revision, dockerManifest, credentials, async (url, options) => {
+    requests.push({ url, options })
+    return requests.length === 1 ? Response.json({ token: 'registry-token' }) : new Response(null, { status: 201 })
+  })
+  assert.match(requests[0].url, /scope=repository:owner\/music:pull,push$/)
+  const { url, options } = requests[1]
+  assert.equal(url, 'https://ghcr.io/v2/owner/music/manifests/v1.2.3')
+  assert.equal(options.method, 'PUT')
+  assert.equal(options.headers['Content-Type'], 'application/vnd.oci.image.index.v1+json')
+  assert.equal(options.headers.Authorization, 'Bearer registry-token')
+  const index = JSON.parse(options.body)
+  assert.deepEqual(index.manifests, dockerManifest.manifests)
+  assert.equal(index.annotations['org.opencontainers.image.version'], 'v1.2.3')
+  assert.equal(index.annotations['org.opencontainers.image.revision'], revision)
+  assert.equal(index.mediaType, options.headers['Content-Type'])
+})
+
+test('invalid platforms and registry failures stop publication', async () => {
+  let calls = 0
+  const unauthorized = async () => { calls++; return new Response(null, { status: 401 }) }
+  await assert.rejects(pushReleaseIndex('owner/music', 'v1.2.3', revision, { manifests: [] }, credentials, unauthorized))
+  assert.equal(calls, 0)
+  await assert.rejects(pushReleaseIndex('owner/music', 'v1.2.3', revision, dockerManifest, credentials, unauthorized), /HTTP 401/)
+  assert.equal(calls, 1)
+  const failedPush = async () => ++calls === 2 ? Response.json({ token: 'registry-token' }) : new Response(null, { status: 403 })
+  await assert.rejects(pushReleaseIndex('owner/music', 'v1.2.3', revision, dockerManifest, credentials, failedPush), /HTTP 403/)
 })

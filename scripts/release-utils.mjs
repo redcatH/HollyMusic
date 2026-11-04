@@ -51,3 +51,32 @@ export function validatePlatforms(manifest) {
   assert.deepEqual(manifest.manifests?.map(item => `${item.platform.os}/${item.platform.architecture}`).sort(), ['linux/amd64', 'linux/arm64'], '镜像必须恰好包含 amd64 和 arm64')
   for (const item of manifest.manifests) assert.match(item.digest, /^sha256:[0-9a-f]{64}$/)
 }
+
+// Docker schema2 清单由 imagetools 合并时会丢弃 index 注解；显式发布 OCI index。
+export async function pushReleaseIndex(repo, tag, sha, manifest, credentials, fetchImpl = fetch) {
+  assert.match(repo, /^[a-z0-9._-]+\/[a-z0-9._-]+$/)
+  parseTag(tag)
+  assert.match(sha, /^[0-9a-f]{40}$/)
+  validatePlatforms(manifest)
+  assert.ok(credentials.username && credentials.token, '缺少镜像仓库凭据')
+  const index = {
+    schemaVersion: 2,
+    mediaType: 'application/vnd.oci.image.index.v1+json',
+    manifests: manifest.manifests,
+    annotations: { 'org.opencontainers.image.version': tag, 'org.opencontainers.image.revision': sha },
+  }
+  const auth = await fetchImpl(`https://ghcr.io/token?service=ghcr.io&scope=repository:${repo}:pull,push`, {
+    headers: { Authorization: `Basic ${Buffer.from(`${credentials.username}:${credentials.token}`).toString('base64')}` },
+    signal: AbortSignal.timeout(120_000),
+  })
+  assert.ok(auth.ok, `镜像仓库认证失败：HTTP ${auth.status}`)
+  const { token } = await auth.json()
+  assert.ok(token, '镜像仓库未返回访问令牌')
+  const response = await fetchImpl(`https://ghcr.io/v2/${repo}/manifests/${tag}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': index.mediaType },
+    body: JSON.stringify(index),
+    signal: AbortSignal.timeout(120_000),
+  })
+  assert.equal(response.status, 201, `发布 OCI index 失败：HTTP ${response.status}`)
+}

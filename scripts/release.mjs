@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { parseTag, compareTags, changelogSection, validateMetadata, latestCiRun, validatePlatforms } from './release-utils.mjs'
+import { parseTag, compareTags, changelogSection, validateMetadata, latestCiRun, validatePlatforms, pushReleaseIndex } from './release-utils.mjs'
 
 const [command, tag] = process.argv.slice(2)
 const { pre } = parseTag(tag)
@@ -74,15 +74,17 @@ async function preflight() {
   }
   output({ tag, sha })
 }
-function publish() {
+async function publish() {
   const { sha } = validateTag()
   assert.equal(inspect(`${image}:${tag}`, true), null, '版本镜像已存在，拒绝覆盖')
   assert.match(process.env.GITHUB_RUN_ID ?? '', /^\d+$/)
   const sources = ['amd64', 'arm64'].map(arch => `${image}:build-${process.env.GITHUB_RUN_ID}-${arch}`)
   const manifest = JSON.parse(docker('create', '--dry-run', ...sources))
   validatePlatforms(manifest)
-  const digests = manifest.manifests.map(item => `${image}@${item.digest}`)
-  docker('create', '--annotation', `index:org.opencontainers.image.version=${tag}`, '--annotation', `index:org.opencontainers.image.revision=${sha}`, '--tag', `${image}:${tag}`, ...digests)
+  await pushReleaseIndex(repo.toLowerCase(), tag, sha, manifest, {
+    username: process.env.GITHUB_ACTOR,
+    token: process.env.GH_TOKEN,
+  })
   const published = inspect(`${image}:${tag}`)
   validateImage(published, sha)
   const channel = pre.length ? 'preview' : 'latest'
@@ -120,6 +122,6 @@ function release() {
 }
 
 if (command === 'preflight') await preflight()
-else if (command === 'publish') publish()
+else if (command === 'publish') await publish()
 else if (command === 'release') release()
 else throw new Error(`未知命令：${command}`)
