@@ -18,7 +18,8 @@ export function getMusicUrl(
  * 浏览器原生 GET + Range，seek/暂停/恢复全程服务端处理。
  */
 export function buildAudioUrl(uid: string, quality: QualityType = '320k'): string {
-  return `/api/audio?uid=${encodeURIComponent(uid)}&quality=${encodeURIComponent(quality)}`
+  // 切换 HTTP 缓存键，避开旧版本仍在 max-age 内的试听响应（含无 SW 的浏览器）。
+  return `/api/audio?uid=${encodeURIComponent(uid)}&quality=${encodeURIComponent(quality)}&v=2`
 }
 
 /**

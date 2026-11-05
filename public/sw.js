@@ -329,7 +329,7 @@ function startAudioDownload(request, entry) {
   headers.delete('if-range')
   resetAudioStall(entry)
   // 使用独立 signal，Audio 的探测结束、拖拽或取消某个 Range 都不取消完整下载。
-  entry.headersReady = fetch(new Request(request, { headers, signal: entry.controller.signal })).then(response => {
+  entry.headersReady = fetch(new Request(request, { headers, signal: entry.controller.signal, cache: 'no-store' })).then(response => {
     const size = Number(response.headers.get('content-length'))
     const range = response.headers.get('content-range')?.match(/^bytes 0-(\d+)\/(\d+)$/)
     const full = response.status === 200 || (response.status === 206 && range
@@ -428,6 +428,8 @@ async function persistAudio(entry) {
     const existing = await cache.match(entry.cacheKey)
     if (!existing || Number(existing.headers.get('content-length')) !== entry.size) return
     void existing.body?.cancel()
+    const track = JSON.parse(decodeURIComponent(existing.headers.get('x-holly-track') || '{}'))
+    if (!PROTOCOL.isAudioDurationValid(Number(existing.headers.get('x-holly-duration')), Number(track.duration))) return
     const bodies = [...entry.bodies]
     const responses = await Promise.all(bodies.map(() => cache.match(entry.cacheKey)))
     if (responses.some(response => !response || Number(response.headers.get('content-length')) !== entry.size)) return
@@ -631,6 +633,14 @@ async function restoreAudio(request, clientId, url) {
         && /^(audio\/|application\/octet-stream)/i.test(type)
         && track?.uid === url.searchParams.get('uid')
         && response.headers.get('x-holly-quality') === (url.searchParams.get('quality') || '320k')) {
+        // 历史长曲必须先由页面补检；Worker 不把仅验证字节数的试听当完整歌曲恢复。
+        if (!PROTOCOL.isAudioDurationValid(Number(response.headers.get('x-holly-duration')), Number(track.duration))) {
+          if (Number(response.headers.get('x-holly-duration')) > 0) {
+            await (await caches.open(record.cacheName)).delete(record.cacheKey)
+          }
+          await forgetSession(clientId, url.href, record.captureId)
+          return fetch(new Request(request, { cache: 'no-store' }))
+        }
         let stored = response
         // 新缓存由流式写入校验长度；兼容旧缓存时逐块校验，仍不整首载入内存。
         if (response.headers.get('x-holly-verified-size') !== String(size)) {
@@ -648,7 +658,7 @@ async function restoreAudio(request, clientId, url) {
     void reportAudioDiagnostic('restore-audio', error, clientId)
     // 存储不可用时保留原生网络播放路径。
   }
-  return fetch(request)
+  return fetch(new Request(request, { cache: 'no-store' }))
 }
 
 function captureAudio(event, entry) {

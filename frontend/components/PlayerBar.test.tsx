@@ -539,7 +539,7 @@ describe('PC 与移动端共用播放器', () => {
         await loading
       })
       await ready(second.duration)
-      expect(audio.src).toBe(result === 'blob' ? 'blob:second' : '/api/audio?uid=kw-second&quality=320k')
+      expect(audio.src).toBe(result === 'blob' ? 'blob:second' : '/api/audio?uid=kw-second&quality=320k&v=2')
       expect(audio.currentTime).toBe(0)
       expect(usePlayerStore.getState()).toMatchObject({ currentTrack: second, currentIndex: 1, isPlaying: true })
     } finally { await act(async () => { useAuthStore.setState(auth, true) }) }

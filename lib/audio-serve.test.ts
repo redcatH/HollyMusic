@@ -137,6 +137,7 @@ it('禁用文件缓存时仍透传 Range 和音频校验响应头', async () => 
     expect(response.headers.get('accept-ranges')).toBe('bytes')
     expect(response.headers.get('etag')).toBe('"song-v1"')
     expect(response.headers.get('last-modified')).toBe('Sun, 18 Oct 2026 12:00:00 GMT')
+    expect(response.headers.get('cache-control')).toBe('no-store')
     expect(await response.text()).toBe('abcdefgh')
   } finally {
     if (previous === undefined) delete process.env.ENABLE_FILE_CACHE
@@ -163,6 +164,7 @@ describe('AudioServe.serve() 缓存 miss → 跟随交付', () => {
     expect(resp.status).toBe(200)
     expect(resp.headers.get('content-length')).toBe(String(total))
     expect(resp.headers.get('accept-ranges')).toBe('bytes')
+    expect(resp.headers.get('cache-control')).toBe('no-store')
     const body = Buffer.from(await resp.arrayBuffer())
     expect(body.length).toBe(total)
     expect(body.equals(expected)).toBe(true)

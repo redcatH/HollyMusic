@@ -907,7 +907,7 @@ function buildPartialResponse(
     'Content-Length': String(contentLength),
     'Content-Range': `bytes ${range.start}-${range.end}/${size}`,
     'Accept-Ranges': 'bytes',
-    'Cache-Control': 'public, max-age=3600',
+    'Cache-Control': 'no-store',
   }
   if (isHead) return new Response(null, { status: 206, headers })
   const stream = fs.createReadStream(filePath, { start: range.start, end: range.end })
@@ -957,7 +957,7 @@ function buildFollowResponse(
     'Content-Type': contentType,
     'Content-Length': String(contentLength),
     'Accept-Ranges': 'bytes',
-    'Cache-Control': 'public, max-age=3600',
+    'Cache-Control': 'no-store',
   }
   if (isRangeRequest) {
     headers['Content-Range'] = `bytes ${serveRange.start}-${serveRange.end}/${size}`
@@ -1042,7 +1042,7 @@ function buildFullResponse(
     'Content-Type': contentType,
     'Content-Length': String(size),
     'Accept-Ranges': 'bytes',
-    'Cache-Control': 'public, max-age=3600',
+    'Cache-Control': 'no-store',
   }
   if (isHead) return new Response(null, { status: 200, headers })
   const stream = fs.createReadStream(filePath)

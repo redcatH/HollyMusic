@@ -6,6 +6,11 @@ import { preparePlaybackResponse } from './playback-response'
 import { useAuthStore } from '@/hooks/useAuth'
 import * as authApi from '@/lib/api/auth'
 import { logger } from '@/lib/logger'
+import { buildAudioUrl } from '@/lib/api/music'
+import { readAudioDuration } from '@/lib/client/audio-duration'
+
+// 原有用例只验证传输及容量语义，使用固定时长；解析器另用真实 WAV 验证。
+vi.mock('@/lib/client/audio-duration', () => ({ readAudioDuration: vi.fn() }))
 
 function memoryCaches() {
   const stores = new Map<string, Map<string, Response>>()
@@ -37,6 +42,7 @@ const response = (size = 4) => new Response(new Uint8Array(size), {
 const nativeFetch = globalThis.fetch
 
 beforeEach(() => {
+  vi.mocked(readAudioDuration).mockReset().mockResolvedValue(180)
   const storage = new Map<string, string>()
   vi.stubGlobal('window', { isSecureContext: true, caches: {}, location: { origin: 'https://holly.test' }, dispatchEvent: vi.fn(),
     localStorage: { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => { storage.set(key, value) } } })
@@ -67,12 +73,100 @@ it('已缓存歌曲不重复下载；相同歌曲不同音质分别保存', asyn
   expect(await listOfflineTracks('alice')).toHaveLength(2)
 })
 
+it('完整下载的试听片段不落库，换源后同曲目可以重新缓存完整版', async () => {
+  vi.mocked(readAudioDuration).mockResolvedValueOnce(30).mockResolvedValueOnce(180)
+  await cachePlayedTrack('alice', track('1'), '320k')
+  expect(await listOfflineTracks('alice')).toEqual([])
+  await cachePlayedTrack('alice', track('1'), '320k')
+  expect(fetch).toHaveBeenCalledTimes(2)
+  const cache = await caches.open('holly-audio-v1:alice')
+  expect((await cache.match('https://holly.test/__offline_audio/kw-1/320k'))?.headers.get('x-holly-duration')).toBe('180')
+  expect(await getOfflineAudio('alice', 'kw-1', '320k', ['320k'])).not.toBeNull()
+})
+
+it('历史试听缓存读取时删除，保留其他歌曲和账号，后续可获取完整版', async () => {
+  await cachePlayedTrack('alice', track('other'), '320k')
+  await cachePlayedTrack('bob', track('1'), '320k')
+  const cache = await caches.open('holly-audio-v1:alice')
+  const key = 'https://holly.test/__offline_audio/kw-1/320k'
+  await cache.put(key, new Response('part', { headers: {
+    'content-type': 'audio/mpeg', 'content-length': '4',
+    'x-holly-track': encodeURIComponent(JSON.stringify(track('1'))), 'x-holly-quality': '320k', 'x-holly-used': '1',
+  } }))
+  vi.mocked(readAudioDuration).mockResolvedValueOnce(30)
+  expect(await getOfflineAudio('alice', 'kw-1', '320k', ['320k'])).toBeNull()
+  expect(await cache.match(key)).toBeUndefined()
+  expect((await listOfflineTracks('alice')).map(item => item.track.uid)).toEqual(['kw-other'])
+  expect(await listOfflineTracks('bob')).toHaveLength(1)
+  expect(window.dispatchEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'holly-offline-changed' }))
+  await cachePlayedTrack('alice', track('1'), '320k')
+  const local = await getOfflineAudio('alice', 'kw-1', '320k', ['320k'])
+  expect(local).not.toBeNull()
+  URL.revokeObjectURL(local!.url)
+})
+
+it('历史完整缓存补检一次保存真实时长，后续读取复用校验结果', async () => {
+  const cache = await caches.open('holly-audio-v1:alice')
+  const key = 'https://holly.test/__offline_audio/kw-1/320k'
+  await cache.put(key, new Response('full', { headers: {
+    'content-type': 'audio/mpeg', 'content-length': '4',
+    'x-holly-track': encodeURIComponent(JSON.stringify(track('1'))), 'x-holly-quality': '320k', 'x-holly-used': '1',
+  } }))
+  for (let i = 0; i < 2; i++) {
+    const local = await getOfflineAudio('alice', 'kw-1', '320k', ['320k'])
+    expect(local).not.toBeNull()
+    URL.revokeObjectURL(local!.url)
+  }
+  expect(readAudioDuration).toHaveBeenCalledOnce()
+  expect((await cache.match(key))?.headers.get('x-holly-duration')).toBe('180')
+  expect(fetch).not.toHaveBeenCalled()
+})
+
+it('长曲无法解析时长时跳过缓存，短曲仍可保存', async () => {
+  vi.mocked(readAudioDuration).mockResolvedValue(0)
+  await cachePlayedTrack('alice', track('1'), '320k')
+  expect(await listOfflineTracks('alice')).toEqual([])
+  const short = track('short')
+  short.duration = 60
+  short.musicInfo.interval = '01:00'
+  await cachePlayedTrack('alice', short, '320k')
+  expect(await listOfflineTracks('alice')).toHaveLength(1)
+})
+
+it('已知试听缓存不会只刷新时间继续复用，离线可以回退同曲其他完整音质', async () => {
+  await cachePlayedTrack('alice', track('1'), '320k')
+  await cachePlayedTrack('alice', track('1'), '128k')
+  const cache = await caches.open('holly-audio-v1:alice')
+  const key = 'https://holly.test/__offline_audio/kw-1/320k'
+  const old = (await cache.match(key))!
+  const headers = new Headers(old.headers)
+  headers.set('x-holly-duration', '30')
+  await cache.put(key, new Response(old.body, { headers }))
+  vi.stubGlobal('navigator', { onLine: false })
+  const local = await getOfflineAudio('alice', 'kw-1', '320k', ['320k', '128k'])
+  expect(local?.quality).toBe('128k')
+  expect(await cache.match(key)).toBeUndefined()
+  URL.revokeObjectURL(local!.url)
+})
+
+it('独立下载的时长检查被取消后不能提交或淘汰旧歌曲', async () => {
+  await cachePlayedTrack('alice', track('old'), '320k')
+  let resolve!: (duration: number) => void
+  vi.mocked(readAudioDuration).mockImplementationOnce(() => new Promise(done => { resolve = done }))
+  const task = cachePlayedTrack('alice', track('new'), '320k')
+  await vi.waitFor(() => expect(resolve).toBeTypeOf('function'))
+  cancelOfflineDownloads()
+  resolve(180)
+  await task
+  expect((await listOfflineTracks('alice')).map(item => item.track.uid)).toEqual(['kw-old'])
+})
+
 it('从播放响应保存离线歌曲，不再发起第二次 fetch', async () => {
   let port!: MessagePort
   vi.stubGlobal('navigator', { onLine: true, serviceWorker: { controller: {
     postMessage: (_data: unknown, ports: MessagePort[]) => { port = ports[0]; port.postMessage({ type: 'ready' }) },
   } } })
-  const capture = preparePlaybackResponse('alice', '/api/audio?uid=kw-1&quality=320k', OFFLINE_DEFAULT_LIMIT_BYTES)!
+  const capture = preparePlaybackResponse('alice', buildAudioUrl('kw-1', '320k'), OFFLINE_DEFAULT_LIMIT_BYTES)!
   expect(await capture.ready).toBe(true)
   const caching = cachePlayedTrack('alice', track('1'), '320k')
   port.postMessage({ type: 'complete', blob: new Blob(['abcd']),
@@ -86,6 +180,55 @@ it('从播放响应保存离线歌曲，不再发起第二次 fetch', async () =
   port.close()
 })
 
+it('SW 捕获的试听不会落入持久缓存，也不补发第二次下载', async () => {
+  let port!: MessagePort
+  vi.stubGlobal('navigator', { onLine: true, serviceWorker: { controller: {
+    postMessage: (_data: unknown, ports: MessagePort[]) => { port = ports[0]; port.postMessage({ type: 'ready' }) },
+  } } })
+  const capture = preparePlaybackResponse('alice', buildAudioUrl('kw-1', '320k'), OFFLINE_DEFAULT_LIMIT_BYTES)!
+  try {
+    await capture.ready
+    vi.mocked(readAudioDuration).mockResolvedValueOnce(30)
+    const caching = cachePlayedTrack('alice', track('1'), '320k')
+    port.postMessage({ type: 'complete', blob: new Blob(['part']),
+      headers: { 'content-type': 'audio/mpeg', 'content-length': '4' } })
+    await caching
+    expect(fetch).not.toHaveBeenCalled()
+    expect(await listOfflineTracks('alice')).toEqual([])
+    // 当前试听仍可交付，拒绝缓存不会中断播放或让上游重新下载。
+    expect(await (await capture.response)!.text()).toBe('part')
+  } finally { capture.cancel(); port.close() }
+})
+
+it('时长校验期间同曲重播，旧任务不能改用新的播放响应落库', async () => {
+  const ports: MessagePort[] = []
+  vi.stubGlobal('navigator', { onLine: true, serviceWorker: { controller: {
+    postMessage: (_data: unknown, transferred?: MessagePort[]) => {
+      if (transferred?.[0]) { ports.push(transferred[0]); transferred[0].postMessage({ type: 'ready' }) }
+    },
+  } } })
+  const url = buildAudioUrl('kw-1', '320k')
+  const first = preparePlaybackResponse('alice', url, OFFLINE_DEFAULT_LIMIT_BYTES)!
+  let second: typeof first | null = null
+  try {
+    await first.ready
+    let resolve!: (duration: number) => void
+    vi.mocked(readAudioDuration).mockImplementationOnce(() => new Promise(done => { resolve = done }))
+    const task = cachePlayedTrack('alice', track('1'), '320k')
+    ports[0].postMessage({ type: 'complete', blob: new Blob(['full']),
+      headers: { 'content-type': 'audio/mpeg', 'content-length': '4' } })
+    await vi.waitFor(() => expect(resolve).toBeTypeOf('function'))
+    second = preparePlaybackResponse('alice', url, OFFLINE_DEFAULT_LIMIT_BYTES)!
+    await second.ready
+    ports[1].postMessage({ type: 'complete', blob: new Blob(['part']),
+      headers: { 'content-type': 'audio/mpeg', 'content-length': '4' } })
+    resolve(180)
+    await task
+    expect(await listOfflineTracks('alice')).toEqual([])
+    expect(fetch).not.toHaveBeenCalled()
+  } finally { second?.cancel(); for (const port of ports) port.close() }
+})
+
 it('从分块清单流式落盘后确认释放，并以磁盘指针替换页面完成响应', async () => {
   let port!: MessagePort
   let captureId = ''
@@ -96,7 +239,7 @@ it('从分块清单流式落盘后确认释放，并以磁盘指针替换页面�
       if (ports?.[0]) { captureId = data.captureId; port = ports[0]; port.postMessage({ type: 'ready' }) }
     },
   } } })
-  const capture = preparePlaybackResponse('alice', '/api/audio?uid=kw-1&quality=320k', OFFLINE_DEFAULT_LIMIT_BYTES)!
+  const capture = preparePlaybackResponse('alice', buildAudioUrl('kw-1', '320k'), OFFLINE_DEFAULT_LIMIT_BYTES)!
   try {
     await capture.ready
     const temporary = await caches.open('holly-playback-data-v1')
@@ -135,7 +278,7 @@ it.each(['missing', 'invalid-json', 'invalid-manifest', 'missing-chunk', 'storag
       if (ports?.[0]) { captureId = data.captureId; port = ports[0]; port.postMessage({ type: 'ready' }) }
     },
   } } })
-  const capture = preparePlaybackResponse('alice', '/api/audio?uid=kw-1&quality=320k', OFFLINE_DEFAULT_LIMIT_BYTES)!
+  const capture = preparePlaybackResponse('alice', buildAudioUrl('kw-1', '320k'), OFFLINE_DEFAULT_LIMIT_BYTES)!
   try {
     await capture.ready
     const base = `https://holly.test/__playback_data/alice-tab/${captureId}/`
@@ -167,7 +310,7 @@ it('下载尚未完成时同账号重新认证，原缓存任务仍复用同一�
   vi.spyOn(authApi, 'getMe').mockResolvedValue({ authenticated: true, username: 'alice', mustChangePassword: false,
     setupRequired: false, setupRecoveryRequired: false, setupTokenRequired: false })
   useAuthStore.setState({ authenticated: true, username: 'alice', loading: false, mustChangePassword: false })
-  const capture = preparePlaybackResponse('alice', '/api/audio?uid=kw-1&quality=320k', OFFLINE_DEFAULT_LIMIT_BYTES)!
+  const capture = preparePlaybackResponse('alice', buildAudioUrl('kw-1', '320k'), OFFLINE_DEFAULT_LIMIT_BYTES)!
   try {
     await capture.ready
     const caching = cachePlayedTrack('alice', track('1'), '320k')
@@ -191,7 +334,7 @@ it.each(['cancel', 'unavailable'])('播放捕获 %s 时跳过缓存，不额外�
   vi.stubGlobal('navigator', { onLine: true, serviceWorker: { controller: {
     postMessage: (_data: unknown, ports: MessagePort[]) => { port = ports[0]; port.postMessage({ type: 'ready' }) },
   } } })
-  const capture = preparePlaybackResponse('alice', '/api/audio?uid=kw-1&quality=320k', OFFLINE_DEFAULT_LIMIT_BYTES)!
+  const capture = preparePlaybackResponse('alice', buildAudioUrl('kw-1', '320k'), OFFLINE_DEFAULT_LIMIT_BYTES)!
   await capture.ready
   const caching = cachePlayedTrack('alice', track('1'), '320k')
   if (reason === 'cancel') cancelOfflineDownloads()
@@ -209,7 +352,7 @@ it('旧 Service Worker 不响应握手时及时回退原有缓存方式', async 
   vi.stubGlobal('navigator', { onLine: true, serviceWorker: { controller: {
     postMessage: (_data: unknown, ports: MessagePort[]) => { port = ports[0] },
   } } })
-  const capture = preparePlaybackResponse('alice', '/api/audio?uid=kw-1&quality=320k', OFFLINE_DEFAULT_LIMIT_BYTES)!
+  const capture = preparePlaybackResponse('alice', buildAudioUrl('kw-1', '320k'), OFFLINE_DEFAULT_LIMIT_BYTES)!
   expect(await capture.ready).toBe(false)
   await cachePlayedTrack('alice', track('1'), '320k')
   expect(fetch).toHaveBeenCalledTimes(1)
@@ -226,7 +369,7 @@ it.each([
       if (ports?.[0]) { port = ports[0]; port.postMessage(reply) }
     },
   } } })
-  const capture = preparePlaybackResponse('alice', '/api/audio?uid=kw-1&quality=320k', OFFLINE_DEFAULT_LIMIT_BYTES)!
+  const capture = preparePlaybackResponse('alice', buildAudioUrl('kw-1', '320k'), OFFLINE_DEFAULT_LIMIT_BYTES)!
   try {
     expect(await capture.ready).toBe(false)
     await cachePlayedTrack('alice', track('1'), '320k')
@@ -245,7 +388,7 @@ it('页面等待缓存超过 5 分钟只发送 cancel-cache，仍保留播放源
       if (ports?.[0]) { port = ports[0]; port.postMessage({ type: 'ready' }) }
     },
   } } })
-  const capture = preparePlaybackResponse('alice', '/api/audio?uid=kw-1&quality=320k', OFFLINE_DEFAULT_LIMIT_BYTES)!
+  const capture = preparePlaybackResponse('alice', buildAudioUrl('kw-1', '320k'), OFFLINE_DEFAULT_LIMIT_BYTES)!
   try {
     await capture.ready
     const stopped = new Promise<MessageEvent>(resolve => { port.onmessage = resolve })

@@ -49,6 +49,12 @@ export function getPlaybackResponse(username: string, url: string): Promise<Resp
   return captures.get(keyFor(username, url))?.response
 }
 
+/** 固定本次捕获；时长校验后重开磁盘流时，不能切换到同曲的新播放响应。 */
+export function getPlaybackResponseReader(username: string, url: string): (() => Promise<Response | null>) | undefined {
+  const capture = captures.get(keyFor(username, url))
+  return capture ? () => capture.response : undefined
+}
+
 export function markPlaybackCached(username: string, url: string): void {
   captures.get(keyFor(username, url))?.cached()
 }

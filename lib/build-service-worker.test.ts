@@ -15,6 +15,7 @@ beforeEach(async () => {
   }
   await writeFile(path.join(project, 'public/sw.js'), await readFile(workerSource))
   await writeFile(path.join(project, 'lib/playback-protocol.ts'), await readFile(new URL('./playback-protocol.ts', import.meta.url)))
+  await writeFile(path.join(project, 'lib/audio-integrity.ts'), await readFile(new URL('./audio-integrity.ts', import.meta.url)))
   for (const resource of ['index.html', 'manifest.json', 'icon.svg', 'theme-init.js', 'assets/app.js',
     'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png']) {
     await writeFile(path.join(project, 'frontend/dist', resource), resource)
@@ -67,6 +68,13 @@ it('共享协议变更会更新 Worker 内容版本', async () => {
   const first = await buildServiceWorker(project)
   const file = path.join(project, 'lib/playback-protocol.ts')
   await writeFile(file, (await readFile(file, 'utf8')).replace('holly-playback-data-v1', 'holly-playback-data-v2'))
+  expect((await buildServiceWorker(project)).version).not.toBe(first.version)
+})
+
+it('试听判定规则变化会更新 Worker 内容版本', async () => {
+  const first = await buildServiceWorker(project)
+  const file = path.join(project, 'lib/audio-integrity.ts')
+  await writeFile(file, (await readFile(file, 'utf8')).replace('0.8', '0.9'))
   expect((await buildServiceWorker(project)).version).not.toBe(first.version)
 })
 

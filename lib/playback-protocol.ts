@@ -1,6 +1,7 @@
 import type { QualityType } from '@/lib/types/music'
+import { isAudioDurationValid } from './audio-integrity'
 
-/** 页面和 classic SW 共用的通信契约；保持无运行时依赖，构建时编译进 Worker。 */
+/** 页面和 classic SW 共用的通信契约；仅依赖纯规则，构建时编译进 Worker。 */
 export const PLAYBACK_PROTOCOL_VERSION = 1
 export const PLAYBACK_MANIFEST_VERSION = 1
 export const PLAYBACK_CHUNK_BYTES = 256 * 1024
@@ -146,4 +147,5 @@ export const playbackProtocol = {
   isPortCommand: isPlaybackPortCommand, isWorkerReply: isPlaybackWorkerReply,
   isSession: isPlaybackSession, dataKey: playbackDataKey, sessionKey: playbackSessionKey,
   createManifest: createPlaybackManifest,
+  isAudioDurationValid,
 }

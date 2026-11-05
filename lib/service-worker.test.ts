@@ -676,7 +676,7 @@ it('SW 重启后从已落盘歌曲恢复有界、后缀及越界 Range，离线�
   port.onmessage!({ data: { type: 'cancel' } })
 })
 
-it.each(['missing', 'corrupt', 'different-client'])('SW 重启后缓存 %s 时回退网络，不读取其他账号或残缺数据', async reason => {
+it.each(['missing', 'corrupt', 'different-client', 'trial', 'unverified'])('SW 重启后缓存 %s 时回退网络，不读取其他账号或残缺数据', async reason => {
   const storage = memoryCaches()
   const first = worker(false, storage)
   const port = registerAudio(first.handlers, 'alice-tab', 'capture-alice')
@@ -689,12 +689,26 @@ it.each(['missing', 'corrupt', 'different-client'])('SW 重启后缓存 %s 时�
     headers.set('content-length', '99')
     await cache.put('https://holly.test/__offline_audio/kw-1/320k', new Response('abcd', { headers }))
   }
+  if (reason === 'trial' || reason === 'unverified') {
+    await seedOffline(storage)
+    const cache = await storage.open('holly-audio-v1:alice')
+    const response = (await cache.match('https://holly.test/__offline_audio/kw-1/320k'))!
+    const headers = new Headers(response.headers)
+    headers.set('x-holly-track', encodeURIComponent(JSON.stringify({ uid: 'kw-1', duration: 240 })))
+    if (reason === 'trial') headers.set('x-holly-duration', '30')
+    await cache.put('https://holly.test/__offline_audio/kw-1/320k', new Response(response.body, { headers }))
+  }
   await seedOffline(storage, 'bob', 'BBBBBBBB')
   const restarted = worker(false, storage)
   restarted.fetch.mockResolvedValueOnce(new Response('network'))
   const response = await requestAudio(restarted.handlers, 'bytes=3-5', reason === 'different-client' ? 'bob-tab' : 'alice-tab').response
   expect(await response.text()).toBe('network')
   expect(restarted.fetch).toHaveBeenCalledOnce()
+  expect(restarted.fetch.mock.calls[0][0]?.cache).toBe('no-store')
+  if (reason === 'trial' || reason === 'unverified') {
+    const stored = await (await storage.open('holly-audio-v1:alice')).match('https://holly.test/__offline_audio/kw-1/320k')
+    expect(!!stored).toBe(reason === 'unverified') // 未验证的旧完整版留给页面补检。
+  }
   port.onmessage!({ data: { type: 'cancel' } })
 })
 
