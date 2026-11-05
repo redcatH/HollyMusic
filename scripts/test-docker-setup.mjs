@@ -65,6 +65,9 @@ send(EVENT_NAMES.inited,{sources:{kw:{type:'music',actions:['musicUrl'],qualitys
   assert.equal(uploaded.status, 201, JSON.stringify(candidate))
   assert.equal(candidate.data.kind, 'upload')
   assert.deepEqual(candidate.data.capabilities.kw, ['flac'])
+  const recent = (await (await request('/api/admin/source-tests', { headers: { Cookie: cookie } })).json()).data
+  assert.deepEqual(recent.list, [], 'An unstarted candidate must not appear as a test report')
+  assert.deepEqual(recent.pending.map(draft => draft.id), [candidate.data.id])
   const draftPath = `/api/admin/source-tests/${candidate.data.id}`
   // Dynamic parser imports and their transitive dependencies must also exist in standalone.
   const facts = JSON.parse(docker('exec', id, 'node', '-e', `

@@ -1,22 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type { MusicInfo } from '@/lib/types/music'
 
-const mocks = vi.hoisted(() => ({ rows: new Map<string, Record<string, unknown>>(), samples: vi.fn(), publicRequest: vi.fn(), commit: vi.fn(), readConfig: vi.fn(), run: vi.fn() }))
+const mocks = vi.hoisted(() => ({ rows: new Map<string, Record<string, unknown>>(), samples: vi.fn(), publicRequest: vi.fn(), commit: vi.fn(), readConfig: vi.fn(), readScript: vi.fn(), run: vi.fn() }))
 vi.mock('@/lib/db', () => ({ prisma: { sourceTestDraft: {
   count: vi.fn(async () => 0),
   findFirst: vi.fn(async ({ where }: { where: { id: string; ownerId: number } }) => { const row = mocks.rows.get(where.id); return row?.ownerId === where.ownerId ? row : null }),
-  findMany: vi.fn(async () => [...mocks.rows.values()].reverse()),
-  create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => { mocks.rows.set(data.id as string, { ...data, createdAt: new Date() }); return data }),
-  update: vi.fn(async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => { const row = { ...mocks.rows.get(where.id), ...data }; mocks.rows.set(where.id, row); return row }),
+  findMany: vi.fn(async ({ where, cursor, skip = 0, take }: { where: { ownerId: number; expiresAt: { gt: Date } }; cursor?: { id: string }; skip?: number; take: number }) => {
+    const rows = [...mocks.rows.values()].filter(row => row.ownerId === where.ownerId && (row.expiresAt as Date) > where.expiresAt.gt)
+      .sort((a, b) => (b.updatedAt as Date).getTime() - (a.updatedAt as Date).getTime() || String(b.id).localeCompare(String(a.id)))
+    const start = cursor ? rows.findIndex(row => row.id === cursor.id) + skip : 0
+    return rows.slice(start, start + take)
+  }),
+  create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => { mocks.rows.set(data.id as string, { ...data, createdAt: new Date(), updatedAt: new Date() }); return data }),
+  update: vi.fn(async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => { const row = { ...mocks.rows.get(where.id), ...data, updatedAt: new Date() }; mocks.rows.set(where.id, row); return row }),
   deleteMany: vi.fn(async () => ({ count: 0 })),
   delete: vi.fn(async ({ where }: { where: { id: string } }) => mocks.rows.delete(where.id)),
 } } }))
 vi.mock('@/lib/services/system-settings', () => ({ getSystemSetting: mocks.samples }))
+vi.mock('@/lib/server/source-script-file', () => ({ readSourceScriptFile: mocks.readScript }))
 vi.mock('@/lib/source-testing/network.cjs', () => ({ publicRequest: mocks.publicRequest }))
 vi.mock('@/lib/server/source-test-runner', () => ({ runSourceTestJob: mocks.run }))
 vi.mock('@/lib/services/source-manager-service', () => ({ readConfig: mocks.readConfig, commitTestedSource: mocks.commit, SOURCE_MANAGER_CONSTANTS: { MAX_SCRIPT_SIZE: 5242880 } }))
 const service = await import('./source-test-service')
+const { prisma } = await import('@/lib/db')
 const song = { source: 'kw', songmid: '1', name: 'VIP 样本', singer: '歌手', interval: '04:00', _types: { flac: {}, '320k': {} }, types: [], typeUrl: {} } as unknown as MusicInfo
 const fixture = '// trusted script fixture'
 const digest = createHash('sha256').update(fixture).digest('hex')
@@ -26,6 +33,7 @@ let fetchMock: ReturnType<typeof vi.fn>
 beforeEach(() => {
   vi.clearAllMocks(); mocks.rows.clear(); calls.length = 0
   mocks.samples.mockResolvedValue({ kw: song }); mocks.readConfig.mockResolvedValue({ sources: [] })
+  mocks.readScript.mockResolvedValue(fixture)
   mocks.publicRequest.mockResolvedValue({ status: 200, headers: {}, data: Buffer.from(fixture), complete: true })
   mocks.commit.mockImplementation(async (input: { id: string; pt: string[]; enabled: boolean }) => ({ path: 'custom-sources/confirmed.js', importId: input.id, pt: input.pt, enabled: input.enabled, priority: 1 }))
   mocks.run.mockImplementation(async (job: Record<string, unknown>) => {
@@ -41,6 +49,54 @@ afterEach(async () => {
 })
 
 describe('候选到测试再提交的完整服务流程', () => {
+  it('反复打开已有音源的测试预览不保存草稿、不占配额，也不产生测试记录', async () => {
+    mocks.readConfig.mockResolvedValue({ sources: [{ path: 'custom-sources/fixture.js', name: '已有音源', enabled: true, priority: 1 }] })
+    for (let i = 0; i < 3; i++) {
+      expect(await service.createDraft(7, { sourcePath: 'custom-sources/fixture.js', preview: true })).toMatchObject({ persisted: false, kind: 'retest', results: [] })
+    }
+    expect(prisma.sourceTestDraft.create).not.toHaveBeenCalled()
+    expect(prisma.sourceTestDraft.count).not.toHaveBeenCalled()
+    expect(prisma.sourceTestDraft.deleteMany).not.toHaveBeenCalled()
+    expect(await service.recentDrafts(7)).toEqual([])
+    expect(await service.recentDrafts(7, 'pending')).toEqual([])
+    expect(calls.map(call => call.action)).toEqual(['inspect', 'inspect', 'inspect'])
+  })
+  it('显式开始测试后才保存已有音源的测试记录，并使用同一脚本摘要', async () => {
+    mocks.readConfig.mockResolvedValue({ sources: [{ path: 'custom-sources/fixture.js', enabled: true, priority: 1 }] })
+    const preview = await service.createDraft(7, { sourcePath: 'custom-sources/fixture.js', preview: true })
+    const started = await service.startSourceTest(7, preview.target!.path, preview.hash, 'quick')
+    try {
+      const reports = await service.recentDrafts(7)
+      expect(reports).toMatchObject([{ id: started.id, status: 'running', startedAt: expect.any(String) }])
+      expect(reports[0].results).toHaveLength(2)
+      expect(mocks.rows.has(preview.id)).toBe(false)
+    } finally { await started.run() }
+    expect((await service.getDraft(started.id, 7)).status).toBe('completed')
+  })
+  it('开始前脚本发生变化或缺少测试歌曲时不留下空记录', async () => {
+    mocks.readConfig.mockResolvedValue({ sources: [{ path: 'custom-sources/fixture.js', enabled: true, priority: 1 }] })
+    await expect(service.startSourceTest(7, 'custom-sources/fixture.js', '0'.repeat(64), 'quick')).rejects.toMatchObject({ status: 409 })
+    expect(mocks.run).not.toHaveBeenCalled()
+    mocks.samples.mockResolvedValue({})
+    await expect(service.startSourceTest(7, 'custom-sources/fixture.js', digest, 'quick')).rejects.toThrow('没有可测试')
+    expect(mocks.rows.size).toBe(0)
+    expect(await service.recentDrafts(7)).toEqual([])
+  })
+  it('旧的空测试草稿不挤掉实际报告，未测试的上传和订阅候选仍可恢复', async () => {
+    const draft = await service.createDraft(7, { file: { name: 'source.js', content: fixture } })
+    await (await service.prepareTest(draft.id, 7, 'quick'))()
+    const pending = await service.createDraft(7, { url: 'https://public.example/source.js' })
+    const row = mocks.rows.get(pending.id)!
+    for (let i = 0; i < 65; i++) {
+      const id = randomUUID()
+      mocks.rows.set(id, { ...row, id, updatedAt: new Date(Date.now() + i + 1000), stateJson: JSON.stringify({ ...pending, id, kind: 'retest' }) })
+    }
+    const otherId = randomUUID()
+    mocks.rows.set(otherId, { ...row, id: otherId, ownerId: 8, stateJson: JSON.stringify({ ...pending, id: otherId }) })
+    expect((await service.recentDrafts(7)).map(report => report.id)).toEqual([draft.id])
+    expect((await service.recentDrafts(7, 'pending')).map(report => report.id)).toEqual([pending.id])
+    expect(prisma.sourceTestDraft.findMany).toHaveBeenCalledWith(expect.objectContaining({ select: { id: true, stateJson: true }, cursor: { id: expect.any(String) }, skip: 1 }))
+  })
   it('即使正式播放器是 inline，上传仍使用独立测试进程且确认前不注册', async () => {
     vi.stubEnv('SOURCE_RUNNER_MODE', 'inline')
     const draft = await service.createDraft(7, { file: { name: 'source.js', content: fixture } })

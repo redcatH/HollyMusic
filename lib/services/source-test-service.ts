@@ -77,15 +77,37 @@ export async function getDraft(id: string, ownerId: number): Promise<SourceTestD
   return state
 }
 
-export async function recentDrafts(ownerId: number): Promise<SourceTestDraft[]> {
-  const rows = await prisma.sourceTestDraft.findMany({ where: { ownerId, expiresAt: { gt: new Date() } }, orderBy: { createdAt: 'desc' }, take: 10 })
-  return Promise.all(rows.map(row => getDraft(row.id, ownerId)))
+export async function recentDrafts(ownerId: number, kind: 'tests' | 'pending' = 'tests'): Promise<SourceTestDraft[]> {
+  const ids: string[] = []
+  let cursor: string | undefined
+  // Filter before applying the display limit, without loading candidate script contents.
+  // Scan past legacy empty retest drafts so they cannot hide actual reports.
+  while (ids.length < 10) {
+    const rows = await prisma.sourceTestDraft.findMany({
+      where: { ownerId, expiresAt: { gt: new Date() } }, orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+      select: { id: true, stateJson: true }, take: 50,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    })
+    for (const row of rows) {
+      const state = JSON.parse(row.stateJson) as SourceTestDraft
+      const matches = kind === 'tests' ? state.results.length > 0 :
+        state.kind !== 'retest' && state.status === 'ready' && !state.results.length && Date.parse(state.expiresAt) > Date.now()
+      if (matches) ids.push(row.id)
+      if (ids.length === 10) break
+    }
+    if (rows.length < 50) break
+    cursor = rows[rows.length - 1].id
+  }
+  return Promise.all(ids.map(id => getDraft(id, ownerId)))
 }
 
-export async function createDraft(ownerId: number, input: { file?: { name: string; content: string }; url?: string; sourcePath?: string; update?: boolean }): Promise<SourceTestDraft> {
-  await cleanupExpired()
-  const count = await prisma.sourceTestDraft.count({ where: { ownerId, createdAt: { gt: new Date(Date.now() - DAY_MS) } } })
-  if (count >= 40) throw new SourceTestError('今天创建的候选音源过多，请明天再试', 429)
+export async function createDraft(ownerId: number, input: { file?: { name: string; content: string }; url?: string; sourcePath?: string; update?: boolean; preview?: boolean; expectedHash?: string }): Promise<SourceTestDraft> {
+  const preview = input.preview === true && !!input.sourcePath && !input.update
+  if (!preview) {
+    await cleanupExpired()
+    const count = await prisma.sourceTestDraft.count({ where: { ownerId, createdAt: { gt: new Date(Date.now() - DAY_MS) } } })
+    if (count >= 40) throw new SourceTestError('今天创建的候选音源过多，请明天再试', 429)
+  }
   let content = input.file?.content || '', filename = input.file?.name || 'subscription.js'
   let target: SourceConfig | undefined
   let targetHash: string | undefined
@@ -109,6 +131,7 @@ export async function createDraft(ownerId: number, input: { file?: { name: strin
     if (/^\s*(<!doctype|<html)/i.test(content)) throw new SourceTestError('订阅返回了网页，请使用脚本直链')
   }
   if (!content || Buffer.byteLength(content) > SOURCE_MANAGER_CONSTANTS.MAX_SCRIPT_SIZE || !filename.toLowerCase().endsWith('.js')) throw new SourceTestError('请选择不超过 5MB 的 JS 音源脚本')
+  if (input.expectedHash && input.expectedHash !== hash(content)) throw new SourceTestError('音源脚本已变更，请重新打开测试窗口', 409)
   // Inspection is always isolated, including when normal playback has SOURCE_RUNNER_MODE=inline.
   const inspected = await executeTest<{ info: unknown; name?: string }>({ action: 'inspect', content })
   const id = randomUUID()
@@ -116,6 +139,7 @@ export async function createDraft(ownerId: number, input: { file?: { name: strin
     name: target?.name || (typeof inspected.name === 'string' && inspected.name.slice(0, 200)) || filename.replace(/\.js$/i, ''),
     hash: hash(content), capabilities: capabilities(inspected.info), target, unchanged: targetHash === hash(content),
     status: 'ready', results: [], createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + DAY_MS).toISOString() }
+  if (preview) return { ...state, persisted: false }
   if (input.update && target) {
     const reports = await recentDrafts(ownerId)
     const previous = reports.find(report => report.hash === targetHash && report.results.length &&
@@ -125,6 +149,16 @@ export async function createDraft(ownerId: number, input: { file?: { name: strin
   await prisma.sourceTestDraft.create({ data: { id, ownerId, content, stateJson: JSON.stringify(state),
     privateJson: JSON.stringify({ filename, subscriptionUrl: url, targetHash }), expiresAt: new Date(Date.now() + 30 * DAY_MS) } })
   return state
+}
+
+/** Existing-source previews become durable only after an explicit start. */
+export async function startSourceTest(ownerId: number, sourcePath: string, expectedHash: string, mode: 'quick' | 'full', keys?: string[]): Promise<{ id: string; run: () => Promise<void> }> {
+  const draft = await createDraft(ownerId, { sourcePath, expectedHash })
+  try { return { id: draft.id, run: await prepareTest(draft.id, ownerId, mode, keys) } }
+  catch (error) {
+    await discardDraft(draft.id, ownerId).catch(() => {})
+    throw error
+  }
 }
 
 export function assessAudio(facts: AudioFacts, expectedSec: number, quality: SourceTestResult['quality'], complete: boolean): Pick<SourceTestResult, 'status' | 'message'> {
@@ -162,7 +196,7 @@ export async function prepareTest(id: string, ownerId: number, mode: 'quick' | '
     if (used + [...budgets.values()].reduce((sum, bytes) => sum + bytes, 0) + budget > 1024 * 1024 * 1024) throw new SourceTestError('测试音频空间不足，请在最近测试中删除不再需要的候选', 409)
     const samplesHash = hash(JSON.stringify(samples))
     state.results = keys && state.samplesHash === samplesHash ? [...state.results.filter(item => !results.some(next => next.key === item.key)), ...results] : results
-    state.samplesHash = samplesHash; state.status = 'running'
+    state.samplesHash = samplesHash; state.status = 'running'; state.startedAt = new Date().toISOString()
     const controller = new AbortController()
     tasks.set(id, controller)
     budgets.set(id, budget)

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CheckCircle2, FlaskConical, Loader2, Search, X } from 'lucide-react'
 import { search } from '@/lib/api/search'
-import { cancelSourceTest, commitSourceTest, discardSourceTest, getSourceTest, listSourceTests, loadTestSamples, runSourceTest, saveTestSamples } from '@/lib/api/source-tests'
+import { cancelSourceTest, commitSourceTest, discardSourceTest, getSourceTest, listSourceTests, loadTestSamples, runSourceTest, saveTestSamples, startSourceTest } from '@/lib/api/source-tests'
 import { PLATFORM_NAMES, TEST_PLATFORMS, type SourceTestDraft, type TestSamples } from '@/lib/source-testing/types'
 import type { Song, SourceType } from '@/lib/types/music'
 import { usePlayerStore } from '@/lib/store/player-store'
@@ -103,10 +103,16 @@ export function TestSongSettingsDialog({ onClose }: { onClose: () => void }) {
 
 export function SourceTestHistory({ onClose, onSelect }: { onClose: () => void; onSelect: (draft: SourceTestDraft) => void }) {
   const [drafts, setDrafts] = useState<SourceTestDraft[]>([])
+  const [pending, setPending] = useState<SourceTestDraft[]>([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
-  useEffect(() => { let alive = true; listSourceTests().then(value => { if (alive) setDrafts(value.list) }, error => { if (alive) setError(errorText(error)) }).finally(() => { if (alive) setLoading(false) }); return () => { alive = false } }, [])
-  return <TestModal title="最近测试" onClose={onClose}><div className="space-y-2">{loading && <p className="text-sm text-muted-foreground">加载中…</p>}{error && <p role="alert" className="text-sm text-destructive">{error}</p>}{!loading && !error && !drafts.length && <p className="py-8 text-center text-muted-foreground">暂无测试记录</p>}{drafts.map(draft => <button type="button" key={draft.id} onClick={() => onSelect(draft)} className="flex w-full items-center justify-between rounded-lg border border-border p-4 text-left hover:bg-accent"><div><p className="text-sm font-medium">{draft.name}</p><p className="mt-1 text-xs text-muted-foreground">{new Date(draft.createdAt).toLocaleString()} · {draft.results.filter(item => item.status === 'passed').length}/{draft.results.length} 项通过</p></div><span className="text-xs text-primary">{draft.status === 'running' ? '查看进度' : '查看报告'}</span></button>)}</div></TestModal>
+  useEffect(() => { let alive = true; listSourceTests().then(value => { if (alive) { setDrafts(value.list); setPending(value.pending || []) } }, error => { if (alive) setError(errorText(error)) }).finally(() => { if (alive) setLoading(false) }); return () => { alive = false } }, [])
+  return <TestModal title="最近测试" onClose={onClose}><div className="space-y-4">
+    {loading && <p className="text-sm text-muted-foreground">加载中…</p>}
+    {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+    {pending.length > 0 && <section aria-label="待处理音源" className="space-y-2"><h4 className="text-sm font-medium">待处理音源</h4>{pending.map(draft => <button type="button" key={draft.id} onClick={() => onSelect(draft)} className="flex w-full items-center justify-between gap-3 rounded-lg border border-border p-4 text-left hover:bg-accent"><div><p className="text-sm font-medium">{draft.name}</p><p className="mt-1 text-xs text-muted-foreground">未测试 · {draft.kind === 'update' ? '订阅更新' : draft.kind === 'subscription' ? '订阅音源' : '上传音源'}</p></div><span className="shrink-0 text-xs text-primary">继续处理</span></button>)}</section>}
+    <section aria-label="测试记录" className="space-y-2">{pending.length > 0 && <h4 className="text-sm font-medium">测试记录</h4>}{!loading && !error && !drafts.length && <p className="py-8 text-center text-muted-foreground">暂无测试记录</p>}{drafts.map(draft => <button type="button" key={draft.id} onClick={() => onSelect(draft)} className="flex w-full items-center justify-between gap-3 rounded-lg border border-border p-4 text-left hover:bg-accent"><div><p className="text-sm font-medium">{draft.name}</p><p className="mt-1 text-xs text-muted-foreground">{new Date(draft.startedAt || draft.createdAt).toLocaleString()} · {draft.results.filter(item => item.status === 'passed').length}/{draft.results.length} 项通过</p></div><span className="shrink-0 text-xs text-primary">{draft.status === 'running' ? '查看进度' : '查看报告'}</span></button>)}</section>
+  </div></TestModal>
 }
 
 export function SourceTestDialog({ initialDraft, onClose, onCommitted }: { initialDraft: SourceTestDraft; onClose: () => void; onCommitted: () => Promise<void> }) {
@@ -123,6 +129,7 @@ export function SourceTestDialog({ initialDraft, onClose, onCommitted }: { initi
   const busyRef = useRef(false)
   const running = draft.status === 'running'
   const committed = draft.status === 'committed'
+  const unstartedPreview = draft.persisted === false
   const expired = Date.parse(draft.expiresAt) < now
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 60000); return () => clearInterval(timer) }, [])
   const updateSamples = useCallback((value: TestSamples) => setSamples(value), [])
@@ -144,7 +151,10 @@ export function SourceTestDialog({ initialDraft, onClose, onCommitted }: { initi
     try { await work() } catch (error) { setError(errorText(error)) }
     finally { busyRef.current = false; setBusy(false) }
   }
-  const run = (mode: 'quick' | 'full', keys?: string[]) => action(async () => { audio.current?.pause(); setPreview(null); setDraft(await runSourceTest(draft.id, mode, keys)) })
+  const run = (mode: 'quick' | 'full', keys?: string[]) => action(async () => {
+    audio.current?.pause(); setPreview(null)
+    setDraft(await (unstartedPreview ? startSourceTest(draft.target!.path, draft.hash, mode, keys) : runSourceTest(draft.id, mode, keys)))
+  })
   const save = (enabled: boolean) => action(async () => { await commitSourceTest(draft.id, platforms, enabled); await onCommitted(); onClose() })
   const done = draft.results.filter(item => !['waiting', 'running'].includes(item.status)).length
   const failed = draft.results.filter(item => item.status === 'failed').map(item => item.key)
@@ -181,9 +191,9 @@ export function SourceTestDialog({ initialDraft, onClose, onCommitted }: { initi
       {error && <p role="alert" className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
       {expired && !committed && <p className="text-sm text-amber-600">候选已过期，请重新上传或拉取订阅。</p>}
       <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4">
-        {!running && <button type="button" disabled={busy} onClick={() => void action(async () => { await discardSourceTest(draft.id); onClose() })} className="mr-auto text-sm text-muted-foreground hover:text-destructive">{committed ? '删除报告' : '放弃候选'}</button>}
-        <button type="button" onClick={onClose} className={SECONDARY}>{running ? '后台继续' : committed ? '关闭' : '稍后处理'}</button>
-        {!committed && <><button type="button" disabled={busy || running || expired} onClick={() => void save(false)} className={SECONDARY}>{draft.kind === 'retest' ? '保存并停用' : '仅保存为停用'}</button><button type="button" disabled={busy || running || expired || !platforms.length || !draft.results.some(item => ['passed', 'warning'].includes(item.status))} onClick={() => void save(draft.target ? draft.target.enabled : true)} className={PRIMARY}><CheckCircle2 className="h-4 w-4" />{draft.kind === 'update' ? '确认更新' : draft.kind === 'retest' ? '应用平台选择' : '导入并启用'}</button></>}
+        {!running && !unstartedPreview && <button type="button" disabled={busy} onClick={() => void action(async () => { await discardSourceTest(draft.id); onClose() })} className="mr-auto text-sm text-muted-foreground hover:text-destructive">{committed ? '删除报告' : '放弃候选'}</button>}
+        <button type="button" onClick={onClose} className={SECONDARY}>{running ? '后台继续' : committed || unstartedPreview ? '关闭' : '稍后处理'}</button>
+        {!committed && !unstartedPreview && <><button type="button" disabled={busy || running || expired} onClick={() => void save(false)} className={SECONDARY}>{draft.kind === 'retest' ? '保存并停用' : '仅保存为停用'}</button><button type="button" disabled={busy || running || expired || !platforms.length || !draft.results.some(item => ['passed', 'warning'].includes(item.status))} onClick={() => void save(draft.target ? draft.target.enabled : true)} className={PRIMARY}><CheckCircle2 className="h-4 w-4" />{draft.kind === 'update' ? '确认更新' : draft.kind === 'retest' ? '应用平台选择' : '导入并启用'}</button></>}
       </div>
     </div>
   </TestModal>
