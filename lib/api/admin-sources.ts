@@ -35,9 +35,14 @@ export function updateSource(
     timeout?: number
     enabled?: boolean
     pt?: string[]
+    subscriptionUrl?: string
   }
 ): Promise<SourceConfig> {
   return apiPut<SourceConfig>(`admin/sources/${encodeURIComponent(sourcePath)}`, opts)
+}
+
+export function sourceScriptDownloadUrl(sourcePath: string): string {
+  return `/api/admin/sources/${encodeURIComponent(sourcePath)}/script`
 }
 
 /**

@@ -20,7 +20,7 @@ import { sanitizeFilename } from '@/lib/server/download-utils'
 import type { MusicSourcesConfig, SourceConfig } from '@/lib/types/music'
 import { musicSourceManager } from '@/lib/music-source-manager'
 import { urlCache } from '@/lib/cache-manager'
-import { readSourceScriptFile } from '@/lib/server/source-script-file'
+import { readSourceScriptFile, readSourceScriptBytes } from '@/lib/server/source-script-file'
 
 const CONFIG_PATH = path.resolve(process.cwd(), 'config/music-sources.json')
 const SCRIPTS_DIR = path.resolve(process.cwd(), 'custom-sources')
@@ -435,6 +435,23 @@ export async function listSourcesWithStatus(): Promise<SourceWithStatus[]> {
   return result
 }
 
+/** 只导出已注册音源的当前脚本，不访问订阅上游。 */
+export async function getSourceScript(sourcePath: string): Promise<{ content: Buffer; filename: string }> {
+  const source = (await readConfig()).sources.find(item => item.path === sourcePath)
+  if (!source) throw new Error('找不到音源配置')
+  const absolute = path.resolve(process.cwd(), source.path)
+  const relative = path.relative(SCRIPTS_DIR, absolute)
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative) || path.extname(absolute).toLowerCase() !== '.js') {
+    throw new SourceConfigError('只能下载 custom-sources 目录中的 JS 音源脚本', 400)
+  }
+  try {
+    return { content: await readSourceScriptBytes(absolute), filename: sanitizeFilename(path.basename(absolute)) }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error('找不到音源脚本文件')
+    throw error
+  }
+}
+
 /** 新增一条源配置（path 唯一性校验） */
 export async function addSource(opts: {
   path: string
@@ -555,6 +572,7 @@ export async function updateSource(
     timeout?: number
     enabled?: boolean
     pt?: string[]
+    subscriptionUrl?: string
   }
 ): Promise<SourceConfig> {
   return mutateConfig(async () => {
@@ -563,6 +581,17 @@ export async function updateSource(
     if (idx < 0) throw new Error(`找不到源配置: ${sourcePath}`)
 
     const updated = { ...config.sources[idx] }
+    if (opts.subscriptionUrl !== undefined) {
+      if (!updated.subscription) throw new SourceConfigError('该音源不是订阅音源', 400)
+      const value = opts.subscriptionUrl.trim()
+      let url: URL
+      try { url = new URL(value) } catch { throw new SourceConfigError('请输入有效的订阅地址', 400) }
+      if (value.length > 8192 || !['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+        throw new SourceConfigError('订阅地址仅支持不含账号信息的 HTTP 或 HTTPS 链接', 400)
+      }
+      // 这里只保存地址；拉取时继续使用公网校验、候选测试和确认流程。
+      updated.subscription = { ...updated.subscription, url: value }
+    }
     if (opts.name !== undefined) updated.name = opts.name
     if (opts.description !== undefined) updated.description = opts.description
     if (opts.priority !== undefined) updated.priority = opts.priority

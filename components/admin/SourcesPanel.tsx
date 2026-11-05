@@ -14,13 +14,14 @@ import {
   importSourceSubscription,
   uploadScript,
   updateSourceSubscription,
+  sourceScriptDownloadUrl,
   type AdminSource,
 } from '@/lib/api/admin-sources'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { SourceMatrix } from '@/components/admin/SourceMatrix'
 import { toast } from '@/lib/toast'
-import { Plus, Pencil, Trash2, Music, X, Loader2, Upload, AlertCircle, CheckCircle2, FileWarning, RefreshCw, Rss, LayoutGrid, List, FlaskConical, History } from 'lucide-react'
+import { Plus, Info, Copy, Download, Trash2, Music, X, Loader2, Upload, AlertCircle, CheckCircle2, FileWarning, RefreshCw, Rss, LayoutGrid, List, FlaskConical, History } from 'lucide-react'
 import { ModalMask } from '@/components/shared/ModalMask'
 import { SourceTestDialog, SourceTestHistory, TestSongSettingsDialog } from '@/components/admin/SourceTestDialog'
 import { createSourceTest } from '@/lib/api/source-tests'
@@ -51,7 +52,6 @@ export function SourcesPanel() {
   const [uploading, setUploading] = useState(false)
   const [subscriptionDialogOpen, setSubscriptionDialogOpen] = useState(false)
   const [subscribing, setSubscribing] = useState(false)
-  const [updatingSubscriptionPath, setUpdatingSubscriptionPath] = useState<string | null>(null)
   const [uploadMsg, setUploadMsg] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [view, setView] = useState<'list' | 'matrix'>('list')
@@ -129,14 +129,15 @@ export function SourcesPanel() {
 
   const handleSubscriptionUpdate = async (source: AdminSource) => {
     await runMutation(async () => {
-      setUpdatingSubscriptionPath(source.path)
       setUploadMsg(null)
       try {
-        setTestDraft(await updateSourceSubscription(source.path))
+        const draft = await updateSourceSubscription(source.path)
+        setDialog(null)
+        setTestDraft(draft)
       } catch (e) {
-        setUploadMsg({ kind: 'error', text: e instanceof Error ? e.message : '更新订阅失败' })
-      } finally {
-        setUpdatingSubscriptionPath(null)
+        const message = e instanceof Error ? e.message : '更新订阅失败'
+        setUploadMsg({ kind: 'error', text: message })
+        toast.error(message)
       }
     })
   }
@@ -170,9 +171,10 @@ export function SourcesPanel() {
     opts: Parameters<typeof updateSource>[1]
   ) => {
     await runMutation(async () => {
-      await updateSource(sourcePath, opts)
-      setDialog(null)
-      await reload()
+      const updated = await updateSource(sourcePath, opts)
+      setDialog({ kind: 'edit', source: { ...updated, scriptExists: sources.find(source => source.path === sourcePath)?.scriptExists ?? false } })
+      toast.success('音源配置已保存')
+      await reload(true)
     })
   }
 
@@ -321,7 +323,7 @@ export function SourcesPanel() {
       ) : sources.length === 0 ? (
         <EmptyState icon={Music} title="暂无音源" description="上传脚本或手动添加音源配置" />
       ) : view === 'matrix' ? (
-        <SourceMatrix sources={sources} reload={() => reload(true)} onBusyChange={setMutationBusy} onTest={handleTest} />
+        <SourceMatrix sources={sources} reload={() => reload(true)} onBusyChange={setMutationBusy} onTest={handleTest} onDetails={source => setDialog({ kind: 'edit', source })} />
       ) : (
         <>
           {selected.size > 0 && (
@@ -389,7 +391,7 @@ export function SourcesPanel() {
                       />
                     </td>
                     <td className="px-4 py-3 font-medium">
-                    {s.name || s.path}
+                    <button type="button" onClick={() => setDialog({ kind: 'edit', source: s })} className="text-left hover:text-primary hover:underline" aria-label={`查看 ${s.name || s.path} 详情`}>{s.name || s.path}</button>
                     {s.subscription && (
                       <span className="ml-2 rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium text-sky-600">
                         订阅
@@ -440,22 +442,13 @@ export function SourcesPanel() {
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1">
                       <button type="button" onClick={() => void handleTest(s)} className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground" title="测试音源" aria-label={`测试 ${s.name || s.path}`}><FlaskConical className="h-4 w-4" /></button>
-                      {s.subscription && (
-                        <button
-                          onClick={() => handleSubscriptionUpdate(s)}
-                          disabled={updatingSubscriptionPath === s.path}
-                          className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
-                          title="手动更新订阅"
-                        >
-                          <RefreshCw className={`h-4 w-4 ${updatingSubscriptionPath === s.path ? 'animate-spin' : ''}`} />
-                        </button>
-                      )}
                       <button
                         onClick={() => setDialog({ kind: 'edit', source: s })}
                         className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-                        title="编辑"
+                        title="音源详情"
+                        aria-label={`${s.name || s.path} 音源详情`}
                       >
-                        <Pencil className="h-4 w-4" />
+                        <Info className="h-4 w-4" />
                       </button>
                       <button
                         onClick={() => handleDelete(s)}
@@ -480,6 +473,7 @@ export function SourcesPanel() {
           onClose={() => setDialog(null)}
           onCreated={handleCreated}
           onUpdated={handleUpdated}
+          onSubscriptionUpdate={handleSubscriptionUpdate}
         />
       )}
       {testDraft && <SourceTestDialog key={testDraft.id} initialDraft={testDraft} onClose={() => setTestDraft(null)} onCommitted={() => reload(true)} />}
@@ -575,11 +569,13 @@ interface DialogProps {
       timeout?: number
       enabled?: boolean
       pt?: string[]
+      subscriptionUrl?: string
     }
   ) => Promise<void>
+  onSubscriptionUpdate: (source: AdminSource) => Promise<void>
 }
 
-function SourceDialog({ mode, onClose, onCreated, onUpdated }: DialogProps) {
+function SourceDialog({ mode, onClose, onCreated, onUpdated, onSubscriptionUpdate }: DialogProps) {
   const isEdit = mode.kind === 'edit'
   const existing = isEdit ? mode.source : null
 
@@ -590,6 +586,10 @@ function SourceDialog({ mode, onClose, onCreated, onUpdated }: DialogProps) {
   const [timeout, setTimeout] = useState(String(existing?.timeout ?? ''))
   const [enabled, setEnabled] = useState(existing?.enabled ?? true)
   const [pt, setPt] = useState<string[]>(existing?.pt || [])
+  const [subscriptionUrl, setSubscriptionUrl] = useState(existing?.subscription?.url || '')
+  const subscriptionChanged = subscriptionUrl.trim() !== existing?.subscription?.url
+  const updatedAt = existing?.subscription?.updatedAt
+  const updatedDate = updatedAt ? new Date(updatedAt) : null
 
   const [submitting, setSubmitting] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -609,6 +609,7 @@ function SourceDialog({ mode, onClose, onCreated, onUpdated }: DialogProps) {
         timeout: timeoutNum && Number.isFinite(timeoutNum) ? timeoutNum : undefined,
         enabled,
         pt,
+        ...(existing?.subscription && subscriptionChanged ? { subscriptionUrl: subscriptionUrl.trim() } : {}),
       }
 
       if (isEdit && existing) {
@@ -629,18 +630,37 @@ function SourceDialog({ mode, onClose, onCreated, onUpdated }: DialogProps) {
   }
 
   return (
-    <ModalMask className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClose={onClose}>
+    <ModalMask className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClose={onClose} closeOnMaskClick={!submitting}>
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="source-dialog-title"
         className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg bg-card p-6 shadow-xl"
         onClick={e => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold">{isEdit ? '编辑音源' : '添加音源'}</h3>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+          <h3 id="source-dialog-title" className="text-lg font-semibold">{isEdit ? '音源详情' : '添加音源'}</h3>
+          <button onClick={onClose} disabled={submitting} aria-label="关闭音源详情" className="text-muted-foreground hover:text-foreground">
             <X className="h-5 w-5" />
           </button>
         </div>
         <form onSubmit={submit} className="space-y-3">
+          {existing && <div className="space-y-3 rounded-lg border border-border bg-accent/20 p-3">
+            <div><p className="text-xs text-muted-foreground">当前脚本</p><p className="mt-1 break-all text-sm">{existing.path}</p></div>
+            {existing.scriptExists ? <a href={sourceScriptDownloadUrl(existing.path)} download className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"><Download className="h-4 w-4" />下载当前脚本</a> : <p className="text-xs text-amber-600">脚本文件不存在，暂时无法下载。</p>}
+            {existing.subscription ? <>
+              <label className="block"><span className="mb-1 block text-xs text-muted-foreground">订阅地址</span><input type="url" required value={subscriptionUrl} onChange={event => setSubscriptionUrl(event.target.value)} className="w-full rounded-md bg-background px-3 py-2 text-sm outline-none ring-1 ring-border focus:ring-primary" /></label>
+              <div className="flex flex-wrap items-center gap-3">
+                <button type="button" onClick={async () => {
+                  try { await navigator.clipboard.writeText(subscriptionUrl.trim()); toast.success('订阅地址已复制') }
+                  catch { toast.error('复制失败，请在地址框中手动复制') }
+                }} disabled={!subscriptionUrl.trim()} className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline disabled:opacity-50"><Copy className="h-4 w-4" />复制地址</button>
+                <button type="button" disabled={subscriptionChanged || submitting} onClick={() => void onSubscriptionUpdate(existing)} className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline disabled:opacity-50"><RefreshCw className="h-4 w-4" />拉取并测试更新</button>
+              </div>
+              <p className="text-xs text-muted-foreground">{subscriptionChanged ? '请先保存新地址，再拉取更新。保存地址不会替换当前脚本。' : '拉取后先测试，确认应用才替换当前脚本。'}</p>
+              <p className="text-xs text-muted-foreground">脚本更新时间：{updatedDate && Number.isFinite(updatedDate.getTime()) ? <time dateTime={updatedAt}>{updatedDate.toLocaleString()}</time> : '暂无记录'}</p>
+            </> : <p className="text-xs text-muted-foreground">本地音源，无订阅地址及订阅更新时间。</p>}
+          </div>}
           {!isEdit && (
             <label className="block">
               <span className="mb-1 block text-xs text-muted-foreground">脚本路径 *</span>
@@ -743,7 +763,7 @@ function SourceDialog({ mode, onClose, onCreated, onUpdated }: DialogProps) {
               onClick={onClose}
               className="rounded-full px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
             >
-              取消
+              {isEdit ? '关闭' : '取消'}
             </button>
             <button
               type="submit"
@@ -751,7 +771,7 @@ function SourceDialog({ mode, onClose, onCreated, onUpdated }: DialogProps) {
               className="flex items-center gap-1 rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
             >
               {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              确定
+              {isEdit ? '保存配置' : '确定'}
             </button>
           </div>
         </form>

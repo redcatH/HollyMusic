@@ -16,7 +16,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('fs/promises', () => ({ default: mocks }))
 vi.mock('@/lib/music-source-manager', () => ({ musicSourceManager: { reload: mocks.reload } }))
-vi.mock('@/lib/server/source-script-file', () => ({ readSourceScriptFile: async (file: string) => mocks.readFile(file) }))
+vi.mock('@/lib/server/source-script-file', () => ({
+  readSourceScriptFile: async (file: string) => mocks.readFile(file),
+  readSourceScriptBytes: async (file: string) => Buffer.from(await mocks.readFile(file)),
+}))
 vi.mock('@/lib/logger', () => ({ logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 vi.mock('dns/promises', () => ({ default: { lookup: vi.fn(async () => [{ address: '93.184.216.34' }]) } }))
 
@@ -48,6 +51,44 @@ beforeEach(() => {
 })
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
+
+describe('订阅地址与当前脚本导出', () => {
+  it('修改地址保留脚本、更新时间及配置，且不请求上游', async () => {
+    const config = readStoredConfig()
+    config.sources[0].subscription = { url: 'https://example.com/old.js', updatedAt: '2026-11-01T00:00:00Z' }
+    mocks.files.set(configPath, JSON.stringify(config))
+    const absolute = path.resolve(process.cwd(), config.sources[0].path)
+    mocks.files.set(absolute, '\ufeff// current installed script')
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch)
+    await service.updateSource(config.sources[0].path, { subscriptionUrl: ' https://example.com/new.js?token=example ' })
+    expect(readStoredConfig().sources[0]).toEqual({ ...config.sources[0], subscription: {
+      url: 'https://example.com/new.js?token=example', updatedAt: '2026-11-01T00:00:00Z',
+    } })
+    expect(await service.getSourceScript(config.sources[0].path)).toEqual({ content: Buffer.from('\ufeff// current installed script'), filename: 'a.js' })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+  it.each(['', 'invalid', 'file:///private.js', 'https://user:secret@example.com/source.js'])('拒绝非法地址 %s，配置不发生变化', async value => {
+    const config = readStoredConfig()
+    config.sources[0].subscription = { url: 'https://example.com/old.js', updatedAt: 'old' }
+    mocks.files.set(configPath, JSON.stringify(config))
+    await expect(service.updateSource('custom-sources/a.js', { subscriptionUrl: value, name: 'changed' })).rejects.toMatchObject({ statusCode: 400 })
+    expect(readStoredConfig()).toEqual(config)
+  })
+  it('本地音源不能隐式变成订阅，未注册或越界路径不能导出', async () => {
+    await expect(service.updateSource('custom-sources/a.js', { subscriptionUrl: 'https://example.com/a.js' })).rejects.toMatchObject({ statusCode: 400 })
+    await expect(service.getSourceScript('custom-sources/unregistered.js')).rejects.toThrow('找不到')
+    const config = readStoredConfig(); config.sources[0].path = '../private.js'
+    mocks.files.set(configPath, JSON.stringify(config))
+    await expect(service.getSourceScript('../private.js')).rejects.toMatchObject({ statusCode: 400 })
+  })
+  it('修改地址后拒绝提交基于旧地址创建的候选', async () => {
+    const config = readStoredConfig()
+    config.sources[0].subscription = { url: 'https://example.com/old.js', updatedAt: 'old' }
+    mocks.files.set(configPath, JSON.stringify(config))
+    await service.updateSource('custom-sources/a.js', { subscriptionUrl: 'https://example.com/new.js' })
+    await expect(service.commitTestedSource({ id: 'old-candidate', content: '// old upstream', filename: 'a.js', name: 'A', enabled: true, pt: ['kw'], target: config.sources[0] })).rejects.toMatchObject({ statusCode: 409 })
+  })
+})
 
 describe('候选音源确认提交', () => {
   const content = '// new tested version'

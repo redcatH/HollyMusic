@@ -40,11 +40,13 @@ export function SourceMatrix({
   reload,
   onBusyChange,
   onTest,
+  onDetails,
 }: {
   sources: AdminSource[]
   reload: () => Promise<void>
   onBusyChange?: (busy: boolean) => void
   onTest?: (source: AdminSource) => Promise<void>
+  onDetails?: (source: AdminSource) => void
 }) {
   // 本地乐观态：与 props 同步（父组件静默重拉后合并），点击时先行变更
   const [rows, setRows] = useState<AdminSource[]>(() => sortRows(sources))
@@ -178,7 +180,7 @@ export function SourceMatrix({
                 <td className="px-4 py-2.5">
                   <div className="flex items-center gap-2">
                     {s.enabled && <span className="text-[10px] text-muted-foreground">{enabledIndex + 1}.</span>}
-                    <span className="font-medium">{s.name || s.path}</span>
+                    {onDetails ? <button type="button" disabled={busy !== null} onClick={() => onDetails(s)} aria-label={`查看 ${s.name || s.path} 详情`} className="text-left font-medium hover:text-primary hover:underline">{s.name || s.path}</button> : <span className="font-medium">{s.name || s.path}</span>}
                     {s.subscription && (
                       <span className="rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium text-sky-600">订阅</span>
                     )}

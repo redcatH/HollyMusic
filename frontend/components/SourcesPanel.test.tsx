@@ -9,6 +9,7 @@ const api = vi.hoisted(() => ({
   listSources: vi.fn(), bulkUpdateSources: vi.fn(), updateSource: vi.fn(),
   deleteSource: vi.fn(), createSource: vi.fn(), importSourceSubscription: vi.fn(),
   uploadScript: vi.fn(), updateSourceSubscription: vi.fn(),
+  sourceScriptDownloadUrl: (path: string) => `/api/admin/sources/${encodeURIComponent(path)}/script`,
 }))
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), warning: vi.fn() }))
 vi.mock('@/lib/api/admin-sources', () => api)
@@ -110,6 +111,55 @@ describe('平台矩阵', () => {
 })
 
 describe('音源列表', () => {
+  it.each(['列表', '平台矩阵'])('%s 打开同一详情，显示订阅地址、更新时间及当前脚本下载', async view => {
+    const source = { ...sources[0], subscription: { url: 'https://example.com/a.js?key=example', updatedAt: '2026-11-05T01:00:00Z' } }
+    api.listSources.mockResolvedValue({ list: [source] })
+    const copy = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { clipboard: { writeText: copy } })
+    await act(async () => { root.render(<SourcesPanel />) })
+    await click(button(view))
+    await click(labeled('查看 A 详情'))
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain('音源详情')
+    expect(container.querySelector<HTMLInputElement>('input[type="url"]')?.value).toBe(source.subscription.url)
+    expect(container.querySelector('time')?.dateTime).toBe(source.subscription.updatedAt)
+    expect(container.querySelector<HTMLAnchorElement>('a[download]')?.getAttribute('href')).toBe('/api/admin/sources/a.js/script')
+    await click(button('复制地址'))
+    expect(copy).toHaveBeenCalledWith(source.subscription.url)
+    expect(api.updateSourceSubscription).not.toHaveBeenCalled()
+  })
+
+  it('保存新地址不拉取更新，并在保存后允许创建更新候选', async () => {
+    const source = { ...sources[0], subscription: { url: 'https://example.com/old.js', updatedAt: '2026-11-01T00:00:00Z' } }
+    const updated = { ...source, subscription: { ...source.subscription, url: 'https://example.com/new.js' } }
+    api.listSources.mockResolvedValueOnce({ list: [source] }).mockResolvedValue({ list: [updated] })
+    api.updateSource.mockResolvedValue(updated)
+    api.updateSourceSubscription.mockRejectedValue(new Error('上游暂时不可用'))
+    await act(async () => { root.render(<SourcesPanel />) })
+    await click(labeled('查看 A 详情'))
+    const input = container.querySelector<HTMLInputElement>('input[type="url"]')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, updated.subscription.url)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(button('拉取并测试更新').disabled).toBe(true)
+    await click(button('保存配置'))
+    expect(api.updateSource).toHaveBeenCalledWith('a.js', expect.objectContaining({ subscriptionUrl: updated.subscription.url }))
+    expect(api.updateSourceSubscription).not.toHaveBeenCalled()
+    expect(container.querySelector('time')?.dateTime).toBe(source.subscription.updatedAt)
+    expect(button('拉取并测试更新').disabled).toBe(false)
+    await click(button('拉取并测试更新'))
+    expect(api.updateSourceSubscription).toHaveBeenCalledWith('a.js')
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull()
+  })
+
+  it('脚本缺失时不提供下载链接，本地音源不显示订阅输入框', async () => {
+    api.listSources.mockResolvedValue({ list: [{ ...sources[0], scriptExists: false }] })
+    await act(async () => { root.render(<SourcesPanel />) })
+    await click(labeled('查看 A 详情'))
+    expect(container.querySelector('a[download]')).toBeNull()
+    expect(container.querySelector('input[type="url"]')).toBeNull()
+    expect(container.textContent).toContain('脚本文件不存在')
+  })
   it('删除已勾选源后清理选择，后续批量操作不携带已删除路径', async () => {
     await act(async () => { root.render(<SourcesPanel />) })
     await click(labeled<HTMLInputElement>('选择 A'))

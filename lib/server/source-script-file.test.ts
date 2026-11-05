@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { readSourceScriptFile } from './source-script-file'
+import { readSourceScriptFile, readSourceScriptBytes } from './source-script-file'
 
 let root: string
 beforeEach(async () => {
@@ -16,6 +16,7 @@ describe('运行时脚本读取边界', () => {
     const file = path.join(root, 'custom-sources', 'fixture.js')
     await fs.writeFile(file, '\ufeff// trusted fixture')
     expect(await readSourceScriptFile(file)).toBe('\ufeff// trusted fixture')
+    expect(await readSourceScriptBytes(file)).toEqual(await fs.readFile(file))
   })
   it('不能读取音源目录之外的文件', async () => {
     const file = path.join(root, 'private.js'); await fs.writeFile(file, '// private fixture')
