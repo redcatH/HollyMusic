@@ -1,6 +1,7 @@
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
+import reactHooks from "eslint-plugin-react-hooks";
 
 const eslintConfig = defineConfig([
   ...nextVitals,
@@ -9,6 +10,7 @@ const eslintConfig = defineConfig([
   // setState-in-effect 数据加载模式、播放器 ref 时序等均为项目既有写法。
   // 先降为 warning 保住 CI 门禁（error 才阻断），存量告警渐进治理，新代码请遵守规则。
   {
+    plugins: { "react-hooks": reactHooks },
     rules: {
       "react-hooks/set-state-in-effect": "warn",
       "react-hooks/refs": "warn",
@@ -20,6 +22,8 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    ".cache/**",
+    "gui-test-screenshots/**",
     "out/**",
     "build/**",
     "next-env.d.ts",

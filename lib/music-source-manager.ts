@@ -181,6 +181,9 @@ class MusicSourceManager {
   }
 
   private async doInitialize(): Promise<void> {
+    // Recover an interrupted candidate replacement before any script can be loaded.
+    const { recoverSourceImport } = await import('./services/source-manager-service')
+    await recoverSourceImport()
     logger.info('开始初始化音源管理器...')
 
     // 读取配置文件

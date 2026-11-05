@@ -100,6 +100,7 @@ describe('SourceRunnerClient 子进程集成', () => {
       expect(runner.mode).toBe('process')
 
       const slot = await runner.acquireSlot()
+      expect(runner.child.spawnargs).toContain('--max-old-space-size=256')
       const sourceInfo = (await slot.loadScript(script)) as { sources: Record<string, unknown> }
       expect(Object.keys(sourceInfo.sources)).toEqual(['kw'])
 

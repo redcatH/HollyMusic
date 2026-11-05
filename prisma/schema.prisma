@@ -22,6 +22,20 @@ model SystemSetting {
   updatedAt DateTime @updatedAt
 }
 
+/// Candidate scripts and test reports are never exposed without administrator ownership checks.
+model SourceTestDraft {
+  id        String   @id
+  ownerId   Int
+  content   String
+  stateJson String
+  privateJson String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId, expiresAt])
+}
+
 model MusicInfo {
   id        Int      @id @default(autoincrement())
   source    String

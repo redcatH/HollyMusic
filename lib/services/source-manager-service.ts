@@ -14,11 +14,13 @@ import fsp from 'fs/promises'
 import path from 'path'
 import dns from 'dns/promises'
 import net from 'net'
-import { randomUUID } from 'crypto'
+import { randomUUID, createHash } from 'crypto'
 import { logger } from '@/lib/logger'
 import { sanitizeFilename } from '@/lib/server/download-utils'
 import type { MusicSourcesConfig, SourceConfig } from '@/lib/types/music'
 import { musicSourceManager } from '@/lib/music-source-manager'
+import { urlCache } from '@/lib/cache-manager'
+import { readSourceScriptFile } from '@/lib/server/source-script-file'
 
 const CONFIG_PATH = path.resolve(process.cwd(), 'config/music-sources.json')
 const SCRIPTS_DIR = path.resolve(process.cwd(), 'custom-sources')
@@ -27,6 +29,24 @@ const VALID_PLATFORMS = ['tx', 'wy', 'kw', 'kg', 'mg'] as const
 const MAX_SCRIPT_SIZE = 5 * 1024 * 1024 // 5MB
 const SUBSCRIPTION_REQUEST_TIMEOUT_MS = 15_000
 const MAX_SUBSCRIPTION_REDIRECTS = 3
+const IMPORT_JOURNAL = path.join(path.dirname(CONFIG_PATH), '.source-import-journal.json')
+let recovery: Promise<void> | null = null
+
+/** A crash before the configuration commit restores the previous script on first access. */
+async function recoverImport(): Promise<void> {
+  let journal: { target: string; previous: string; importId: string }
+  try { journal = JSON.parse(await fsp.readFile(IMPORT_JOURNAL, 'utf8')) } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw error
+  }
+  const config = JSON.parse(await fsp.readFile(CONFIG_PATH, 'utf8')) as MusicSourcesConfig
+  if (!config.sources.some(source => source.importId === journal.importId)) await replaceScript(journal.target, journal.previous)
+  await fsp.unlink(IMPORT_JOURNAL)
+}
+
+export async function recoverSourceImport(): Promise<void> {
+  await (recovery ??= recoverImport())
+}
 
 export class SourceConfigError extends Error {
   constructor(message: string, public readonly statusCode: 400 | 409) {
@@ -81,6 +101,7 @@ async function getSimulatorCtor(): Promise<SimulatorConstructor> {
 
 /** 只读配置；首次保存时再创建文件，避免列表查询与新增操作并发时覆盖配置。 */
 export async function readConfig(): Promise<MusicSourcesConfig> {
+  await recoverSourceImport()
   let raw: string
   try {
     raw = await fsp.readFile(CONFIG_PATH, 'utf-8')
@@ -95,6 +116,60 @@ export async function readConfig(): Promise<MusicSourcesConfig> {
     throw new Error('配置文件格式无效：sources 必须是数组')
   }
   return parsed
+}
+
+/** Only the candidate service calls this, after isolated initialization and explicit confirmation. */
+export async function commitTestedSource(input: {
+  id: string; content: string; filename: string; name: string; enabled: boolean; pt: string[]; priority?: number
+  subscriptionUrl?: string; target?: SourceConfig; targetHash?: string
+}): Promise<SourceConfig> {
+  return mutateConfig(async () => {
+    const config = await readConfig()
+    const committed = config.sources.find(source => source.importId === input.id)
+    if (committed) return committed
+    const current = input.target && config.sources.find(source => source.path === input.target!.path)
+    if (input.target && (!current || JSON.stringify(current) !== JSON.stringify(input.target))) {
+      throw new SourceConfigError('音源配置已变更，请重新准备候选版本', 409)
+    }
+    let previous: string | undefined
+    let relativePath: string
+    if (current) {
+      relativePath = current.path
+      previous = await readSourceScriptFile(path.resolve(process.cwd(), current.path))
+      if (createHash('sha256').update(previous).digest('hex') !== input.targetHash) throw new SourceConfigError('原脚本已变更，请重新测试', 409)
+      const journalTemp = `${IMPORT_JOURNAL}.tmp-${randomUUID()}`
+      await fsp.writeFile(journalTemp, JSON.stringify({ target: current.path, previous, importId: input.id }), { mode: 0o600 })
+      await fsp.rename(journalTemp, IMPORT_JOURNAL)
+      await replaceScript(current.path, input.content)
+    } else {
+      relativePath = await saveScript(`${input.id}.js`, input.content)
+    }
+    const source: SourceConfig = {
+      ...(current || {}), path: relativePath, name: input.name, enabled: input.enabled,
+      priority: current?.priority ?? input.priority ?? Math.max(0, ...config.sources.map(s => s.priority)) + 1,
+      pt: input.pt, importId: input.id,
+      ...(input.subscriptionUrl ? { subscription: { url: input.subscriptionUrl, updatedAt: new Date().toISOString() } } : {}),
+    }
+    try {
+      if (current) config.sources[config.sources.indexOf(current)] = source
+      else config.sources.push(source)
+      await writeConfig(config)
+    } catch (error) {
+      try {
+        if (previous !== undefined) await replaceScript(relativePath, previous)
+        else await deleteScript(relativePath)
+        await fsp.unlink(IMPORT_JOURNAL).catch(() => {})
+      } catch (restoreError) {
+        recovery = null
+        throw restoreError
+      }
+      throw error
+    }
+    await fsp.unlink(IMPORT_JOURNAL).catch(() => {})
+    urlCache.clear()
+    await notifyReload()
+    return source
+  })
 }
 
 /** 原子写入配置（临时文件 + rename） */

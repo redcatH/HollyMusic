@@ -285,7 +285,7 @@ export function buildContentDisposition(filename: string): string {
 // ============================================================================
 
 /** 固定的桌面浏览器 User-Agent，避免被上游识别为爬虫/空 UA 拒绝 */
-const UPSTREAM_USER_AGENT =
+export const UPSTREAM_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36 Edg/142.0.0.0'
 
 /**

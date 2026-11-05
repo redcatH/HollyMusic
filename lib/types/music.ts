@@ -62,6 +62,8 @@ export interface SearchResult {
 
 // 音源配置
 export interface SourceConfig {
+  /** Idempotency marker for an explicitly confirmed candidate import. */
+  importId?: string
   path: string
   enabled: boolean
   priority: number

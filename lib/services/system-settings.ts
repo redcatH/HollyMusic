@@ -1,6 +1,7 @@
 import type { Prisma } from '@/lib/generated/prisma'
 import { prisma } from '@/lib/db'
 import { DEFAULT_SITE_SETTINGS, parseSiteSettings } from '@/lib/site-settings'
+import { parseTestSamples, type TestSamples } from '@/lib/source-testing/types'
 
 export interface InitializationSetting {
   version: 1
@@ -10,6 +11,7 @@ export interface InitializationSetting {
 }
 
 export interface SystemSettingValues {
+  'music.testSamples': TestSamples
   'system.initialization': InitializationSetting
   'music.enabledPlatforms': Array<'tx' | 'wy' | 'kw' | 'kg' | 'mg'>
   'site.name': string
@@ -30,6 +32,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function validateSetting<K extends keyof SystemSettingValues>(key: K, value: unknown): SystemSettingValues[K] {
   let valid = false
   switch (key) {
+    case 'music.testSamples':
+      return parseTestSamples(value) as SystemSettingValues[K]
     case 'system.initialization':
       valid = isRecord(value) && value.version === 1 &&
         ['pending', 'completed', 'recovery'].includes(String(value.status)) &&
@@ -75,7 +79,7 @@ export async function setSystemSetting<K extends EditableSettingKey>(
   value: SystemSettingValues[K],
   db: SettingDatabase = prisma,
 ): Promise<void> {
-  if (key !== 'music.enabledPlatforms' && key !== 'site.name' && key !== 'site.description') {
+  if (key !== 'music.testSamples' && key !== 'music.enabledPlatforms' && key !== 'site.name' && key !== 'site.description') {
     throw new SystemSettingError('该设置项不能通过通用设置服务修改')
   }
   const valueJson = JSON.stringify(validateSetting(key, value))

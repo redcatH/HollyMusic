@@ -16,11 +16,11 @@ import {
 } from '@/lib/services/user-context'
 import {
   removeSource,
-  SourceSubscriptionError,
   updateSource,
-  updateSubscribedSource,
 } from '@/lib/services/source-manager-service'
 import { logger } from '@/lib/logger'
+import { createDraft } from '@/lib/services/source-test-service'
+import { assertTestOrigin, testRouteError } from '@/lib/server/source-test-route'
 
 function guard(err: unknown) {
   if (err instanceof AuthError) return createErrorResponse('UNAUTHORIZED', err.message, 401)
@@ -67,24 +67,12 @@ export async function PUT(
   }
 }
 
-export async function POST(
-  request: NextRequest,
-  props: { params: Promise<{ id: string }> }
-) {
+export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
   try {
-    await requireAdmin(request)
-    const sourcePath = await parsePath(props)
-    const updated = await updateSubscribedSource(sourcePath)
-    return createSuccessResponse(updated)
-  } catch (err) {
-    const g = guard(err)
-    if (g) return g
-    if (err instanceof SourceSubscriptionError) {
-      return createErrorResponse('SUBSCRIPTION_ERROR', err.message, err.status)
-    }
-    logger.error('[api/admin/sources/[id] POST] error:', err)
-    return createErrorResponse('INTERNAL_ERROR', '更新订阅失败', 500)
-  }
+    const user = await requireAdmin(request)
+    assertTestOrigin(request)
+    return createSuccessResponse(await createDraft(user.id, { sourcePath: await parsePath(props), update: true }))
+  } catch (error) { return testRouteError(error) }
 }
 
 export async function DELETE(

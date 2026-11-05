@@ -4,6 +4,7 @@
 
 import { apiGet, apiPost, apiPut, apiPatch, apiDelete } from './client'
 import type { SourceConfig } from '@/lib/types/music'
+import type { SourceTestDraft } from '@/lib/source-testing/types'
 
 export interface AdminSource extends SourceConfig {
   scriptExists: boolean
@@ -54,20 +55,20 @@ export function deleteSource(sourcePath: string): Promise<{ ok: boolean }> {
 }
 
 /** 从在线洛雪链接导入脚本，并注册为可手动更新的订阅。 */
-export function importSourceSubscription(url: string): Promise<SourceConfig> {
-  return apiPost<SourceConfig>('admin/sources/subscriptions', { url })
+export function importSourceSubscription(url: string): Promise<SourceTestDraft> {
+  return apiPost<SourceTestDraft>('admin/sources/subscriptions', { url })
 }
 
 /** 手动拉取已订阅脚本的最新内容。 */
-export function updateSourceSubscription(sourcePath: string): Promise<SourceConfig> {
-  return apiPost<SourceConfig>(`admin/sources/${encodeURIComponent(sourcePath)}`)
+export function updateSourceSubscription(sourcePath: string): Promise<SourceTestDraft> {
+  return apiPost<SourceTestDraft>(`admin/sources/${encodeURIComponent(sourcePath)}`)
 }
 
 /**
  * 上传音源脚本文件。
- * 成功后自动注册到 music-sources.json。
+ * 返回隔离校验后的候选草稿，确认后才注册到 music-sources.json。
  */
-export async function uploadScript(file: File): Promise<SourceConfig> {
+export async function uploadScript(file: File): Promise<SourceTestDraft> {
   const formData = new FormData()
   formData.append('file', file)
 
@@ -81,5 +82,5 @@ export async function uploadScript(file: File): Promise<SourceConfig> {
   if (!json.success || json.data === undefined) {
     throw new Error(json.error?.message || '上传失败')
   }
-  return json.data as SourceConfig
+  return json.data as SourceTestDraft
 }

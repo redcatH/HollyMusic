@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRequire } from 'node:module'
 import type { MusicSourcesConfig } from '@/lib/types/music'
+import { createHash } from 'node:crypto'
+import path from 'node:path'
 
 const mocks = vi.hoisted(() => ({
   files: new Map<string, string>(),
@@ -14,6 +16,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('fs/promises', () => ({ default: mocks }))
 vi.mock('@/lib/music-source-manager', () => ({ musicSourceManager: { reload: mocks.reload } }))
+vi.mock('@/lib/server/source-script-file', () => ({ readSourceScriptFile: async (file: string) => mocks.readFile(file) }))
 vi.mock('@/lib/logger', () => ({ logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 vi.mock('dns/promises', () => ({ default: { lookup: vi.fn(async () => [{ address: '93.184.216.34' }]) } }))
 
@@ -45,6 +48,47 @@ beforeEach(() => {
 })
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
+
+describe('候选音源确认提交', () => {
+  const content = '// new tested version'
+  const previous = '// previous version'
+  const sourcePath = 'custom-sources/a.js'
+  const absolute = path.resolve(process.cwd(), sourcePath)
+  const digest = createHash('sha256').update(previous).digest('hex')
+  const input = () => ({ id: 'tested-import', content, filename: 'a.js', name: 'A', enabled: true, pt: ['kw'],
+    target: readStoredConfig().sources[0], targetHash: digest })
+
+  it('替换脚本前检查原配置版本，冲突时不覆盖', async () => {
+    mocks.files.set(absolute, previous)
+    const candidate = input()
+    await service.updateSource(sourcePath, { priority: 9 })
+    await expect(service.commitTestedSource(candidate)).rejects.toMatchObject({ statusCode: 409 })
+    expect(mocks.files.get(absolute)).toBe(previous)
+  })
+  it('检查原脚本摘要，拒绝覆盖测试期间被修改的脚本', async () => {
+    mocks.files.set(absolute, '// externally edited')
+    await expect(service.commitTestedSource(input())).rejects.toMatchObject({ statusCode: 409 })
+    expect(mocks.files.get(absolute)).toBe('// externally edited')
+  })
+  it('配置提交失败时恢复旧脚本', async () => {
+    mocks.files.set(absolute, previous)
+    const rename = mocks.rename.getMockImplementation()!
+    mocks.rename.mockImplementation(async (from: string, to: string) => { if (to === configPath) throw new Error('disk failure'); return rename(from, to) })
+    await expect(service.commitTestedSource(input())).rejects.toThrow('disk failure')
+    expect(mocks.files.get(absolute)).toBe(previous)
+    expect(readStoredConfig().sources[0]).not.toHaveProperty('importId')
+  })
+  it('提交保持脚本路径并保存平台选择，相同候选再次提交不会重复写入', async () => {
+    mocks.files.set(absolute, previous)
+    const candidate = input()
+    const source = await service.commitTestedSource(candidate)
+    expect(source).toMatchObject({ path: sourcePath, importId: 'tested-import', pt: ['kw'] })
+    expect(mocks.files.get(absolute)).toBe(content)
+    const count = mocks.writeFile.mock.calls.length
+    expect(await service.commitTestedSource(candidate)).toEqual(source)
+    expect(mocks.writeFile).toHaveBeenCalledTimes(count)
+  })
+})
 
 describe('音源配置批量保存', () => {
   it('批量保存与单条编辑并发时，保留两次更新', async () => {

@@ -5,8 +5,8 @@ const nextConfig: NextConfig = {
   // 配合 Dockerfile 可将镜像从 ~800MB 瘦身到 ~250MB
   output: "standalone",
 
-  // needle/tunnel 被 lib/music-core/*.js 顶层 require，必须外置（不打包进 bundle）
-  serverExternalPackages: ['needle', 'tunnel'],
+  // 兼容引擎与本地测试子进程需要通过 Node 直接加载这些依赖。
+  serverExternalPackages: ['needle', 'tunnel', 'music-metadata'],
 
   // 强制把以下文件纳入 standalone 文件追踪（默认基于 import 静态分析会漏掉非 JS 资源）
   // - Prisma 客户端 + 查询引擎二进制（自定义 output 路径，.node 不是 JS import）
@@ -22,6 +22,8 @@ const nextConfig: NextConfig = {
       './node_modules/needle/**/*',
       './node_modules/tunnel/**/*',
       './lib/music-core/**/*',
+      './lib/source-testing/*.cjs',
+      './node_modules/music-metadata/**/*',
     ],
     '/rest/**': [
       './lib/generated/prisma/**/*',

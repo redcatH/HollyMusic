@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import { ChevronUp, ChevronDown, Loader2 } from 'lucide-react'
+import { ChevronUp, ChevronDown, Loader2, FlaskConical } from 'lucide-react'
 import { bulkUpdateSources, type AdminSource } from '@/lib/api/admin-sources'
 import { toast } from '@/lib/toast'
 
@@ -39,10 +39,12 @@ export function SourceMatrix({
   sources,
   reload,
   onBusyChange,
+  onTest,
 }: {
   sources: AdminSource[]
   reload: () => Promise<void>
   onBusyChange?: (busy: boolean) => void
+  onTest?: (source: AdminSource) => Promise<void>
 }) {
   // 本地乐观态：与 props 同步（父组件静默重拉后合并），点击时先行变更
   const [rows, setRows] = useState<AdminSource[]>(() => sortRows(sources))
@@ -220,6 +222,7 @@ export function SourceMatrix({
                 </td>
                 <td className="px-3 py-2.5">
                   <div className="flex items-center justify-center gap-0.5">
+                    {onTest && <button type="button" disabled={busy !== null} onClick={() => void onTest(s)} title="测试音源" aria-label={`测试 ${s.name || s.path}`} className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"><FlaskConical className="h-4 w-4" /></button>}
                     <button
                       onClick={() => moveRow(enabledIndex, -1)}
                       disabled={busy !== null || !s.enabled || enabledIndex <= 0}

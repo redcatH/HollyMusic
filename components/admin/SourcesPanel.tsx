@@ -20,8 +20,11 @@ import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { SourceMatrix } from '@/components/admin/SourceMatrix'
 import { toast } from '@/lib/toast'
-import { Plus, Pencil, Trash2, Music, X, Loader2, Upload, AlertCircle, CheckCircle2, FileWarning, RefreshCw, Rss, LayoutGrid, List } from 'lucide-react'
+import { Plus, Pencil, Trash2, Music, X, Loader2, Upload, AlertCircle, CheckCircle2, FileWarning, RefreshCw, Rss, LayoutGrid, List, FlaskConical, History } from 'lucide-react'
 import { ModalMask } from '@/components/shared/ModalMask'
+import { SourceTestDialog, SourceTestHistory, TestSongSettingsDialog } from '@/components/admin/SourceTestDialog'
+import { createSourceTest } from '@/lib/api/source-tests'
+import type { SourceTestDraft } from '@/lib/source-testing/types'
 
 const PLATFORMS = ['tx', 'wy', 'kw', 'kg', 'mg'] as const
 const PLATFORM_LABELS: Record<string, string> = {
@@ -38,6 +41,9 @@ type DialogMode =
   | null
 
 export function SourcesPanel() {
+  const [testDraft, setTestDraft] = useState<SourceTestDraft | null>(null)
+  const [testSongsOpen, setTestSongsOpen] = useState(false)
+  const [testHistoryOpen, setTestHistoryOpen] = useState(false)
   const [sources, setSources] = useState<AdminSource[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -98,9 +104,7 @@ export function SourcesPanel() {
       setUploading(true)
       setUploadMsg(null)
       try {
-        await uploadScript(file)
-        setUploadMsg({ kind: 'success', text: `脚本「${file.name}」上传成功，已自动注册` })
-        await reload()
+        setTestDraft(await uploadScript(file))
       } catch (e) {
         setUploadMsg({ kind: 'error', text: e instanceof Error ? e.message : '上传失败' })
       } finally {
@@ -115,12 +119,8 @@ export function SourcesPanel() {
       setSubscribing(true)
       setUploadMsg(null)
       try {
-        await importSourceSubscription(url)
+        setTestDraft(await importSourceSubscription(url))
         setSubscriptionDialogOpen(false)
-        setUploadMsg({ kind: 'success', text: '订阅导入成功，后续可在列表中手动更新' })
-        await reload()
-      } catch (e) {
-        setUploadMsg({ kind: 'error', text: e instanceof Error ? e.message : '导入订阅失败' })
       } finally {
         setSubscribing(false)
       }
@@ -132,14 +132,20 @@ export function SourcesPanel() {
       setUpdatingSubscriptionPath(source.path)
       setUploadMsg(null)
       try {
-        await updateSourceSubscription(source.path)
-        setUploadMsg({ kind: 'success', text: `订阅「${source.name || source.path}」已更新` })
-        await reload()
+        setTestDraft(await updateSourceSubscription(source.path))
       } catch (e) {
         setUploadMsg({ kind: 'error', text: e instanceof Error ? e.message : '更新订阅失败' })
       } finally {
         setUpdatingSubscriptionPath(null)
       }
+    })
+  }
+
+  const handleTest = async (source: AdminSource) => {
+    await runMutation(async () => {
+      setUploadMsg(null)
+      try { setTestDraft(await createSourceTest(source.path)) }
+      catch (error) { setUploadMsg({ kind: 'error', text: error instanceof Error ? error.message : '准备测试失败' }) }
     })
   }
 
@@ -226,7 +232,7 @@ export function SourcesPanel() {
 
   return (
     <fieldset disabled={busy} className="min-w-0">
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="flex items-center gap-2 text-xl font-bold">
             <Music className="h-5 w-5 text-primary" />
@@ -234,7 +240,9 @@ export function SourcesPanel() {
           </h2>
           <p className="text-sm text-muted-foreground">管理自定义音源脚本与配置</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => setTestSongsOpen(true)} className="flex items-center gap-1 rounded-full border border-border px-4 py-2 text-sm font-medium hover:bg-accent"><FlaskConical className="h-4 w-4" />测试歌曲</button>
+          <button type="button" onClick={() => setTestHistoryOpen(true)} className="flex items-center gap-1 rounded-full border border-border px-4 py-2 text-sm font-medium hover:bg-accent"><History className="h-4 w-4" />最近测试</button>
           <button
             onClick={() => setSubscriptionDialogOpen(true)}
             className="flex items-center gap-1 rounded-full border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-accent"
@@ -257,7 +265,7 @@ export function SourcesPanel() {
             className="flex items-center gap-1 rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
           >
             {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-            {uploading ? '上传中…' : '上传脚本'}
+            {uploading ? '校验中…' : '上传脚本'}
           </button>
           <button
             onClick={() => setDialog({ kind: 'create' })}
@@ -313,7 +321,7 @@ export function SourcesPanel() {
       ) : sources.length === 0 ? (
         <EmptyState icon={Music} title="暂无音源" description="上传脚本或手动添加音源配置" />
       ) : view === 'matrix' ? (
-        <SourceMatrix sources={sources} reload={() => reload(true)} onBusyChange={setMutationBusy} />
+        <SourceMatrix sources={sources} reload={() => reload(true)} onBusyChange={setMutationBusy} onTest={handleTest} />
       ) : (
         <>
           {selected.size > 0 && (
@@ -431,6 +439,7 @@ export function SourcesPanel() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1">
+                      <button type="button" onClick={() => void handleTest(s)} className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground" title="测试音源" aria-label={`测试 ${s.name || s.path}`}><FlaskConical className="h-4 w-4" /></button>
                       {s.subscription && (
                         <button
                           onClick={() => handleSubscriptionUpdate(s)}
@@ -473,6 +482,9 @@ export function SourcesPanel() {
           onUpdated={handleUpdated}
         />
       )}
+      {testDraft && <SourceTestDialog key={testDraft.id} initialDraft={testDraft} onClose={() => setTestDraft(null)} onCommitted={() => reload(true)} />}
+      {testSongsOpen && <TestSongSettingsDialog onClose={() => setTestSongsOpen(false)} />}
+      {testHistoryOpen && <SourceTestHistory onClose={() => setTestHistoryOpen(false)} onSelect={draft => { setTestHistoryOpen(false); setTestDraft(draft) }} />}
       {subscriptionDialogOpen && (
         <SubscriptionDialog
           submitting={subscribing}
@@ -503,7 +515,8 @@ function SubscriptionDialog({
       return
     }
     setError(null)
-    await onSubmit(url.trim())
+    try { await onSubmit(url.trim()) }
+    catch (error) { setError(error instanceof Error ? error.message : '准备订阅失败') }
   }
 
   return (
@@ -526,13 +539,13 @@ function SubscriptionDialog({
               placeholder="https://example.com/lx-music-source.js"
               className="w-full rounded-md bg-background px-3 py-2 text-sm outline-none ring-1 ring-border focus:ring-primary"
             />
-            <span className="mt-1 block text-[10px] text-muted-foreground">导入后会校验脚本，并在列表中提供手动更新按钮。</span>
+            <span className="mt-1 block text-[10px] text-muted-foreground">拉取脚本后先测试，由你确认是否导入和启用哪些平台。</span>
           </label>
           {error && <p className="text-xs text-destructive">{error}</p>}
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} disabled={submitting} className="rounded-full px-4 py-2 text-sm text-muted-foreground hover:text-foreground">取消</button>
             <button type="submit" disabled={submitting} className="flex items-center gap-1 rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50">
-              {submitting && <Loader2 className="h-4 w-4 animate-spin" />} 导入
+              {submitting && <Loader2 className="h-4 w-4 animate-spin" />} {submitting ? '拉取并校验…' : '下一步：测试'}
             </button>
           </div>
         </form>
