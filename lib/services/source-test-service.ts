@@ -73,7 +73,8 @@ export async function getDraft(id: string, ownerId: number): Promise<SourceTestD
     state.results = state.results.map(item => ['running', 'waiting'].includes(item.status) ? { ...item, status: 'cancelled', message: '服务重启，测试已中断' } : item)
     await persist(state)
   }
-  state.samplesChanged = state.samplesHash !== undefined && state.samplesHash !== hash(JSON.stringify(await getSystemSetting('music.testSamples') || {}))
+  const samples = parseTestSamples(await getSystemSetting('music.testSamples') || {})
+  state.samplesChanged = state.results.some(item => JSON.stringify(item.song) !== JSON.stringify(samples[item.platform]))
   return state
 }
 
@@ -195,7 +196,8 @@ export async function prepareTest(id: string, ownerId: number, mode: 'quick' | '
     if (tasks.size >= 2) throw new SourceTestError('已有测试正在执行，请稍后重试', 409)
     if (used + [...budgets.values()].reduce((sum, bytes) => sum + bytes, 0) + budget > 1024 * 1024 * 1024) throw new SourceTestError('测试音频空间不足，请在最近测试中删除不再需要的候选', 409)
     const samplesHash = hash(JSON.stringify(samples))
-    state.results = keys && state.samplesHash === samplesHash ? [...state.results.filter(item => !results.some(next => next.key === item.key)), ...results] : results
+    state.results = keys ? [...state.results.filter(item => !results.some(next => next.key === item.key)), ...results] : results
+    state.runKeys = results.map(item => item.key)
     state.samplesHash = samplesHash; state.status = 'running'; state.startedAt = new Date().toISOString()
     const controller = new AbortController()
     tasks.set(id, controller)

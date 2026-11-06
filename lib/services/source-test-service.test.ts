@@ -130,6 +130,38 @@ describe('候选到测试再提交的完整服务流程', () => {
     await (await service.prepareTest(draft.id, 7, 'quick'))()
     expect((await service.getDraft(draft.id, 7)).results.map(result => [result.quality, result.status])).toEqual([['flac', 'failed'], ['320k', 'passed']])
   })
+  it.each([false, true])('部分测试只执行指定平台，保留其他报告和歌曲变更提示（更换歌曲：%s）', async changeSample => {
+    const normal = mocks.run.getMockImplementation()!
+    mocks.run.mockImplementation(async (job: Record<string, unknown>) => job.action === 'inspect' ? { info: { sources: {
+      kw: { qualitys: ['flac', '320k'], actions: ['musicUrl'] }, tx: { qualitys: ['320k'], actions: ['musicUrl'] },
+    } } } : normal(job))
+    const txSong = { ...song, source: 'tx' }
+    mocks.samples.mockResolvedValue({ kw: song, tx: txSong })
+    const draft = await service.createDraft(7, { file: { name: 'source.js', content: fixture } })
+    await (await service.prepareTest(draft.id, 7, 'quick'))()
+    const before = await service.getDraft(draft.id, 7)
+    const history = before.results.filter(item => item.platform === 'kw')
+    if (changeSample) mocks.samples.mockResolvedValue({ kw: { ...song, songmid: 'new-song', name: '新歌曲' }, tx: txSong })
+    calls.length = 0
+    const run = await service.prepareTest(draft.id, 7, 'full', ['tx:320k'])
+    try {
+      const running = await service.getDraft(draft.id, 7)
+      expect(running.runKeys).toEqual(['tx:320k'])
+      expect(running.results.filter(item => item.platform === 'kw')).toEqual(history)
+    } finally { await run() }
+    const after = await service.getDraft(draft.id, 7)
+    expect(calls.filter(call => call.action === 'resolve')).toMatchObject([{ platform: 'tx', quality: '320k' }])
+    expect(after.results.filter(item => item.platform === 'kw')).toEqual(history)
+    expect(after.results.find(item => item.platform === 'tx')).toMatchObject({ status: 'passed', mode: 'full' })
+    expect(after.samplesChanged).toBe(changeSample)
+  })
+  it('空测试范围不会回退成测试所有平台', async () => {
+    const draft = await service.createDraft(7, { file: { name: 'source.js', content: fixture } })
+    calls.length = 0
+    await expect(service.prepareTest(draft.id, 7, 'quick', [])).rejects.toThrow('没有可测试')
+    expect(calls).toEqual([])
+    expect((await service.getDraft(draft.id, 7)).status).toBe('ready')
+  })
   it('取消会中断实际请求，未执行项也标记为停止', async () => {
     const draft = await service.createDraft(7, { file: { name: 'source.js', content: fixture } })
     mocks.run.mockImplementation((_job: unknown, signal: AbortSignal) => new Promise((_resolve, reject) => {

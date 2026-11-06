@@ -22,7 +22,7 @@ export interface SourceTestDraft {
   status: 'ready' | 'running' | 'completed' | 'cancelled' | 'interrupted' | 'committed'
   results: SourceTestResult[]; samplesHash?: string; samplesChanged?: boolean
   createdAt: string; expiresAt: string; committedSource?: SourceConfig
-  persisted?: boolean; startedAt?: string
+  persisted?: boolean; startedAt?: string; runKeys?: string[]
   previousReport?: { hash: string; capabilities: TestCapability; results: SourceTestResult[]; createdAt: string }
 }
 
