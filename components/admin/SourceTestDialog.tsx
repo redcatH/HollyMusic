@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { CheckCircle2, FlaskConical, Loader2, Search, X } from 'lucide-react'
+import { CheckCircle2, FlaskConical, Loader2, Search, Trash2, X } from 'lucide-react'
 import { search } from '@/lib/api/search'
 import { cancelSourceTest, commitSourceTest, discardSourceTest, getSourceTest, listSourceTests, loadTestSamples, runSourceTest, saveTestSamples, startSourceTest } from '@/lib/api/source-tests'
 import { PLATFORM_NAMES, TEST_PLATFORMS, type SourceTestDraft, type TestSamples } from '@/lib/source-testing/types'
@@ -106,12 +106,36 @@ export function SourceTestHistory({ onClose, onSelect }: { onClose: () => void; 
   const [pending, setPending] = useState<SourceTestDraft[]>([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const deletingRef = useRef(false)
   useEffect(() => { let alive = true; listSourceTests().then(value => { if (alive) { setDrafts(value.list); setPending(value.pending || []) } }, error => { if (alive) setError(errorText(error)) }).finally(() => { if (alive) setLoading(false) }); return () => { alive = false } }, [])
+  const discard = async (draft: SourceTestDraft): Promise<void> => {
+    if (deletingRef.current || draft.status === 'running') return
+    deletingRef.current = true; setDeletingId(draft.id); setError('')
+    try {
+      await discardSourceTest(draft.id)
+      setDrafts(previous => previous.filter(item => item.id !== draft.id))
+      setPending(previous => previous.filter(item => item.id !== draft.id))
+      const value = await listSourceTests()
+      setDrafts(value.list); setPending(value.pending || [])
+    } catch (error) { setError(errorText(error)) }
+    finally { deletingRef.current = false; setDeletingId(null) }
+  }
+  const renderDraft = (draft: SourceTestDraft, isPending: boolean) => <div key={draft.id} className="flex items-center gap-1 rounded-lg border border-border pr-2">
+    <button type="button" disabled={deletingId === draft.id} onClick={() => onSelect(draft)} className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-3 rounded-lg p-4 text-left hover:bg-accent disabled:opacity-50">
+      <div className="min-w-0"><p className="break-words text-sm font-medium">{draft.name}</p><p className="mt-1 text-xs text-muted-foreground">{isPending ? `未测试 · ${draft.kind === 'update' ? '订阅更新' : draft.kind === 'subscription' ? '订阅音源' : '上传音源'}` : `${new Date(draft.startedAt || draft.createdAt).toLocaleString()} · ${draft.results.filter(item => item.status === 'passed').length}/${draft.results.length} 项通过`}</p></div>
+      <span className="shrink-0 text-xs text-primary">{isPending ? '继续处理' : draft.status === 'running' ? '查看进度' : '查看报告'}</span>
+    </button>
+    <button type="button" disabled={deletingId !== null || draft.status === 'running'} onClick={() => void discard(draft)} aria-label={`删除${draft.name}${isPending ? '候选' : '测试记录'}`} title={draft.status === 'running' ? '请先停止测试，再删除记录' : isPending ? '删除候选及试听音频' : '删除报告及试听音频，保留已导入的音源'} className="inline-flex shrink-0 items-center gap-1 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-50">
+      {deletingId === draft.id ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Trash2 aria-hidden="true" className="h-4 w-4" />}
+      {deletingId === draft.id ? '删除中…' : '删除'}
+    </button>
+  </div>
   return <TestModal title="最近测试" onClose={onClose}><div className="space-y-4">
     {loading && <p className="text-sm text-muted-foreground">加载中…</p>}
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-    {pending.length > 0 && <section aria-label="待处理音源" className="space-y-2"><h4 className="text-sm font-medium">待处理音源</h4>{pending.map(draft => <button type="button" key={draft.id} onClick={() => onSelect(draft)} className="flex w-full items-center justify-between gap-3 rounded-lg border border-border p-4 text-left hover:bg-accent"><div><p className="text-sm font-medium">{draft.name}</p><p className="mt-1 text-xs text-muted-foreground">未测试 · {draft.kind === 'update' ? '订阅更新' : draft.kind === 'subscription' ? '订阅音源' : '上传音源'}</p></div><span className="shrink-0 text-xs text-primary">继续处理</span></button>)}</section>}
-    <section aria-label="测试记录" className="space-y-2">{pending.length > 0 && <h4 className="text-sm font-medium">测试记录</h4>}{!loading && !error && !drafts.length && <p className="py-8 text-center text-muted-foreground">暂无测试记录</p>}{drafts.map(draft => <button type="button" key={draft.id} onClick={() => onSelect(draft)} className="flex w-full items-center justify-between gap-3 rounded-lg border border-border p-4 text-left hover:bg-accent"><div><p className="text-sm font-medium">{draft.name}</p><p className="mt-1 text-xs text-muted-foreground">{new Date(draft.startedAt || draft.createdAt).toLocaleString()} · {draft.results.filter(item => item.status === 'passed').length}/{draft.results.length} 项通过</p></div><span className="shrink-0 text-xs text-primary">{draft.status === 'running' ? '查看进度' : '查看报告'}</span></button>)}</section>
+    {pending.length > 0 && <section aria-label="待处理音源" className="space-y-2"><h4 className="text-sm font-medium">待处理音源</h4>{pending.map(draft => renderDraft(draft, true))}</section>}
+    <section aria-label="测试记录" className="space-y-2">{pending.length > 0 && <h4 className="text-sm font-medium">测试记录</h4>}{!loading && !error && !drafts.length && <p className="py-8 text-center text-muted-foreground">暂无测试记录</p>}{drafts.map(draft => renderDraft(draft, false))}</section>
   </div></TestModal>
 }
 
@@ -119,6 +143,7 @@ export function SourceTestDialog({ initialDraft, onClose, onCommitted }: { initi
   const [draft, setDraft] = useState(initialDraft)
   const [samples, setSamples] = useState<TestSamples>({})
   const [showSongs, setShowSongs] = useState(false)
+  const [testPlatforms, setTestPlatforms] = useState<SourceType[]>(() => TEST_PLATFORMS.filter(p => Object.hasOwn(initialDraft.capabilities, p)))
   const [platforms, setPlatforms] = useState<string[]>(initialDraft.target ? (initialDraft.target.pt?.length ? initialDraft.target.pt.filter(p => Object.hasOwn(initialDraft.capabilities, p)) : Object.keys(initialDraft.capabilities)) : [])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -145,6 +170,10 @@ export function SourceTestDialog({ initialDraft, onClose, onCommitted }: { initi
     timer = setTimeout(poll, 1000)
     return () => { alive = false; clearTimeout(timer) }
   }, [running, draft.id])
+  const available = TEST_PLATFORMS.filter(p => Object.hasOwn(draft.capabilities, p))
+  const testable = available.filter(p => (draft.capabilities[p] || []).some(quality => samples[p] && Object.hasOwn(samples[p]._types, quality)))
+  const selectedKeys = available.flatMap(p => testPlatforms.includes(p) ? (draft.capabilities[p] || [])
+    .filter(quality => samples[p] && Object.hasOwn(samples[p]._types, quality)).map(quality => `${p}:${quality}`) : [])
   const action = async (work: () => Promise<void>) => {
     if (busyRef.current) return
     busyRef.current = true; setBusy(true); setError('')
@@ -152,34 +181,44 @@ export function SourceTestDialog({ initialDraft, onClose, onCommitted }: { initi
     finally { busyRef.current = false; setBusy(false) }
   }
   const run = (mode: 'quick' | 'full', keys?: string[]) => action(async () => {
+    const scopedKeys = keys ? selectedKeys.filter(key => keys.includes(key)) : selectedKeys
+    if (!scopedKeys.length) throw new Error('请选择至少一个可测试的平台')
     audio.current?.pause(); setPreview(null)
-    setDraft(await (unstartedPreview ? startSourceTest(draft.target!.path, draft.hash, mode, keys) : runSourceTest(draft.id, mode, keys)))
+    setDraft(await (unstartedPreview ? startSourceTest(draft.target!.path, draft.hash, mode, scopedKeys) : runSourceTest(draft.id, mode, scopedKeys)))
   })
   const save = (enabled: boolean) => action(async () => { await commitSourceTest(draft.id, platforms, enabled); await onCommitted(); onClose() })
-  const done = draft.results.filter(item => !['waiting', 'running'].includes(item.status)).length
-  const failed = draft.results.filter(item => item.status === 'failed').map(item => item.key)
-  const available = Object.keys(draft.capabilities) as SourceType[]
-  const hasSamples = available.some(p => samples[p])
+  const currentResults = draft.runKeys ? draft.results.filter(item => draft.runKeys!.includes(item.key)) : draft.results
+  const done = currentResults.filter(item => !['waiting', 'running'].includes(item.status)).length
+  const failed = draft.results.filter(item => item.status === 'failed' && selectedKeys.includes(item.key)).map(item => item.key)
   return <TestModal title={draft.kind === 'update' ? '测试订阅新版本' : draft.kind === 'retest' ? '测试音源' : '测试并导入音源'} onClose={onClose}>
     <div className="space-y-5">
       <div className="rounded-lg bg-accent/30 p-3"><p className="font-medium">{draft.name}</p><p className="mt-1 text-xs text-muted-foreground">{draft.kind === 'update' ? (draft.unchanged ? '订阅内容未变化，可以重新检查当前版本。' : '正在测试候选版本，确认更新后才替换当前音源。') : '使用各平台已保存的歌曲，逐项检测音源声明的音质。'}</p></div>
       <div><div className="flex items-center justify-between"><p className="text-sm font-medium">测试歌曲</p><button type="button" disabled={running || busy} onClick={() => setShowSongs(value => !value)} className="text-sm text-primary hover:underline">{showSongs ? '收起' : '设置歌曲'}</button></div>
         {showSongs ? <div className="mt-3"><TestSongSettings onChange={updateSamples} /></div> : <div className="mt-2 flex flex-wrap gap-2">{available.map(p => <span key={p} className="rounded-md border border-border px-2 py-1 text-xs">{PLATFORM_NAMES[p]} · {samples[p]?.name || '未设置，跳过'}</span>)}</div>}
-        {draft.samplesChanged && <p className="mt-2 text-xs text-amber-600">歌曲设置已变更，下方报告使用之前的歌曲，请重新测试。</p>}
+        {draft.samplesChanged && <p className="mt-2 text-xs text-amber-600">部分报告使用之前的测试歌曲，请按各项歌曲和检测时间查看，或选择对应平台重新测试。</p>}
       </div>
+      {!committed && <fieldset aria-label="测试平台" disabled={running || busy || expired} className="space-y-3">
+        <legend className="text-sm font-medium">测试平台</legend>
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs"><p className="text-muted-foreground">仅检测勾选平台的各档音质，启用平台在下方另行设置。</p><div className="flex gap-3"><button type="button" disabled={!testable.length} onClick={() => setTestPlatforms(testable)} className="text-primary hover:underline disabled:opacity-50">全选</button><button type="button" onClick={() => setTestPlatforms([])} className="text-primary hover:underline">清空</button></div></div>
+        <div className="flex flex-wrap gap-2">{available.map(p => <label key={p} className={`flex items-center gap-2 rounded-full border px-3 py-2 text-sm ${testable.includes(p) ? 'cursor-pointer' : 'opacity-50'} ${testPlatforms.includes(p) && testable.includes(p) ? 'border-primary bg-primary/10 text-primary' : 'border-border'}`}>
+          <input type="checkbox" aria-label={`测试${PLATFORM_NAMES[p]}平台`} disabled={!testable.includes(p)} checked={testPlatforms.includes(p) && testable.includes(p)} onChange={() => setTestPlatforms(previous => previous.includes(p) ? previous.filter(value => value !== p) : [...previous, p])} className="accent-primary" />
+          {PLATFORM_NAMES[p]}{!samples[p] ? ' · 未设置测试歌曲' : !testable.includes(p) ? ' · 歌曲无匹配音质' : !draft.results.some(item => item.platform === p) ? ' · 未测试' : ''}
+        </label>)}</div>
+        {testable.length > 0 && !selectedKeys.length && <p className="text-xs text-amber-600">请选择至少一个测试平台。</p>}
+      </fieldset>}
       {!committed && <div className="flex flex-wrap items-center gap-2">
-        {running ? <><Loader2 className="h-4 w-4 animate-spin text-primary" /><span aria-live="polite" className="text-sm">已完成 {done}/{draft.results.length} 项</span><button type="button" disabled={busy} onClick={() => void action(async () => { await cancelSourceTest(draft.id); setDraft(await getSourceTest(draft.id)) })} className={`${SECONDARY} ml-auto`}>停止测试</button></> : <>
-          <button type="button" disabled={busy || !hasSamples || expired} onClick={() => void run('quick')} className={PRIMARY}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FlaskConical className="h-4 w-4" />}{draft.results.length ? '重新测试' : '开始测试'}</button>
-          <button type="button" disabled={busy || !hasSamples || expired} onClick={() => void run('full')} className={SECONDARY}>完整检查</button>
+        {running ? <><Loader2 className="h-4 w-4 animate-spin text-primary" /><span aria-live="polite" className="text-sm">已完成 {done}/{currentResults.length} 项</span><button type="button" disabled={busy} onClick={() => void action(async () => { await cancelSourceTest(draft.id); setDraft(await getSourceTest(draft.id)) })} className={`${SECONDARY} ml-auto`}>停止测试</button></> : <>
+          <button type="button" disabled={busy || !selectedKeys.length || expired} onClick={() => void run('quick')} className={PRIMARY}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FlaskConical className="h-4 w-4" />}{draft.results.length ? '重新测试' : '开始测试'}</button>
+          <button type="button" disabled={busy || !selectedKeys.length || expired} onClick={() => void run('full')} className={SECONDARY}>完整检查</button>
           {failed.length > 0 && <button type="button" disabled={busy || expired} onClick={() => void run('quick', failed)} className={SECONDARY}>重试失败项</button>}
-          {!hasSamples && <button type="button" onClick={() => setShowSongs(true)} className="text-sm text-primary">先选择测试歌曲</button>}
+          {!testable.length && <button type="button" onClick={() => setShowSongs(true)} className="text-sm text-primary">先选择测试歌曲</button>}
         </>}
       </div>}
       {draft.results.length > 0 && <div className="overflow-x-auto rounded-lg border border-border"><table className="w-full text-left text-sm"><thead className="bg-accent/40 text-xs text-muted-foreground"><tr><th className="px-3 py-3">平台 / 音质</th><th className="px-3 py-3">检测结果</th><th className="px-3 py-3">实际音频</th><th className="px-3 py-3">操作</th></tr></thead><tbody>{draft.results.map(item => <tr key={item.key} className="border-t border-border align-top">
-        <td className="whitespace-nowrap px-3 py-3"><p>{PLATFORM_NAMES[item.platform]}</p><p className="mt-1 text-xs text-muted-foreground">{QUALITY_NAMES[item.quality]}</p></td>
-        <td className="min-w-44 px-3 py-3"><span className={`rounded px-1.5 py-0.5 text-xs ${item.status === 'passed' ? 'bg-green-500/15 text-green-600' : item.status === 'failed' ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground'}`}>{STATUS_NAMES[item.status]}</span><p className="mt-2 text-xs">{item.message}</p><p className="mt-1 text-xs text-muted-foreground">{item.song.name} · {item.song.interval}{item.elapsedMs ? ` · ${(item.elapsedMs / 1000).toFixed(1)}s` : ''}</p></td>
+        <td className="whitespace-nowrap px-3 py-3"><p>{PLATFORM_NAMES[item.platform]}</p><p className="mt-1 text-xs text-muted-foreground">{QUALITY_NAMES[item.quality]}</p>{draft.runKeys && <p className="mt-1 text-xs text-muted-foreground">{draft.runKeys.includes(item.key) ? '本次测试' : '历史结果'}</p>}</td>
+        <td className="min-w-44 px-3 py-3"><span className={`rounded px-1.5 py-0.5 text-xs ${item.status === 'passed' ? 'bg-green-500/15 text-green-600' : item.status === 'failed' ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground'}`}>{STATUS_NAMES[item.status]}</span><p className="mt-2 text-xs">{item.message}</p><p className="mt-1 text-xs text-muted-foreground">{item.song.name} · {item.song.interval}{item.elapsedMs ? ` · ${(item.elapsedMs / 1000).toFixed(1)}s` : ''}</p>{item.testedAt && <p className="mt-1 text-xs text-muted-foreground">检测于 {new Date(item.testedAt).toLocaleString()}</p>}</td>
         <td className="min-w-32 px-3 py-3 text-xs text-muted-foreground">{item.facts ? <><p>{item.facts.codec}</p><p className="mt-1">{item.facts.sampleRate ? `${item.facts.sampleRate / 1000} kHz` : ''}{item.facts.bitsPerSample ? ` / ${item.facts.bitsPerSample} bit` : ''}</p><p className="mt-1">{item.facts.duration ? `${Math.round(item.facts.duration)} 秒` : '时长未知'}{item.bytes ? ` · ${(item.bytes / 1048576).toFixed(1)} MB` : ''}</p><p className="mt-1">{item.complete ? '已下载完整文件' : '仅检查部分数据'}</p></> : '—'}</td>
-        <td className="whitespace-nowrap px-3 py-3"><div className="flex flex-col items-start gap-2">{item.asset && !expired && <button type="button" onClick={() => { setPreview(item.key); setPlayback('') }} className="text-xs text-primary">试听</button>}{!running && !committed && !expired && <button type="button" disabled={busy} onClick={() => void run('full', [item.key])} className="text-xs text-primary">完整检查</button>}</div></td>
+        <td className="whitespace-nowrap px-3 py-3"><div className="flex flex-col items-start gap-2">{item.asset && !expired && <button type="button" onClick={() => { setPreview(item.key); setPlayback('') }} className="text-xs text-primary">试听</button>}{!running && !committed && !expired && <button type="button" disabled={busy || !selectedKeys.includes(item.key)} title={selectedKeys.includes(item.key) ? undefined : '请先勾选该测试平台并设置匹配的测试歌曲'} onClick={() => void run('full', [item.key])} className="text-xs text-primary disabled:opacity-50">完整检查</button>}</div></td>
       </tr>)}</tbody></table></div>}
       {draft.kind === 'update' && <details className="rounded-lg border border-border p-3"><summary className="cursor-pointer text-sm font-medium">与旧版本比较</summary>{draft.previousReport ? <div className="mt-3 space-y-2 text-xs text-muted-foreground"><p>旧报告时间：{new Date(draft.previousReport.createdAt).toLocaleString()}。不同歌曲或检查模式的结果不作直接比较。</p>{TEST_PLATFORMS.filter(p => draft.capabilities[p] || draft.previousReport!.capabilities[p]).map(p => <div key={p} className="grid grid-cols-3 gap-2 border-t border-border pt-2"><span>{PLATFORM_NAMES[p]}</span><span>旧：{draft.previousReport!.capabilities[p]?.map(q => QUALITY_NAMES[q]).join(' / ') || '未声明'}</span><span>新：{draft.capabilities[p]?.map(q => QUALITY_NAMES[q]).join(' / ') || '未声明'}</span></div>)}<p>旧版本通过 {draft.previousReport.results.filter(item => item.status === 'passed').length}/{draft.previousReport.results.length} 项；候选版本通过 {draft.results.filter(item => item.status === 'passed').length}/{draft.results.length} 项。</p></div> : <p className="mt-2 text-xs text-muted-foreground">暂无与当前旧版本匹配的测试报告。可以先复测当前音源，再拉取订阅新版本进行比较。</p>}</details>}
       {preview && <div className="rounded-lg bg-accent/30 p-3"><div className="mb-2 flex items-center justify-between text-xs"><span>试听本次检测的音频 · {PLATFORM_NAMES[preview.split(':')[0] as SourceType]}</span><button type="button" onClick={() => { audio.current?.pause(); setPreview(null) }} aria-label="关闭试听"><X className="h-4 w-4" /></button></div><audio ref={audio} controls autoPlay key={preview} src={`/api/admin/source-tests/${draft.id}/audio?key=${encodeURIComponent(preview)}`} onPlay={() => { usePlayerStore.getState().setIsPlaying(false); setPlayback('当前浏览器播放正常，仅验证已播放部分') }} onCanPlay={() => setPlayback('浏览器已能加载音频，请播放确认歌曲是否正确')} onError={() => setPlayback('当前浏览器无法播放此音频；可尝试完整检查后再试听')} className="h-10 w-full" />{playback && <p className="mt-2 text-xs text-muted-foreground">{playback}</p>}</div>}
