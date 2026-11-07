@@ -17,12 +17,13 @@ import { usePlayerStore } from '@/lib/store/player-store'
 import { useFavoritesStore } from '@/lib/store/favorites-store'
 import { useAuthStore } from '@/hooks/useAuth'
 import { useDownload } from '@/hooks/useDownload'
-import { resolveQuality } from '@/lib/quality-options'
+import type { Track } from '@/lib/types/player'
 import { toast } from '@/lib/toast'
 import { removeSongsFromPlaylist } from '@/lib/api/playlists'
 import { shareContent, buildSongShareUrl } from '@/lib/share'
 import { AddToPlaylistDialog } from '../../frontend/src/components/playlists/AddToPlaylistDialog'
 import { ModalMask } from '@/components/shared/ModalMask'
+import { DownloadDialog } from './DownloadDialog'
 // ponytail: AddToPlaylistDialog 已移至 frontend/src/components/playlists，
 // 根目录共享代码用相对路径引用 frontend 副本，确保 react-router context 与 BrowserRouter 同源，
 // 避免双副本导致 context 为 null（黑屏 bug 根因）
@@ -58,6 +59,7 @@ export function SongContextMenu() {
   const authenticated = useAuthStore(s => s.authenticated)
   const { download } = useDownload()
   const [playlistUid, setPlaylistUid] = useState<string | null>(null)
+  const [downloadTrack, setDownloadTrack] = useState<Track | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const isMobile = useIsMobile()
 
@@ -83,8 +85,16 @@ export function SongContextMenu() {
   const playlistDialog = playlistUid && (
     <AddToPlaylistDialog uid={playlistUid} onClose={() => setPlaylistUid(null)} />
   )
+  const downloadDialog = downloadTrack && authenticated && (
+    <DownloadDialog
+      key={downloadTrack.uid}
+      track={downloadTrack}
+      onClose={() => setDownloadTrack(null)}
+      onDownload={quality => download({ uid: downloadTrack.uid, quality })}
+    />
+  )
 
-  if (!menu) return <>{playlistDialog}</>
+  if (!menu) return <>{playlistDialog}{downloadDialog}</>
   const { track, x, y, playlistEntry } = menu
   const left = Math.min(x, window.innerWidth - MENU_WIDTH - 8)
   const top = Math.min(y, window.innerHeight - MENU_MAX_HEIGHT - 8)
@@ -142,10 +152,7 @@ export function SongContextMenu() {
           icon={Download}
           label="下载"
           onClick={() => {
-            download({
-              uid: track.uid,
-              quality: resolveQuality(usePlayerStore.getState().quality, track.musicInfo.types),
-            })
+            setDownloadTrack(track)
             dismiss()
           }}
         />
@@ -181,6 +188,7 @@ export function SongContextMenu() {
         </div>
       )}
       {playlistDialog}
+      {downloadDialog}
     </>
   )
 }

@@ -1,20 +1,21 @@
-
+import { useState } from 'react'
+import { Play, Pause, Heart, MoreHorizontal, Download, Loader2, Trash2 } from 'lucide-react'
 import { usePlayerStore } from '@/lib/store/player-store'
 import { useFavoritesStore } from '@/lib/store/favorites-store'
 import { useContextMenuStore } from '@/lib/store/context-menu-store'
 import { useAuthStore } from '@/hooks/useAuth'
 import { useDownload } from '@/hooks/useDownload'
 import { useLongPress } from '@/hooks/useLongPress'
-import { CoverImage } from './CoverImage'
-import { SourceBadge } from './SourceBadge'
-import { QualityBadge } from './QualityBadge'
-import { Play, Pause, Heart, MoreHorizontal, Download, Loader2, Trash2 } from 'lucide-react'
 import { formatTime } from '@/lib/utils/format'
-import { resolveQuality, QUALITY_LABEL } from '@/lib/quality-options'
+import { QUALITY_LABEL } from '@/lib/quality-options'
 import { toast } from '@/lib/toast'
 import type { PlaylistMenuEntry } from '@/lib/store/context-menu-store'
 import type { Track } from '@/lib/types/player'
 import type { QualityType } from '@/lib/types/music'
+import { CoverImage } from './CoverImage'
+import { SourceBadge } from './SourceBadge'
+import { QualityBadge } from './QualityBadge'
+import { DownloadDialog } from './DownloadDialog'
 
 interface SongRowProps {
   track: Track
@@ -37,6 +38,7 @@ export function SongRow({ track, queue, index, playlistEntry, localPlayback }: S
     && s.menu?.playlistEntry?.entryId === playlistEntry?.entryId)
   const authenticated = useAuthStore(s => s.authenticated)
   const { download, downloading, error } = useDownload()
+  const [downloadOpen, setDownloadOpen] = useState(false)
 
   const isCurrent = currentTrack?.uid === track.uid && (!localPlayback || effectiveQuality === localPlayback.quality)
   const isCurrentPlaying = isCurrent && isPlaying
@@ -58,7 +60,7 @@ export function SongRow({ track, queue, index, playlistEntry, localPlayback }: S
     }
   }
 
-  return (
+  return <>
     <div
       onContextMenu={e => {
         e.preventDefault()
@@ -126,12 +128,7 @@ export function SongRow({ track, queue, index, playlistEntry, localPlayback }: S
 
       {!localPlayback && authenticated && (
         <button
-          onClick={() =>
-            download({
-              uid: track.uid,
-              quality: resolveQuality(usePlayerStore.getState().quality, track.musicInfo.types),
-            })
-          }
+          onClick={() => setDownloadOpen(true)}
           disabled={downloading}
           className={`hidden shrink-0 p-1 transition xl:block ${
             downloading
@@ -139,6 +136,7 @@ export function SongRow({ track, queue, index, playlistEntry, localPlayback }: S
               : 'text-muted-foreground opacity-70 hover:text-foreground focus-visible:opacity-100 hoverable:opacity-0 hoverable:group-hover:opacity-100 hoverable:group-focus-within:opacity-100'
           } disabled:opacity-100`}
           aria-label="下载"
+          aria-haspopup="dialog"
           title={downloading ? '下载中…' : (error ?? '下载')}
         >
           {downloading ? (
@@ -174,5 +172,13 @@ export function SongRow({ track, queue, index, playlistEntry, localPlayback }: S
         {formatTime(track.duration)}
       </span>
     </div>
-  )
+    {downloadOpen && authenticated && !localPlayback && (
+      <DownloadDialog
+        key={track.uid}
+        track={track}
+        onClose={() => setDownloadOpen(false)}
+        onDownload={quality => download({ uid: track.uid, quality })}
+      />
+    )}
+  </>
 }
