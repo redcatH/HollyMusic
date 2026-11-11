@@ -127,6 +127,14 @@ export async function listHistory(
 }
 
 /**
+ * 删除当前用户的一条历史记录，不影响歌曲本身及其他关联数据。
+ */
+export async function removeHistoryEntry(username: string, id: number): Promise<{ deleted: number }> {
+  const res = await prisma.playHistory.deleteMany({ where: { id, username } })
+  return { deleted: res.count }
+}
+
+/**
  * 清空用户的播放历史。
  */
 export async function clearHistory(username: string): Promise<{ deleted: number }> {

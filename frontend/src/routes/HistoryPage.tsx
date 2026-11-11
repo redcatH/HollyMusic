@@ -8,7 +8,7 @@ import { History, Trash2 } from 'lucide-react'
 import { toTrack, type Track } from '@/lib/types/player'
 
 export function HistoryPage() {
-  const { entries, loading, reload, clear } = usePlayHistory()
+  const { entries, loading, reload, clear, remove } = usePlayHistory()
 
   // 订阅当前播放曲目的 uid：任意位置点歌播放（reportPlay 异步上报后），
   // 切回历史页时立即反映新条目，无需手动刷新。
@@ -17,8 +17,8 @@ export function HistoryPage() {
     reload()
   }, [currentTrackUid, reload])
 
-  const tracks: Track[] = entries
-    .filter(e => e.musicInfo && e.songId)
+  const visibleEntries = entries.filter(e => e.musicInfo && e.songId)
+  const tracks: Track[] = visibleEntries
     .map(e => toTrack({ uid: e.songId!, musicInfo: e.musicInfo! }))
 
   const handleClear = async () => {
@@ -43,7 +43,7 @@ export function HistoryPage() {
       {loading ? (
         <LoadingSkeleton />
       ) : tracks.length > 0 ? (
-        <SongList tracks={tracks} />
+        <SongList tracks={tracks} history={{ entryIds: visibleEntries.map(entry => entry.id), onRemove: remove }} />
       ) : (
         <EmptyState icon={History} title="暂无播放记录" description="播放过的歌曲会自动保存到这里" />
       )}

@@ -1,10 +1,11 @@
 
-import { useCallback, useEffect, useState } from 'react'
-import { listHistory, clearHistory, type HistoryEntry } from '@/lib/api/history'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { listHistory, clearHistory, removeHistoryEntry, type HistoryEntry } from '@/lib/api/history'
 
 export function usePlayHistory() {
   const [entries, setEntries] = useState<HistoryEntry[]>([])
   const [loading, setLoading] = useState(true)
+  const revision = useRef(0)
 
   /**
    * 拉取历史。静默刷新（不重置 loading）：
@@ -12,9 +13,10 @@ export function usePlayHistory() {
    * 之后由消费方（如 HistoryPage 监听切歌）触发的刷新不闪烁。
    */
   const reload = useCallback(async () => {
+    const requestRevision = ++revision.current
     try {
       const { list } = await listHistory()
-      setEntries(list)
+      if (requestRevision === revision.current) setEntries(list)
     } catch {
       // ignore
     }
@@ -33,8 +35,16 @@ export function usePlayHistory() {
 
   const clear = useCallback(async () => {
     await clearHistory()
+    revision.current++
     setEntries([])
   }, [])
 
-  return { entries, loading, reload, clear }
+  const remove = useCallback(async (id: number) => {
+    await removeHistoryEntry(id)
+    // 忽略删除前启动的刷新，避免旧响应把已删除的记录重新放回列表。
+    revision.current++
+    setEntries(current => current.filter(entry => entry.id !== id))
+  }, [])
+
+  return { entries, loading, reload, clear, remove }
 }

@@ -23,9 +23,10 @@ interface SongRowProps {
   index?: number
   playlistEntry?: PlaylistMenuEntry
   localPlayback?: { quality: QualityType; onRemove: () => void }
+  historyEntry?: { id: number; onRemove: (id: number) => Promise<void> }
 }
 
-export function SongRow({ track, queue, index, playlistEntry, localPlayback }: SongRowProps) {
+export function SongRow({ track, queue, index, playlistEntry, localPlayback, historyEntry }: SongRowProps) {
   const currentTrack = usePlayerStore(s => s.currentTrack)
   const isPlaying = usePlayerStore(s => s.isPlaying)
   const effectiveQuality = usePlayerStore(s => s.effectiveQuality)
@@ -39,6 +40,20 @@ export function SongRow({ track, queue, index, playlistEntry, localPlayback }: S
   const authenticated = useAuthStore(s => s.authenticated)
   const { download, downloading, error } = useDownload()
   const [downloadOpen, setDownloadOpen] = useState(false)
+  const [removingHistory, setRemovingHistory] = useState(false)
+
+  const handleRemoveHistory = async () => {
+    if (!historyEntry || removingHistory) return
+    setRemovingHistory(true)
+    try {
+      await historyEntry.onRemove(historyEntry.id)
+      toast.success('已删除播放记录')
+    } catch {
+      toast.error('删除播放记录失败，请重试')
+    } finally {
+      setRemovingHistory(false)
+    }
+  }
 
   const isCurrent = currentTrack?.uid === track.uid && (!localPlayback || effectiveQuality === localPlayback.quality)
   const isCurrentPlaying = isCurrent && isPlaying
@@ -146,6 +161,16 @@ export function SongRow({ track, queue, index, playlistEntry, localPlayback }: S
           )}
         </button>
       )}
+
+      {historyEntry && <button
+        onClick={() => { void handleRemoveHistory() }}
+        disabled={removingHistory}
+        className="flex h-11 w-11 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50 hoverable:h-auto hoverable:w-auto hoverable:p-1"
+        aria-label={`删除 ${track.name} 的播放记录`}
+        title="删除此条播放记录"
+      >
+        {removingHistory ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+      </button>}
 
       {localPlayback ? <button
         onClick={localPlayback.onRemove}

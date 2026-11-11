@@ -26,3 +26,7 @@ export function reportPlay(musicInfo: MusicInfo): Promise<{ reported: boolean }>
 export function clearHistory(): Promise<{ deleted: number }> {
   return apiDelete('history')
 }
+
+export function removeHistoryEntry(id: number): Promise<{ deleted: number }> {
+  return apiDelete(`history/${id}`)
+}
