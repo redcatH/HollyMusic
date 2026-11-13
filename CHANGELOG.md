@@ -4,6 +4,15 @@
 
 版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。v0.30.3 及以前缺失的正式版记录已按 GitHub Release 补齐；历史预发布说明保留在对应版本内。
 
+## v0.32.0（2026-11-13）
+
+**完整对比**：[v0.31.1 → v0.32.0](https://github.com/redcatH/HollyMusic/compare/v0.31.1...v0.32.0)
+
+### ✨ 新增功能
+
+- **download**：allow choosing audio quality
+- **history**：allow deleting individual play records
+
 ## v0.31.1（2026-11-06）
 
 **完整对比**：[v0.31.0 → v0.31.1](https://github.com/redcatH/HollyMusic/compare/v0.31.0...v0.31.1)
