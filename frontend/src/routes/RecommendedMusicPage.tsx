@@ -39,7 +39,7 @@ export function RecommendedMusicPage() {
                 </div>
               </div>
               <div className="truncate text-sm font-medium">{track.name}</div>
-              <div className="flex items-center gap-1.5"><span className="truncate text-xs text-muted-foreground">{track.artist}</span><SourceBadge source={track.source} /><QualityBadge musicInfo={track.musicInfo} /></div>
+              <div className="flex items-center gap-1.5"><span className="truncate text-xs text-muted-foreground">{track.artist}</span><SourceBadge source={track.source} /><QualityBadge uid={track.uid} musicInfo={track.musicInfo} /></div>
             </button>
           ))}
         </div>

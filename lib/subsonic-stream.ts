@@ -5,6 +5,7 @@ import { getAvailableQualities, QUALITY_ORDER, resolveQuality } from '@/lib/qual
 import { getSubsonicStereoPreference, parseSubsonicQualityPreference } from '@/lib/subsonic-quality'
 import { logger } from '@/lib/logger'
 import { serveMusicAudio } from '@/lib/server/music-audio'
+import { enrichAudioDetails } from '@/lib/server/platform-audio-details'
 
 // ============================================================================
 // STREAM HANDLER
@@ -34,24 +35,25 @@ export async function handleStream(request: NextRequest): Promise<Response> {
       return subsonicError(request, 10, 'Invalid maxBitRate: expected a non-negative safe integer')
     }
 
-    const musicInfo = await resolveMusicInfoById(id)
-    if (!musicInfo) {
+    const storedMusicInfo = await resolveMusicInfoById(id)
+    if (!storedMusicInfo) {
       logger.warn(`[handleStream] Invalid ID: ${id}`)
       return subsonicError(request, 70, 'Invalid song id')
     }
 
     // ========== STEP 2: 验证必填字段 ==========
     const missingFields: string[] = []
-    if (!musicInfo.source) missingFields.push('source')
-    if (!musicInfo.songmid) missingFields.push('songmid')
-    if (!musicInfo.name) missingFields.push('name')
-    if (!musicInfo.singer) missingFields.push('singer')
+    if (!storedMusicInfo.source) missingFields.push('source')
+    if (!storedMusicInfo.songmid) missingFields.push('songmid')
+    if (!storedMusicInfo.name) missingFields.push('name')
+    if (!storedMusicInfo.singer) missingFields.push('singer')
     if (missingFields.length > 0) {
       logger.warn(`[handleStream] Missing fields: ${missingFields.join(', ')}`)
       return subsonicError(request, 70, 'Invalid song info')
     }
 
     // ========== STEP 3: 确定音质 ==========
+    const musicInfo = await enrichAudioDetails(storedMusicInfo, preference)
     const supportedQualities = getAvailableQualities(musicInfo.types).filter(q =>
       QUALITY_ORDER.includes(q) && (q !== 'master' || getSubsonicStereoPreference() === 'master'))
     if (supportedQualities.length === 0) {

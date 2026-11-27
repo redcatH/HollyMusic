@@ -3,7 +3,7 @@
  */
 
 import { apiGet, apiPost } from './client'
-import type { MusicInfo, QualityType } from '@/lib/types/music'
+import type { MusicInfo, QualityInfo, QualityType } from '@/lib/types/music'
 
 export function getMusicUrl(
   musicInfo: MusicInfo,
@@ -34,4 +34,8 @@ export function buildCoverUrl(uid: string, cacheKey?: string | null): string {
 /** 通过 uid 反查曲目元数据（分享链接 ?uid= 自动播放用） */
 export function getTrackByUid(uid: string): Promise<{ uid: string; musicInfo: MusicInfo }> {
   return apiGet('track', { uid })
+}
+
+export function getTrackQualities(uids: string[]): Promise<Record<string, QualityInfo[]>> {
+  return apiPost('track', { uids }, AbortSignal.timeout(8000))
 }

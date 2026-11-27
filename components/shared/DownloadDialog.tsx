@@ -1,5 +1,6 @@
 import { useId, useState } from 'react'
 import { Download } from 'lucide-react'
+import { useTrackQualities } from '@/hooks/useTrackQualities'
 import { getAvailableQualities, getSizeOf, QUALITY_ORDER, QUALITY_TITLE, resolveQuality } from '@/lib/quality-options'
 import { usePlayerStore } from '@/lib/store/player-store'
 import type { QualityType } from '@/lib/types/music'
@@ -14,13 +15,13 @@ interface DownloadDialogProps {
 
 export function DownloadDialog({ track, onClose, onDownload }: DownloadDialogProps) {
   const groupName = useId()
-  const types = track.musicInfo.types
+  const types = useTrackQualities(track.uid, track.musicInfo.types)
   const available = getAvailableQualities(types)
   const items = available.length > 0 ? available : QUALITY_ORDER.filter(item => item !== 'master')
-  const [quality, setQuality] = useState(() => {
-    const preferred = resolveQuality(usePlayerStore.getState().quality, types)
-    return items.includes(preferred) ? preferred : items[0]
-  })
+  const [selectedQuality, setQuality] = useState<QualityType>()
+  const preferred = resolveQuality(usePlayerStore.getState().quality, types)
+  const quality = selectedQuality && items.includes(selectedQuality)
+    ? selectedQuality : items.includes(preferred) ? preferred : items[0]
 
   return (
     <Modal

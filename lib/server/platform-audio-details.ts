@@ -1,5 +1,5 @@
 import { searchCache } from '@/lib/cache-manager'
-import { neteaseExtendedQualities, qqExtendedQualities, qualityFromBytes } from '@/lib/platform-qualities'
+import { mergeQualityInfos, neteaseExtendedQualities, qqExtendedQualities, qualityFromBytes } from '@/lib/platform-qualities'
 import type { MusicInfo, QualityInfo, QualityType } from '@/lib/types/music'
 
 const pending = new Map<string, Promise<QualityInfo[]>>()
@@ -55,9 +55,9 @@ async function loadAudioDetails(music: MusicInfo): Promise<QualityInfo[]> {
 }
 
 /** 歌曲缺少新档位信息时短期补查。上游不可用时保留旧歌曲信息，继续使用音源验证。 */
-export async function enrichAudioDetails(music: MusicInfo, quality: QualityType): Promise<MusicInfo> {
-  if (music._types?.[quality] || !['tx', 'wy', 'kg'].includes(music.source)) return music
-  if (!['master', 'flac24bit', 'atmos', 'atmos_plus'].includes(quality)) return music
+export async function enrichAudioDetails(music: MusicInfo, quality?: QualityType): Promise<MusicInfo> {
+  if (!['tx', 'wy', 'kg'].includes(music.source)) return music
+  if (quality && (music._types?.[quality] || !['master', 'flac24bit', 'atmos', 'atmos_plus'].includes(quality))) return music
   const key = `search:v3:audio-details:${music.source}:${music.hash ?? music.songmid}`
   let details = searchCache.get(key) as QualityInfo[] | null
   if (!details) {
@@ -66,17 +66,17 @@ export async function enrichAudioDetails(music: MusicInfo, quality: QualityType)
       operation = loadAudioDetails(music).then(items => {
         searchCache.set(key, items, 10 * 60_000)
         return items
-      }).catch(() => []).finally(() => pending.delete(key))
+      }).catch(() => {
+        searchCache.set(key, [], 30_000)
+        return []
+      }).finally(() => pending.delete(key))
       pending.set(key, operation)
     }
     details = await operation
   }
   if (!details.length) return music
-  const types = new Map((music.types ?? []).map(item => [item.type, item]))
+  const types = mergeQualityInfos(music.types, details)
   const _types = { ...music._types }
-  for (const item of details) {
-    if (!types.has(item.type)) types.set(item.type, item)
-    if (!_types[item.type]) _types[item.type] = item
-  }
-  return { ...music, types: [...types.values()], _types }
+  for (const item of types) _types[item.type] = { ..._types[item.type], ...item }
+  return { ...music, types, _types }
 }

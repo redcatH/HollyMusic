@@ -32,11 +32,12 @@ export async function apiGet<T>(
   return parseJson<T>(res)
 }
 
-export async function apiPost<T>(url: string, body?: unknown): Promise<T> {
+export async function apiPost<T>(url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const res = await fetch(`/api/${url}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: body !== undefined ? JSON.stringify(body) : undefined,
+    ...(signal ? { signal } : {}),
   })
   return parseJson<T>(res)
 }

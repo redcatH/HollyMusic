@@ -45,6 +45,22 @@ function deleteButton(id: number) {
   return container.querySelector(`[aria-label="删除 歌曲${id} 的播放记录"]`) as HTMLButtonElement | null
 }
 
+it('旧播放记录批量补查音质，在原有歌曲行显示母带和空间混音', async () => {
+  const fetchQualities = vi.fn(async () => Response.json({ success: true, data: {
+    'kw-11': [{ type: 'master', size: '80M' }, { type: 'atmos', size: '60M' }],
+    'kw-22': [{ type: 'atmos_plus', size: '70M' }],
+  } }))
+  vi.stubGlobal('fetch', fetchQualities)
+  await act(async () => { useAuthStore.setState({ authenticated: true, username: 'tester' }) })
+  expect(fetchQualities).toHaveBeenCalledOnce()
+  expect(fetchQualities).toHaveBeenCalledWith('/api/track', expect.objectContaining({
+    method: 'POST', body: JSON.stringify({ uids: ['kw-11', 'kw-22'] }),
+  }))
+  expect(container.textContent).toContain('母带 · 空间混音')
+  expect(container.textContent).toContain('六声道版')
+  expect(deleteButton(11)).not.toBeNull()
+})
+
 it('每行常显删除入口，按过滤后的记录 ID 删除，保留其他歌曲和更多操作', async () => {
   expect(deleteButton(11)).not.toBeNull()
   expect(deleteButton(11)!.className).not.toContain('opacity-0')

@@ -94,6 +94,22 @@ describe('Subsonic stream 音质与实际解析调用', () => {
     }
   })
 
+  it('原格式播放会在旧收藏记录只有 FLAC 时补查 Hi-Res', async () => {
+    const oldMusic = { ...song(['flac']), source: 'tx', songmid: 'testMid' }
+    resolveMusicInfoById.mockResolvedValue(oldMusic)
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({
+      req: { data: { track_info: { file: { size_hires: 40_000_000 } } } },
+    })))
+    try {
+      await handleStream(new NextRequest('http://localhost/rest/stream.view?id=tx-testMid&format=raw'))
+      expect(getMusicUrl).toHaveBeenCalledWith(expect.objectContaining({
+        _types: expect.objectContaining({ flac24bit: expect.objectContaining({ sizeBytes: 40_000_000 }) }),
+      }), ['flac24bit'], expect.any(Function), expect.any(AbortSignal))
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('缓存命中保持 Range 与 HEAD，不重新解析上游', async () => {
     resolveMusicInfoById.mockResolvedValue(song(ALL))
     serve.mockResolvedValue(new Response(null, { status: 206, headers: { 'Content-Type': 'audio/flac' } }))

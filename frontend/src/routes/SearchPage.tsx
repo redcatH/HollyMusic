@@ -149,7 +149,7 @@ export function SearchPage() {
       ) : tracks.length > 0 ? (
         <>
           <p className="mb-3 text-xs text-muted-foreground">已加载 {tracks.length} 首</p>
-          <SongList tracks={tracks} />
+          <SongList tracks={tracks} refreshQualities={false} />
         </>
       ) : lastKeyword ? (
         // 用 lastKeyword（最近一次搜索的词）而非输入框实时文本：

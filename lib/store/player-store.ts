@@ -217,13 +217,14 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     const seekNonce = get().seekNonce
     // 等待缓存时也立即记录播放意图，让按钮/媒体会话可以暂停；完成后仍以最新用户指令为准。
     set({ isFetchingUrl: true, isPlaying: options?.autoplay ?? true, bufferProgress: null })
-    // 前端按歌曲支持范围就近降级，URL 带准确音质 → 缓存键准确、UI 如实显示。
-    // 服务端 getMusicUrl 仍保留降级作音源级兜底。
+    // 旧歌曲记录可能缺少高音质。先按偏好向服务端请求 Hi-Res 或母带，再按实际取流结果降级。
     // forceQuality：解码失败降级重试时强制指定（绕过用户偏好），见 handleTrackError。
     // codecCap：浏览器能力上限（启动 canPlayType 探测），把已知解不了的格式压掉，
     //          避免对不支持 FLAC 的浏览器反复请求 FLAC。
     const preference = get().quality
-    const resolved = forceQuality ?? track.playback?.quality ?? (preference === 'master' ? preference : resolveQuality(preference, track.musicInfo.types))
+    const requested = preference === 'master' || preference === 'flac24bit'
+      ? preference : resolveQuality(preference, track.musicInfo.types)
+    const resolved = forceQuality ?? track.playback?.quality ?? requested
     let eff = capQuality(resolved, get().codecCap)
     const surround = !forceQuality && !track.playback?.quality && get().preferSurround === true
       && capQuality('atmos_plus', get().codecCap) === 'atmos_plus'

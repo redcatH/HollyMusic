@@ -24,9 +24,10 @@ interface SongRowProps {
   playlistEntry?: PlaylistMenuEntry
   localPlayback?: { quality: QualityType; onRemove: () => void }
   historyEntry?: { id: number; onRemove: (id: number) => Promise<void> }
+  refreshQualities?: boolean
 }
 
-export function SongRow({ track, queue, index, playlistEntry, localPlayback, historyEntry }: SongRowProps) {
+export function SongRow({ track, queue, index, playlistEntry, localPlayback, historyEntry, refreshQualities }: SongRowProps) {
   const currentTrack = usePlayerStore(s => s.currentTrack)
   const isPlaying = usePlayerStore(s => s.isPlaying)
   const effectiveQuality = usePlayerStore(s => s.effectiveQuality)
@@ -111,7 +112,7 @@ export function SongRow({ track, queue, index, playlistEntry, localPlayback, his
       <button onClick={handlePlay} className="min-w-0 flex-1 text-left">
         <div className={`flex items-center gap-2 ${isCurrent ? 'text-primary' : ''}`}>
           <span className="truncate text-sm font-medium">{track.name}</span>
-          {localPlayback ? <span className="shrink-0 text-[10px] text-muted-foreground">{QUALITY_LABEL[localPlayback.quality]}</span> : <QualityBadge musicInfo={track.musicInfo} />}
+          {localPlayback ? <span className="shrink-0 text-[10px] text-muted-foreground">{QUALITY_LABEL[localPlayback.quality]}</span> : <QualityBadge uid={refreshQualities ? track.uid : undefined} musicInfo={track.musicInfo} />}
         </div>
         <div className="mt-0.5 flex items-center gap-2">
           <span className="truncate text-xs text-muted-foreground">{track.artist}</span>

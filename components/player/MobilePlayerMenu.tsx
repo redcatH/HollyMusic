@@ -6,6 +6,7 @@ import { useState } from 'react'
 import { MoreHorizontal, Timer, Volume2, VolumeX, ChevronDown, SkipBack, SkipForward, Heart, Share2, Mic2 } from 'lucide-react'
 import { usePlayerStore } from '@/lib/store/player-store'
 import { useLyricsPanel } from '@/hooks/useLyricsPanel'
+import { useTrackQualities } from '@/hooks/useTrackQualities'
 import { useFavoritesStore } from '@/lib/store/favorites-store'
 import { Modal } from '@/components/shared/Modal'
 import { shareContent, buildSongShareUrl } from '@/lib/share'
@@ -59,7 +60,7 @@ export function MobilePlayerMenu({ onOpenEqualizer }: { onOpenEqualizer?: () => 
   const { icon: ModeIcon, label: modeLabel } = PLAYBACK_MODE_CONFIG[playbackMode]
   const VolIcon = isMuted || volume === 0 ? VolumeX : Volume2
 
-  const types = currentTrack?.musicInfo.types
+  const types = useTrackQualities(open && qualityOpen ? currentTrack?.uid : undefined, currentTrack?.musicInfo.types)
   // 偏好选择器：始终列出全部音质，不随歌曲变动（实际播放音质由歌名旁标签显示）
   const qualityItems = QUALITY_ORDER
 

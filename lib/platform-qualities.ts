@@ -1,5 +1,17 @@
 import type { QualityInfo, QualityType } from './types/music'
 
+export const TRACK_QUALITY_BATCH_SIZE = 8
+
+export function mergeQualityInfos(current: QualityInfo[] | undefined, supplemental: QualityInfo[]): QualityInfo[] {
+  if (!supplemental.length) return current ?? []
+  const qualities = new Map(current?.map(item => [item.type, item]))
+  for (const item of supplemental) {
+    const previous = qualities.get(item.type)
+    qualities.set(item.type, { ...previous, ...item, size: item.size || previous?.size || '' })
+  }
+  return [...qualities.values()]
+}
+
 export function formatQualityBytes(bytes: number): string {
   if (bytes >= 1024 ** 2) return (bytes / 1024 ** 2).toFixed(2) + 'M'
   if (bytes >= 1024) return (bytes / 1024).toFixed(2) + 'K'
