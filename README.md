@@ -6,7 +6,7 @@
 
 [![Release](https://img.shields.io/github/v/release/redcatH/HollyMusic)](https://github.com/redcatH/HollyMusic/releases) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?logo=docker&logoColor=white)](https://github.com/redcatH/HollyMusic/pkgs/container/hollymusic) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-[快速部署](#快速部署) · [界面预览](#界面预览) · [使用文档](#使用文档) · [交流与贡献](#交流与贡献)
+[快速部署](#快速部署) · [界面预览](#界面预览) · [音质与播放](#音质与播放) · [使用文档](#使用文档) · [交流与贡献](#交流与贡献)
 
 ## 为什么选 Holly Music
 
@@ -33,6 +33,15 @@
 <p align="center"><sub>手机发现与歌词 · 浅色与深色主题</sub></p>
 
 截图来自当前界面，使用演示歌单与原创示例歌词；平台名称已打码，封面使用不含第三方标识的马赛克示意图。
+
+## 音质与播放
+
+以下功能可在 `v0.33.0` 预览系列中体验。桌面端点击底部播放栏的音质按钮，手机端打开「更多 → 音质」即可设置播放偏好。[预览版更新说明](docs/releases/v0.33.0-preview.2.md)
+
+- **母带与 Hi-Res**。音质菜单还提供 FLAC、320K 和 128K。可播放的档位取决于歌曲、已启用的音源和浏览器。当前音源取流失败时，播放器会先尝试支持同一档位的其他音源，再降档。歌名旁显示实际播放的音质。
+- **优先环绕**。开关默认关闭。开启后优先尝试六声道版（`atmos_plus`），无法播放时回退到立体声。环绕输出取决于浏览器和播放设备。
+- **已有歌单和收藏**。打开歌单、收藏或播放历史时，页面会补查可获取的音质信息，已有歌曲无需重新添加。歌曲行显示最高已知立体声档位及环绕标识，下载弹窗列出已识别的档位，例如母带、空间混音（`atmos`）和六声道版。
+- **Subsonic**。原格式或不限码率播放默认最高使用 Hi-Res 立体声。要让这类请求尝试母带，可在服务端 `.env` 中设置 `SUBSONIC_STEREO_MAX_QUALITY=master`，然后重建应用容器。[Subsonic 配置与音质说明](docs/API.md)
 
 ## 快速部署
 
@@ -82,6 +91,8 @@ docker compose up -d
 ```
 
 如需固定版本，将 Compose 中的 `:latest` 改为 [Releases](https://github.com/redcatH/HollyMusic/releases) 中的具体版本标签。
+
+体验预览版时，将 Compose 中的镜像改为 `ghcr.io/redcath/hollymusic:preview`，再执行上面的升级命令。`latest` 跟随正式发布，`preview` 跟随预览发布。
 
 ## 常见问题
 
