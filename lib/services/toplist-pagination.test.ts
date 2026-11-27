@@ -36,7 +36,7 @@ describe('完整榜单', () => {
     expect(result?.tracks.map(song => song.songId)).toEqual(ids(0, 300))
     expect(upsert).toHaveBeenCalledTimes(1)
     expect(upsert.mock.calls[0][0]).toHaveLength(300)
-    expect(set).toHaveBeenCalledExactlyOnceWith('discovery:v3:tx:toplist:26', result, 600_000)
+    expect(set).toHaveBeenCalledExactlyOnceWith('discovery:v4:tx:toplist:26', result, 600_000)
   })
 
   it.each(['kw', 'kg'] as const)('%s 分页获取总数并一次入库', async source => {

@@ -8,8 +8,8 @@ import type { MusicInfo, QualityType } from '@/lib/types/music'
 export function getMusicUrl(
   musicInfo: MusicInfo,
   quality: QualityType = '320k'
-): Promise<{ url: string }> {
-  return apiPost<{ url: string }>('music-url', { musicInfo, quality })
+): Promise<{ url: string; quality?: QualityType }> {
+  return apiPost<{ url: string; quality?: QualityType }>('music-url', { musicInfo, quality })
 }
 
 /**
@@ -17,9 +17,9 @@ export function getMusicUrl(
  * 走 /api/audio，由服务端磁盘缓存 + Range 支持，
  * 浏览器原生 GET + Range，seek/暂停/恢复全程服务端处理。
  */
-export function buildAudioUrl(uid: string, quality: QualityType = '320k'): string {
+export function buildAudioUrl(uid: string, quality: QualityType = '320k', options?: { exact?: boolean; surround?: boolean }): string {
   // 切换 HTTP 缓存键，避开旧版本仍在 max-age 内的试听响应（含无 SW 的浏览器）。
-  return `/api/audio?uid=${encodeURIComponent(uid)}&quality=${encodeURIComponent(quality)}&v=2`
+  return `/api/audio?uid=${encodeURIComponent(uid)}&quality=${encodeURIComponent(quality)}&v=2${options?.exact ? '&exact=1' : ''}${options?.surround ? '&surround=1' : ''}`
 }
 
 /**

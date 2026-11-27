@@ -49,7 +49,8 @@ function capabilities(value: unknown): TestCapability {
   const result: TestCapability = {}
   for (const platform of TEST_PLATFORMS) {
     const source = raw?.sources?.[platform]
-    if (source?.actions?.includes('musicUrl')) result[platform] = TEST_QUALITIES.filter(q => source.qualitys?.includes(q))
+    if (source?.actions?.includes('musicUrl')) result[platform] = TEST_QUALITIES.filter(q =>
+      source.qualitys?.includes(q) || (q === 'flac24bit' && source.qualitys?.includes('hires')))
   }
   if (!Object.keys(result).length) throw new SourceTestError('脚本没有声明支持的音乐播放平台', 422)
   return result
@@ -165,8 +166,10 @@ export async function startSourceTest(ownerId: number, sourcePath: string, expec
 export function assessAudio(facts: AudioFacts, expectedSec: number, quality: SourceTestResult['quality'], complete: boolean): Pick<SourceTestResult, 'status' | 'message'> {
   if (facts.duration && expectedSec && isIncompleteTrial(facts.duration, expectedSec)) return { status: 'warning', message: '疑似试听片段：时长明显不足' }
   const flac = /flac/i.test(facts.codec || '')
-  if ((quality === 'flac' || quality === 'flac24bit') && !flac) return { status: 'warning', message: '音质不符：返回的不是 FLAC 编码' }
+  if ((quality === 'flac' || quality === 'flac24bit' || quality === 'master' || quality === 'atmos_plus') && !flac) return { status: 'warning', message: '音质不符：返回的不是 FLAC 编码' }
   if (quality === 'flac24bit' && facts.bitsPerSample !== 24) return { status: 'warning', message: '未确认 24 bit 位深' }
+  if (quality === 'master' && ((facts.bitsPerSample ?? 0) < 24 || (facts.sampleRate ?? 0) < 88_200)) return { status: 'warning', message: '未确认高采样率母带' }
+  if (quality === 'atmos_plus' && (facts.channels ?? 0) < 6) return { status: 'warning', message: '未确认六声道音频' }
   if ((quality === '320k' || quality === '128k') && facts.lossless === false && facts.bitrate && facts.bitrate < Number.parseInt(quality) * 1000 * 0.85) return { status: 'warning', message: '音质不符：实际码率明显低于请求档位' }
   if (!facts.duration || !expectedSec) return { status: 'warning', message: '已识别音频，完整时长无法判断' }
   if (Math.abs(facts.duration - expectedSec) > 30) return { status: 'warning', message: '时长与测试歌曲不符，请试听确认版本' }
@@ -258,7 +261,9 @@ export async function cancelTest(id: string, ownerId: number): Promise<void> {
 }
 
 function assetPath(id: string, key: string): string {
-  if (!/^[\da-f-]{36}$/.test(id) || !/^(tx|wy|kg|kw|mg):(flac24bit|flac|320k|128k)$/.test(key)) throw new SourceTestError('音频不存在', 404)
+  const [platform, quality, extra] = key.split(':')
+  if (!/^[\da-f-]{36}$/.test(id) || extra !== undefined || !TEST_PLATFORMS.some(item => item === platform)
+    || !TEST_QUALITIES.some(item => item === quality)) throw new SourceTestError('音频不存在', 404)
   return path.join(ASSET_ROOT, id, key.replace(':', '-') + '.audio')
 }
 

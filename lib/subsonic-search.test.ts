@@ -226,7 +226,7 @@ describe('handleSearch — 非空 query（聚合搜索，行为保持不变）',
     const res = await handleSearch(req('?query=测试&f=json'))
     const body = JSON.parse(await res.text())
     expect(body['subsonic-response'].searchResult3.song).toEqual([{ id: 'cached' }])
-    expect(searchCache.get).toHaveBeenCalledWith(expect.stringMatching(/^subsonic-search:v2:/))
+    expect(searchCache.get).toHaveBeenCalledWith(expect.stringMatching(/^subsonic-search:v3:/))
 
     const { search } = await import('./music-core/music-search')
     expect(search).not.toHaveBeenCalled()

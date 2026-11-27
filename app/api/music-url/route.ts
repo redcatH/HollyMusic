@@ -11,11 +11,13 @@ import { createSuccessResponse, createErrorResponse, ErrorCodes } from '@/lib/ap
 import { urlCache } from '@/lib/cache-manager'
 import { logger } from '@/lib/logger'
 import { musicSourceManager } from '@/lib/music-source-manager'
+import { QUALITY_ORDER, VALID_QUALITIES, isQuality } from '@/lib/quality-options'
+import { verifyMusicAudio } from '@/lib/server/music-audio'
 import { requireUser, AuthError } from '@/lib/services/user-context'
 import type { MusicInfo, QualityType } from '@/lib/types/music'
 
 // URL 缓存时间：210 分钟
-const URL_CACHE_TTL = 210 * 60 * 1000
+const URL_CACHE_TTL = 2 * 60_000
 
 export async function POST(request: NextRequest) {
   try {
@@ -44,23 +46,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const validQualities: QualityType[] = ['128k', '320k', 'flac', 'flac24bit']
-    if (!validQualities.includes(quality)) {
+    if (!isQuality(quality)) {
       return createErrorResponse(
         ErrorCodes.QUALITY_NOT_SUPPORTED,
-        `不支持的音质: ${quality}，支持: ${validQualities.join(', ')}`,
+        `不支持的音质: ${quality}，支持: ${VALID_QUALITIES.join(', ')}`,
         400
       )
     }
 
     // 生成缓存键
-    const cacheKey = `url:${musicInfo.source}:${musicInfo.songmid}:${quality}`
+    const cacheKey = `url:v2:${musicInfo.source}:${musicInfo.hash ?? musicInfo.songmid}:${quality}`
 
     // 检查缓存
     const cached = urlCache.get(cacheKey)
     if (cached) {
       logger.debug(`URL 缓存命中: ${cacheKey}`)
-      return createSuccessResponse({ url: cached })
+      return createSuccessResponse(cached)
     }
 
     logger.info(
@@ -73,13 +74,19 @@ export async function POST(request: NextRequest) {
     }
 
     // 获取播放 URL（支持智能降级）
-    const url = await musicSourceManager.getMusicUrl(musicInfo, quality)
+    const index = QUALITY_ORDER.indexOf(quality)
+    const candidates = index < 0 ? [quality] : QUALITY_ORDER.slice(index)
+    const signal = AbortSignal.timeout(24_000)
+    const resolved = await musicSourceManager.resolveMusicUrl(musicInfo, candidates, async candidate => {
+      await verifyMusicAudio(candidate.url, candidate.quality, signal)
+    }, signal)
+    const result = { url: resolved.url, quality: resolved.quality }
 
     // 存入缓存
-    urlCache.set(cacheKey, url, URL_CACHE_TTL)
+    urlCache.set(cacheKey, result, URL_CACHE_TTL)
     logger.debug(`URL 已缓存: ${cacheKey}`)
 
-    return createSuccessResponse({ url })
+    return createSuccessResponse(result)
   } catch (error) {
     if (error instanceof AuthError) {
       return createErrorResponse('UNAUTHORIZED', error.message, 401)

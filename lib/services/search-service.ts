@@ -13,7 +13,7 @@ export class SearchStorageError extends Error {}
 /** Web 搜索服务：同一页共享上游请求和入库事务，只有成功数据才能缓存。 */
 export async function searchSongs(source: SourceType, keyword: string, page: number, requestedLimit: number): Promise<SearchResultData> {
   const limit = musicSearch.getSearchPageSize(source, requestedLimit)
-  const key = `search:v2:${source}:${encodeURIComponent(keyword)}:${page}:${limit}`
+  const key = `search:v3:${source}:${encodeURIComponent(keyword)}:${page}:${limit}`
   const cached = searchCache.get(key) as SearchResultData | null
   if (cached) return cached
   const existing = pendingPages.get(key)

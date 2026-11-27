@@ -27,6 +27,8 @@ export function MobilePlayerMenu({ onOpenEqualizer }: { onOpenEqualizer?: () => 
   const cyclePlaybackMode = usePlayerStore(s => s.cyclePlaybackMode)
   const quality = usePlayerStore(s => s.quality)
   const setQuality = usePlayerStore(s => s.setQuality)
+  const preferSurround = usePlayerStore(s => s.preferSurround)
+  const setPreferSurround = usePlayerStore(s => s.setPreferSurround)
   const currentTrack = usePlayerStore(s => s.currentTrack)
   const previous = usePlayerStore(s => s.previous)
   const next = usePlayerStore(s => s.next)
@@ -110,6 +112,8 @@ export function MobilePlayerMenu({ onOpenEqualizer }: { onOpenEqualizer?: () => 
           {qualityOpen && (
             <div className="mt-1 border-t border-border pt-1 text-[11px]">
               <QualityList
+                preferSurround={preferSurround}
+                onSurroundChange={setPreferSurround}
                 items={qualityItems}
                 current={quality}
                 types={types}

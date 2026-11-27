@@ -186,7 +186,7 @@ export function cancelOfflineDownloads(): void {
   controllers.clear()
 }
 
-export function cachePlayedTrack(username: string, track: Track, quality: QualityType): Promise<void> {
+export function cachePlayedTrack(username: string, track: Track, quality: QualityType, playbackUrl = buildAudioUrl(track.uid, quality)): Promise<void> {
   if (!isOfflineStorageAvailable() || !navigator.onLine) return Promise.resolve()
   const storedTrack = parseTrack(track)
   if (!storedTrack) return Promise.resolve()
@@ -197,7 +197,7 @@ export function cachePlayedTrack(username: string, track: Track, quality: Qualit
   if (queued.get(job) === epoch) return pending
   queued.set(job, epoch)
   // 在排队前固定本次播放响应；之后的切歌/重播不能替换任务的数据来源。
-  const readPlaybackResponse = getPlaybackResponseReader(username, buildAudioUrl(track.uid, quality))
+  const readPlaybackResponse = getPlaybackResponseReader(username, playbackUrl)
   const playbackResponse = readPlaybackResponse?.()
   const task = async () => {
     const controller = new AbortController()
@@ -214,16 +214,21 @@ export function cachePlayedTrack(username: string, track: Track, quality: Qualit
       })
       if (existing) {
         void existing.body?.cancel().catch(() => {})
-        if (epoch === generation) markPlaybackCached(username, buildAudioUrl(track.uid, quality))
+        if (epoch === generation) markPlaybackCached(username, playbackUrl)
         return
       }
       if (epoch !== generation || controller.signal.aborted) return
       // 不带 Range，只有 200 完整音频才入库；浏览器流缓冲不等于离线缓存。
       const response = playbackResponse
         ? await playbackResponse
-        : await fetch(buildAudioUrl(track.uid, quality), { signal: controller.signal, cache: 'no-store' })
+        : await fetch(playbackUrl, { signal: controller.signal, cache: 'no-store' })
       // 已接管的播放流失败或只有局部数据时跳过缓存，不再额外下载整首。
       if (!response) return
+      const resolvedQuality = response.headers.get('x-holly-quality')
+      if (resolvedQuality && resolvedQuality !== quality) {
+        await response.body?.cancel()
+        return
+      }
       const type = response.headers.get('content-type') || ''
       const length = Number(response.headers.get('content-length'))
       if (response.status !== 200 || !/^(audio\/|application\/octet-stream)/i.test(type)
@@ -283,7 +288,7 @@ export function cachePlayedTrack(username: string, track: Track, quality: Qualit
           // 清空缓存等后续操作会等待同一把锁，不能在删掉旧歌曲后再回滚新歌曲。
           for (const entry of cleanup.entries) await cache.delete(entry.key)
         } finally {
-          if (committed) markPlaybackCached(username, buildAudioUrl(track.uid, quality))
+          if (committed) markPlaybackCached(username, playbackUrl)
           // 清理失败或取消后也要刷新，避免列表展示已被删除的条目。
           if (written) changed()
         }

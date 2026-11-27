@@ -15,6 +15,7 @@ import { getAvailableQualities, resolveQuality } from './quality-options'
 import { normalizeSizeToBytes } from './utils'
 import { parseIntervalToSeconds } from './types/player'
 import { logger } from './logger'
+import { getSubsonicStereoPreference } from './subsonic-quality'
 
 /**
  * 音质档位 → Subsonic 展示格式。
@@ -26,6 +27,9 @@ export const QUALITY_FORMAT: Record<QualityType, { bitRate?: number; suffix: str
   '320k': { bitRate: 320, suffix: 'mp3', contentType: 'audio/mpeg' },
   flac: { suffix: 'flac', contentType: 'audio/flac' },
   flac24bit: { suffix: 'flac', contentType: 'audio/flac' },
+  master: { suffix: 'flac', contentType: 'audio/flac' },
+  atmos: { suffix: 'flac', contentType: 'audio/flac' },
+  atmos_plus: { suffix: 'flac', contentType: 'audio/flac' },
 }
 
 export interface SubsonicMediaMeta {
@@ -90,13 +94,15 @@ function extractTypes(source: MediaMetaSource): {
 export function resolveSubsonicMediaMeta(source: MediaMetaSource): SubsonicMediaMeta {
   const { types, _types } = extractTypes(source)
 
-  const supported = getAvailableQualities(types)
+  const preference = getSubsonicStereoPreference()
+  const supported = getAvailableQualities(types).filter(q =>
+    (q !== 'master' || preference === 'master') && q !== 'atmos' && q !== 'atmos_plus')
   if (supported.length === 0) return {}
 
-  const quality = resolveQuality('flac24bit', types)
+  const quality = resolveQuality(preference, types)
   const format = QUALITY_FORMAT[quality]
   const rawSize = _types?.[quality]?.size ?? types?.find(t => t?.type === quality)?.size
-  const size = Number(normalizeSizeToBytes(rawSize)) || undefined
+  const size = _types?.[quality]?.sizeBytes ?? types?.find(t => t.type === quality)?.sizeBytes ?? (Number(normalizeSizeToBytes(rawSize)) || undefined)
 
   return {
     quality,

@@ -45,7 +45,7 @@ vi.mock('@/lib/music-source-manager', () => ({
   musicSourceManager: {
     isInitialized: vi.fn(() => true),
     initialize: vi.fn(async () => {}),
-    getMusicUrl: vi.fn(async () => 'http://upstream.example.com/play/128k.mp3'),
+    resolveMusicUrl: vi.fn(async () => ({ url: 'http://upstream.example.com/play/128k.mp3', quality: '128k' })),
   },
 }))
 
@@ -95,6 +95,6 @@ describe('POST /api/music-url', () => {
     expect(res.status).toBe(200)
     const json = await res.json()
     expect(json.success).toBe(true)
-    expect(json.data.url).toBe('http://upstream.example.com/play/128k.mp3')
+    expect(json.data).toMatchObject({ url: 'http://upstream.example.com/play/128k.mp3', quality: '128k' })
   })
 })

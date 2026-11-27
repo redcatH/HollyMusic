@@ -38,7 +38,7 @@ describe('播放器偏好', () => {
   it('单首解码失败降档，下一首仍按原音质偏好播放', async () => {
     usePlayerStore.setState({ quality: 'flac24bit', codecCap: 'flac24bit' })
     await usePlayerStore.getState().playTrack(first)
-    usePlayerStore.getState().handleTrackError('decode', 3, true)
+    await usePlayerStore.getState().handleTrackError('decode', 3, true)
     expect(usePlayerStore.getState()).toMatchObject({ quality: 'flac24bit', effectiveQuality: 'flac' })
     await usePlayerStore.getState().playTrack(second)
     expect(usePlayerStore.getState()).toMatchObject({ quality: 'flac24bit', effectiveQuality: 'flac24bit' })
@@ -92,7 +92,7 @@ describe('播放器偏好', () => {
 })
 
 describe('播放会话', () => {
-  it('刷新恢复歌曲、进度与两种队列，默认暂停且不加载播放地址', () => {
+  it('刷新恢复歌曲、进度与两种队列，默认暂停且不加载播放地址', async () => {
     playbackSessionStorage('alice').write(snapshot)
     stop = startPlayerSession('alice')
     expect(usePlayerStore.getState()).toMatchObject({ currentTrack: { uid: first.uid }, currentTime: 92,
@@ -101,7 +101,7 @@ describe('播放会话', () => {
     expect(usePlayerStore.getState().playNextQueue.map(t => t.uid)).toEqual([extra.uid])
     usePlayerStore.getState().togglePlay()
     expect(usePlayerStore.getState()).toMatchObject({ currentTime: 92, isPlaying: true })
-    expect(usePlayerStore.getState().streamUrl).toContain('kw-first')
+    await vi.waitFor(() => expect(usePlayerStore.getState().streamUrl).toContain('kw-first'))
   })
 
   it('刷新保留重复入队与插播状态，插播结束后回到主队列游标', () => {

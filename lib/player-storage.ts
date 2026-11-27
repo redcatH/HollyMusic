@@ -1,5 +1,5 @@
 import { createBrowserStorage, isRecord, readStorageValue, type StorageArea } from '@/lib/browser-storage'
-import { VALID_QUALITIES } from '@/lib/quality-options'
+import { QUALITY_ORDER, VALID_QUALITIES, isQuality } from '@/lib/quality-options'
 import type { MusicInfo, QualityInfo, QualityType, SourceType } from '@/lib/types/music'
 import { toTrack, type PlaybackMode, type Track } from '@/lib/types/player'
 import { MAX_PLAYBACK_HISTORY, projectPlaybackQueue, restoreLegacyQueue, type PlaybackQueue, type PlaybackVisit, type QueueEntry } from '@/lib/player-queue'
@@ -10,6 +10,7 @@ export interface PlayerPreferences {
   playbackMode: PlaybackMode
   quality: QualityType
   keepScreenAwake: boolean
+  preferSurround?: boolean
 }
 
 export interface PlaybackSession {
@@ -34,10 +35,6 @@ export const PLAYER_PREFERENCES_KEY = 'holly-player-preferences'
 const LEGACY_QUALITY_KEY = 'player:quality'
 const SOURCES: SourceType[] = ['kw', 'kg', 'tx', 'wy', 'mg']
 
-function isQuality(value: unknown): value is QualityType {
-  return typeof value === 'string' && VALID_QUALITIES.includes(value as QualityType)
-}
-
 function parsePreferences(value: unknown): PlayerPreferences | null {
   if (!isRecord(value)) return null
   return {
@@ -45,8 +42,9 @@ function parsePreferences(value: unknown): PlayerPreferences | null {
       ? Math.max(0, Math.min(1, value.volume)) : DEFAULT_PLAYER_PREFERENCES.volume,
     isMuted: typeof value.isMuted === 'boolean' ? value.isMuted : false,
     playbackMode: value.playbackMode === 'loop' || value.playbackMode === 'random' ? value.playbackMode : 'sequence',
-    quality: isQuality(value.quality) ? value.quality : DEFAULT_PLAYER_PREFERENCES.quality,
+    quality: isQuality(value.quality) && QUALITY_ORDER.includes(value.quality) ? value.quality : DEFAULT_PLAYER_PREFERENCES.quality,
     keepScreenAwake: value.keepScreenAwake === true,
+    ...(value.preferSurround === true ? { preferSurround: true } : {}),
   }
 }
 
@@ -56,8 +54,9 @@ export function loadPlayerPreferences(): PlayerPreferences {
   const stored = playerPreferencesStorage.read()
   if (stored) return stored
   const legacy = readStorageValue(LEGACY_QUALITY_KEY)
-  const preferences = { ...DEFAULT_PLAYER_PREFERENCES, ...(isQuality(legacy) ? { quality: legacy } : {}) }
-  if (isQuality(legacy) && playerPreferencesStorage.write(preferences)) {
+  const legacyQuality = isQuality(legacy) && QUALITY_ORDER.includes(legacy) ? legacy : null
+  const preferences = { ...DEFAULT_PLAYER_PREFERENCES, ...(legacyQuality ? { quality: legacyQuality } : {}) }
+  if (legacyQuality && playerPreferencesStorage.write(preferences)) {
     createBrowserStorage(LEGACY_QUALITY_KEY, () => null).remove()
   }
   return preferences

@@ -350,6 +350,7 @@ function startAudioDownload(request, entry) {
     }
     entry.size = size
     entry.type = type
+    entry.quality = response.headers.get('x-holly-quality')
     entry.etag = response.headers.get('etag')
     entry.modified = response.headers.get('last-modified')
     resetAudioStall(entry)
@@ -406,6 +407,7 @@ function startAudioDownload(request, entry) {
 
 async function portComplete(entry) {
   const headers = { 'content-type': entry.type, 'content-length': String(entry.size),
+    ...(entry.quality ? { 'x-holly-quality': entry.quality } : {}),
     ...(entry.etag ? { etag: entry.etag } : {}), ...(entry.modified ? { 'last-modified': entry.modified } : {}) }
   await (await caches.open(AUDIO_DATA_CACHE)).put(entry.stageKey,
     new Response(JSON.stringify(PROTOCOL.createManifest(entry.size, headers,
@@ -611,6 +613,7 @@ function audioResponse(request, entry, body) {
   const headers = { 'Content-Type': entry.type, 'Content-Length': String(end - start + 1),
     'Accept-Ranges': 'bytes', 'Cache-Control': 'no-store' }
   if (range) headers['Content-Range'] = `bytes ${start}-${end}/${entry.size}`
+  if (entry.quality) headers['X-Holly-Quality'] = entry.quality
   if (entry.etag) headers.ETag = entry.etag
   if (entry.modified) headers['Last-Modified'] = entry.modified
   return new Response(body(start, end), { status: range ? 206 : 200, headers })

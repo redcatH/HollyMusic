@@ -476,7 +476,7 @@ describe('PC 与移动端共用播放器', () => {
       })
       await act(async () => { vi.advanceTimersByTime(3000) })
       expect(cache).toHaveBeenCalledTimes(2)
-      expect(cache).toHaveBeenLastCalledWith('alice', track, '320k')
+      expect(cache).toHaveBeenLastCalledWith('alice', track, '320k', expect.stringContaining('/api/audio'))
       expect(audio.src).toBe(url)
       expect(audio.load).toHaveBeenCalledTimes(loads)
     } finally { await act(async () => { useAuthStore.setState(auth, true) }) }
@@ -749,6 +749,28 @@ describe('PC 与移动端共用播放器', () => {
     await act(async () => { usePlayerStore.getState().clearQueue() })
     expect(audio.paused).toBe(true)
     expect(usePlayerStore.getState().duration).toBe(0)
+  })
+
+  it('桌面和移动端共用环绕偏好，播放服务器确认的六声道版本', async () => {
+    const fetchAudio = vi.fn(async () => new Response(null, {
+      headers: { 'x-holly-quality': 'atmos_plus', 'x-holly-audio-spec': '16 bit / 44.1 kHz / 6 ch' },
+    }))
+    vi.stubGlobal('fetch', fetchAudio)
+    await act(async () => usePlayerStore.setState({ codecCap: 'master', preferSurround: false }))
+    const qualityButton = container.querySelector('button[aria-label="切换音质"]')
+    await click(qualityButton)
+    const desktopSettings = container.querySelector<HTMLInputElement>('#desktop-quality-options input[type="checkbox"]')
+    expect(desktopSettings).toBeTruthy()
+    await act(async () => desktopSettings!.click())
+    expect(usePlayerStore.getState()).toMatchObject({ preferSurround: true, effectiveQuality: 'atmos_plus' })
+    expect(usePlayerStore.getState().streamUrl).toContain('quality=atmos_plus&v=2&exact=1')
+    expect(fetchAudio).toHaveBeenCalledWith(expect.stringContaining('surround=1'), expect.objectContaining({ method: 'HEAD' }))
+    await click(qualityButton)
+    await click(container.querySelector('button[aria-label="更多"]'))
+    await click([...container.querySelectorAll('button')].find(button => button.firstElementChild?.textContent === '音质') ?? null)
+    const mobileSwitch = [...container.querySelectorAll<HTMLInputElement>('label input[type="checkbox"]')]
+      .find(input => input.parentElement?.textContent?.includes('优先环绕'))
+    expect(mobileSwitch?.checked).toBe(true)
   })
 
   it('加载期间暂停，迟到的 canplay/playing 不会重新拉起音频', async () => {

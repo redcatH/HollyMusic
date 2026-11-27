@@ -100,7 +100,7 @@ export function PlayerBar({ audio, onAudioElement, onOpenEqualizer }: PlayerBarP
         && auth.authenticated && !auth.loading && !auth.mustChangePassword && navigator.onLine
         && auth.username === username && loadedRef.current?.username === username
         && state.currentTrack && state.effectiveQuality) {
-        void cachePlayedTrack(auth.username, state.currentTrack, state.effectiveQuality)
+        void cachePlayedTrack(auth.username, state.currentTrack, state.effectiveQuality, state.streamUrl ?? undefined)
       }
     }, 3000)
     return () => clearTimeout(timer)

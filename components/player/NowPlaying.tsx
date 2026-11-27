@@ -11,6 +11,7 @@ import { toast } from '@/lib/toast'
 export function NowPlaying() {
   const track = usePlayerStore(s => s.currentTrack)
   const effectiveQuality = usePlayerStore(s => s.effectiveQuality)
+  const effectiveAudioSpec = usePlayerStore(s => s.effectiveAudioSpec)
   const { toggle: toggleLyrics } = useLyricsPanel()
   const isFav = useFavoritesStore(s => (track ? s.ids.has(track.uid) : false))
   const toggle = useFavoritesStore(s => s.toggle)
@@ -29,7 +30,7 @@ export function NowPlaying() {
   }
 
   // 实际播放音质（经 resolveQuality 就近降级后的档），与音质按钮的「偏好」分离显示
-  const isLossless = effectiveQuality === 'flac' || effectiveQuality === 'flac24bit'
+  const isLossless = !!effectiveQuality && ['flac', 'flac24bit', 'master', 'atmos_plus'].includes(effectiveQuality)
 
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2 desktop:flex-none lg:gap-3">
@@ -42,10 +43,10 @@ export function NowPlaying() {
           <span className="truncate text-xs text-muted-foreground">{track.artist}</span>
           {effectiveQuality && (
             <span
-              className={`hidden shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium desktop:inline ${
+              className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${
                 isLossless ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground'
               }`}
-              title="实际播放音质"
+              title={effectiveAudioSpec ? `音源规格 ${effectiveAudioSpec}` : '实际播放音质'}
             >
               {QUALITY_LABEL[effectiveQuality]}
             </span>

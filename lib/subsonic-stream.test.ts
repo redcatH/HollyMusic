@@ -6,9 +6,11 @@ import { resolveQuality } from './quality-options'
 const { resolveMusicInfoById, getMusicUrl, serve, cacheNativeLyricForMusic } = vi.hoisted(() => ({
   resolveMusicInfoById: vi.fn(), getMusicUrl: vi.fn(), serve: vi.fn(), cacheNativeLyricForMusic: vi.fn(),
 }))
-vi.mock('./db', () => ({ resolveMusicInfoById }))
+vi.mock('./db', () => ({ resolveMusicInfoById, getStorageSongmidForMusicInfo: (info: MusicInfo) => info.songmid }))
+vi.mock('./source-testing/network.cjs', () => ({ publicRequest: vi.fn() }))
+vi.mock('./cache-manager', () => ({ urlCache: { get: vi.fn(), set: vi.fn() }, searchCache: { get: vi.fn(), set: vi.fn() } }))
 vi.mock('./music-source-manager', () => ({ musicSourceManager: {
-  isInitialized: () => true, initialize: vi.fn(), getMusicUrl,
+  isInitialized: () => true, initialize: vi.fn(), resolveMusicUrl: getMusicUrl,
 } }))
 vi.mock('./audio-serve', () => ({ audioServe: { ensureInitialized: vi.fn(), serve } }))
 vi.mock('./services/lyrics', () => ({ cacheNativeLyricForMusic }))
@@ -50,9 +52,9 @@ const cases: Array<[string, QualityType[], QualityType]> = [
 
 beforeEach(() => {
   vi.clearAllMocks()
-  getMusicUrl.mockResolvedValue('https://example.com/audio')
+  getMusicUrl.mockImplementation(async (_music, qualities) => ({ url: 'https://example.com/audio', quality: qualities[0] }))
   serve.mockImplementation(async ({ upstreamUrlResolver }) => {
-    await upstreamUrlResolver()
+    await upstreamUrlResolver().catch(() => {})
     return new Response('audio', { headers: { 'Content-Type': 'audio/flac' } })
   })
 })
@@ -63,8 +65,8 @@ describe('Subsonic stream 音质与实际解析调用', () => {
     resolveMusicInfoById.mockResolvedValue(music)
     const response = await handleStream(new NextRequest(`http://localhost/rest/stream.view?id=kw-123&${query}`))
     expect(response.status).toBe(200)
-    expect(getMusicUrl).toHaveBeenCalledWith(music, expected)
-    expect(serve).toHaveBeenCalledWith(expect.objectContaining({ cacheKey: `kw:123:${expected}` }))
+    expect(getMusicUrl).toHaveBeenCalledWith(music, [expected], expect.any(Function), expect.any(AbortSignal))
+    expect(serve).toHaveBeenCalledWith(expect.objectContaining({ cacheKey: `audio-v2:kw:123:${expected}` }))
   })
 
   it.each(['-1', 'abc', '320kb', '320.5', '1e3', '9007199254740992'])('非法 maxBitRate=%s 不解析音源', async value => {
@@ -87,7 +89,7 @@ describe('Subsonic stream 音质与实际解析调用', () => {
       for (const [query, preference] of [['format=raw', 'flac24bit'], ['maxBitRate=320', '320k'], ['maxBitRate=128', '128k']] as const) {
         resolveMusicInfoById.mockResolvedValue(music)
         await handleStream(new NextRequest(`http://localhost/rest/stream.view?id=kw-123&${query}`))
-        expect(getMusicUrl).toHaveBeenLastCalledWith(music, resolveQuality(preference, music.types))
+        expect(getMusicUrl).toHaveBeenLastCalledWith(music, [resolveQuality(preference, music.types)], expect.any(Function), expect.any(AbortSignal))
       }
     }
   })
@@ -100,7 +102,7 @@ describe('Subsonic stream 音质与实际解析调用', () => {
     }))
     expect(response.status).toBe(206)
     expect(serve).toHaveBeenCalledWith(expect.objectContaining({
-      cacheKey: 'kw:123:flac24bit', rangeHeader: 'bytes=100-200', isHead: true, intervalSec: 180,
+      cacheKey: 'audio-v2:kw:123:flac24bit', rangeHeader: 'bytes=100-200', isHead: true, intervalSec: 180,
     }))
     expect(getMusicUrl).not.toHaveBeenCalled()
     await serve.mock.calls[0][0].onCached()

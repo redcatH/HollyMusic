@@ -18,11 +18,8 @@
 import { NextRequest } from 'next/server'
 import { logger } from '@/lib/logger'
 import { resolveMusicInfoById } from '@/lib/db'
-import { musicSourceManager } from '@/lib/music-source-manager'
-import type { QualityType } from '@/lib/types/music'
-import { parseIntervalToSeconds } from '@/lib/types/player'
-import { audioServe } from '@/lib/audio-serve'
-import { cacheNativeLyricForMusic } from '@/lib/services/lyrics'
+import { isQuality } from '@/lib/quality-options'
+import { serveMusicAudio } from '@/lib/server/music-audio'
 
 function buildErrorResponse(status: number, code: string, message: string): Response {
   return new Response(
@@ -33,18 +30,15 @@ function buildErrorResponse(status: number, code: string, message: string): Resp
 
 async function handleAudio(request: NextRequest, isHead: boolean): Promise<Response> {
   try {
-    await audioServe.ensureInitialized()
-
     const { searchParams } = new URL(request.url)
     const uid = searchParams.get('uid')
-    const quality = (searchParams.get('quality') || '320k') as QualityType
+    const quality = searchParams.get('quality') || '320k'
 
     if (!uid) {
       return buildErrorResponse(400, 'INVALID_PARAMS', '缺少必填参数: uid')
     }
 
-    const validQualities: QualityType[] = ['128k', '320k', 'flac', 'flac24bit']
-    if (!validQualities.includes(quality)) {
+    if (!isQuality(quality)) {
       return buildErrorResponse(400, 'QUALITY_NOT_SUPPORTED', `不支持的音质: ${quality}`)
     }
 
@@ -54,26 +48,11 @@ async function handleAudio(request: NextRequest, isHead: boolean): Promise<Respo
       return buildErrorResponse(404, 'NOT_FOUND', `找不到歌曲信息: ${uid}`)
     }
 
-    const cacheKey = `${musicInfo.source}:${musicInfo.songmid}:${quality}`
-
-    // URL resolver 下沉到 audioServe 内部：只在真正 miss 时调用一次。
-    // 已缓存 / 进行中的请求完全不触发 URL 解析（解决重复打上游问题）。
-    const upstreamUrlResolver = async (): Promise<string> => {
-      if (!musicSourceManager.isInitialized()) {
-        await musicSourceManager.initialize()
-      }
-      return musicSourceManager.getMusicUrl(musicInfo, quality)
-    }
-
-    const rangeHeader = request.headers.get('range')
-
-    return await audioServe.serve({
-      cacheKey,
-      upstreamUrlResolver,
-      rangeHeader,
-      isHead,
-      intervalSec: parseIntervalToSeconds(musicInfo.interval),
-      onCached: () => cacheNativeLyricForMusic(musicInfo),
+    return await serveMusicAudio({
+      musicInfo, quality, isHead,
+      exact: searchParams.get('exact') === '1',
+      surround: searchParams.get('surround') === '1',
+      rangeHeader: request.headers.get('range'),
     })
   } catch (error) {
     logger.error('[/api/audio] 失败:', error)

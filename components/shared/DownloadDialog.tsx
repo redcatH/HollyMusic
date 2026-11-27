@@ -16,8 +16,11 @@ export function DownloadDialog({ track, onClose, onDownload }: DownloadDialogPro
   const groupName = useId()
   const types = track.musicInfo.types
   const available = getAvailableQualities(types)
-  const items = available.length > 0 ? available : QUALITY_ORDER
-  const [quality, setQuality] = useState(() => resolveQuality(usePlayerStore.getState().quality, types))
+  const items = available.length > 0 ? available : QUALITY_ORDER.filter(item => item !== 'master')
+  const [quality, setQuality] = useState(() => {
+    const preferred = resolveQuality(usePlayerStore.getState().quality, types)
+    return items.includes(preferred) ? preferred : items[0]
+  })
 
   return (
     <Modal
@@ -62,7 +65,7 @@ export function DownloadDialog({ track, onClose, onDownload }: DownloadDialogPro
       </fieldset>
       <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
         {available.length === 0 && '暂无音质信息，可选择音质尝试下载。'}
-        优先下载所选音质，音源不可用时会尝试较低音质。文件大小以实际下载为准。
+        将下载所选版本。该版本暂不可用时，请选择另一档。
       </p>
     </Modal>
   )

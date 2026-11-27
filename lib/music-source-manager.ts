@@ -12,6 +12,14 @@ import { ConfigValidator } from './config-validator'
 import { logger } from './logger'
 import { decodeLyricEntities } from './server/lyric-decode'
 import { normalizeStructuredLyricText } from './server/lyric-normalize'
+import { QUALITY_ORDER } from './quality-options'
+import { enrichAudioDetails } from './server/platform-audio-details'
+
+export interface ResolvedMusicUrl {
+  url: string
+  quality: QualityType
+  script: string
+}
 
 // 音源执行托管在独立子进程（vm 沙箱之上叠加进程隔离，见 lib/music-core/runner-client.js）
 // SOURCE_RUNNER_MODE=inline 可回退主进程直连（等价 P0 行为）
@@ -269,6 +277,17 @@ class MusicSourceManager {
    * 支持配置文件热重载
    */
   async getMusicUrl(musicInfo: MusicInfo, requestedQuality: QualityType = '320k'): Promise<string> {
+    const index = QUALITY_ORDER.indexOf(requestedQuality)
+    const qualities = index < 0 ? [requestedQuality] : QUALITY_ORDER.slice(index)
+    return (await this.resolveMusicUrl(musicInfo, qualities)).url
+  }
+
+  async resolveMusicUrl(
+    musicInfo: MusicInfo,
+    qualities: readonly QualityType[],
+    validate?: (candidate: ResolvedMusicUrl) => Promise<void>,
+    signal?: AbortSignal,
+  ): Promise<ResolvedMusicUrl> {
     // 在获取 URL 时检查配置是否变更
     if (this.initialized && this.checkConfigChanged()) {
       logger.info('配置文件已变更，重新加载音源...')
@@ -293,84 +312,42 @@ class MusicSourceManager {
       }
     }
 
-    // 音质降级顺序
-    const qualityFallback: QualityType[] = ['flac24bit', 'flac', '320k', '128k']
-    const startIndex = qualityFallback.indexOf(requestedQuality)
-    const qualitiesToTry = startIndex >= 0 
-      ? qualityFallback.slice(startIndex)
-      : [requestedQuality, ...qualityFallback]
-
-    logger.debug(`获取音乐URL: ${musicInfo.name} - ${musicInfo.singer}`)
-    logger.debug(`音源: ${musicInfo.source}, 请求音质: ${requestedQuality}`)
-
-    // 总预算：全音源×音质尝试不无限串行（上游全挂时限制客户端等待时间）
     const deadline = Date.now() + this.musicUrlTotalTimeoutMs
-
-    // 尝试所有音源和音质组合
-    outer: for (const instance of availableInstances) {
-      // pt 优先：用户配置的 pt 未包含该平台则跳过（即使脚本声明支持）
-      if (!this.isAllowedByPt(instance, musicInfo.source)) {
-        continue
-      }
-      // 检查该音源是否支持当前歌曲的音源平台
-      if (!instance.sourceInfo?.sources[musicInfo.source]) {
-        logger.debug(`${instance.config.name} 不支持音源: ${musicInfo.source}`)
-        continue
-      }
-
-      const sourceConfig = instance.sourceInfo.sources[musicInfo.source]
-      
-      // 检查是否支持 musicUrl 操作
-      if (!sourceConfig.actions.includes('musicUrl')) {
-        logger.debug(`${instance.config.name} 不支持 musicUrl 操作`)
-        continue
-      }
-
-      // 尝试不同音质
-      for (const quality of qualitiesToTry) {
-        // 总超时：超出预算立即放弃整个尝试
-        if (Date.now() > deadline) break outer
-
-        // 检查音源是否支持该音质
-        if (!sourceConfig.qualitys.includes(quality)) {
-          continue
-        }
-
-        // 检查歌曲是否有该音质
-        if (!musicInfo._types[quality]) {
-          continue
-        }
-
-        try {
-          logger.debug(
-            `尝试: ${instance.config.name} - ${musicInfo.source} - ${quality}`
-          )
-
-          // 单次调用加超时（洛雪脚本挂起时不阻塞整个请求）
-          const url = await this.withTimeout(
-            instance.simulator.getMusicUrl(musicInfo.source, musicInfo, quality),
-            this.musicUrlTimeoutMs,
-            `获取音乐URL超时: ${instance.config.name} - ${quality}`,
-          )
-
-          if (url && typeof url === 'string' && url.trim()) {
-            // 回源 SSRF 防护：拒绝私网/非 http(s) 地址
-            if (!isTrustworthyUrl(url)) {
-              logger.warn(
-                `音源 ${instance.config.name} 返回了不可信播放地址，已拒绝并尝试下一源`
-              )
-              continue
-            }
-            logger.info(
-              `获取成功: ${instance.config.name} - ${quality} - ${musicInfo.name}`
+    outer: for (const quality of qualities) {
+      let enriched: MusicInfo | undefined
+      for (const instance of availableInstances) {
+        if (!this.isAllowedByPt(instance, musicInfo.source)) continue
+        const config = instance.sourceInfo?.sources[musicInfo.source]
+        if (!config?.actions.includes('musicUrl')) continue
+        const aliases = quality === 'flac24bit' ? ['flac24bit', 'hires'] : [quality]
+        for (const token of aliases.filter(item => config.qualitys.includes(item))) {
+          signal?.throwIfAborted()
+          if (Date.now() >= deadline) break outer
+          try {
+            enriched ??= validate ? await enrichAudioDetails(musicInfo, quality) : musicInfo
+            signal?.throwIfAborted()
+            const remaining = deadline - Date.now()
+            if (remaining <= 0) break outer
+            const trackQuality = enriched._types?.[quality] ?? enriched.types?.find(item => item.type === quality)
+            if (!trackQuality && !validate) continue
+            const input = token === 'hires' && trackQuality
+              ? { ...enriched, _types: { ...enriched._types, hires: trackQuality } }
+              : enriched
+            const url = await this.withTimeout(
+              instance.simulator.getMusicUrl(musicInfo.source, input, token),
+              Math.min(this.musicUrlTimeoutMs, remaining),
+              '获取音频地址超时',
             )
-            return url
+            if (typeof url !== 'string' || !url.trim() || !isTrustworthyUrl(url)) continue
+            signal?.throwIfAborted()
+            const candidate = { url, quality, script: instance.config.name }
+            if (validate) await validate(candidate)
+            return candidate
+          } catch (error) {
+            signal?.throwIfAborted()
+            logger.debug('音源候选失败', { source: musicInfo.source, quality, script: instance.config.name,
+              reason: error instanceof Error ? error.name : '上游失败' })
           }
-        } catch (error) {
-          logger.debug(
-            `获取失败: ${instance.config.name} - ${quality}`,
-            error instanceof Error ? error.message : error
-          )
         }
       }
     }

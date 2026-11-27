@@ -11,7 +11,7 @@ const SECONDARY = 'rounded-full border border-border px-3 py-2 text-sm hover:bg-
 const PRIMARY = 'inline-flex items-center justify-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50'
 const INPUT = 'w-full rounded-md bg-background px-3 py-2 text-sm outline-none ring-1 ring-border focus:ring-primary'
 const STATUS_NAMES = { waiting: '等待', running: '检测中', passed: '通过', warning: '需确认', failed: '失败', cancelled: '已停止' }
-const QUALITY_NAMES = { flac24bit: '24 bit FLAC', flac: 'FLAC', '320k': '320k', '128k': '128k' }
+const QUALITY_NAMES = { flac24bit: '24 bit FLAC', flac: 'FLAC', '320k': '320k', '128k': '128k', master: '母带', atmos: '空间混音', atmos_plus: '六声道版' }
 const errorText = (error: unknown) => error instanceof Error ? error.message : '操作失败，请稍后重试'
 
 function TestModal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {

@@ -76,7 +76,7 @@ export function useDownload() {
   const [downloading, setDownloading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const download = useCallback(({ uid, quality = '320k' }: DownloadArgs) => {
+  const download = useCallback(async ({ uid, quality = '320k' }: DownloadArgs) => {
     setDownloading(true)
     setError(null)
     try {
@@ -85,13 +85,19 @@ export function useDownload() {
         `/api/download?uid=${encodeURIComponent(uid)}` +
         `&quality=${encodeURIComponent(quality)}`
 
+      if (quality === 'master' || quality === 'atmos_plus' || quality === 'atmos') {
+        const response = await fetch(downloadUrl, { method: 'HEAD', cache: 'no-store', signal: AbortSignal.timeout(27_000) })
+        if (!response.ok) {
+          throw new Error(response.status === 502 ? '所选版本暂不可下载，请选择另一档' : mapDownloadError(response.status))
+        }
+      }
+
       // window.location.href 触发浏览器原生下载管理器：
       // - 不依赖 transient user activation（页面导航无此限制）
       // - 浏览器收到 Content-Disposition: attachment 后自动下载，当前页面不跳转
       // - 下载进度/速度/续传由浏览器下载管理器提供，前端不再模拟
       window.location.href = downloadUrl
     } catch (e) {
-      // 此处几乎不可能抛错（纯字符串拼接），兜底
       const msg = e instanceof Error ? e.message : '下载失败'
       setError(msg)
       toast.error(msg)

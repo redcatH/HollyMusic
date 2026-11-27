@@ -9,7 +9,7 @@
  * 不再做"实测失败下调"：errCode 3/4 多是单首音源问题，误判为能力不足会污染整会话音质。
  */
 import type { QualityType } from './types/music'
-import { QUALITY_ORDER } from './quality-options'
+import { QUALITY_ORDER, SURROUND_QUALITIES } from './quality-options'
 
 /**
  * 探测浏览器原生 <audio> 对 FLAC 的解码能力，返回「可播放的最高音质档」。
@@ -23,7 +23,7 @@ import { QUALITY_ORDER } from './quality-options'
  */
 export function detectCodecCap(): QualityType {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
-    return 'flac24bit'
+    return 'master'
   }
   try {
     const a = document.createElement('audio')
@@ -32,9 +32,9 @@ export function detectCodecCap(): QualityType {
       return r === 'probably' || r === 'maybe'
     }
     const flacOK = supported('audio/flac') || supported('audio/x-flac')
-    return flacOK ? 'flac24bit' : '320k'
+    return flacOK ? 'master' : '320k'
   } catch {
-    return 'flac24bit' // 探测异常保守放行，交实测兜底
+    return 'master'
   }
 }
 
@@ -43,6 +43,7 @@ export function detectCodecCap(): QualityType {
  * QUALITY_ORDER 高→低（index 0 最高），取 max(index) 即较低档。
  */
 export function capQuality(q: QualityType, cap: QualityType): QualityType {
+  if (SURROUND_QUALITIES.includes(q)) return cap === '320k' || cap === '128k' ? cap : q
   const qi = QUALITY_ORDER.indexOf(q)
   const ci = QUALITY_ORDER.indexOf(cap)
   return QUALITY_ORDER[Math.max(qi, ci)]

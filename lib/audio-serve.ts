@@ -27,11 +27,17 @@ import { EventEmitter } from 'events'
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { checkTrialAudio } from '@/lib/server/audio-integrity'
+import { formatFlacSpec } from '@/lib/server/flac-info'
+import { buildUpstreamHeaders } from '@/lib/server/download-utils'
+import { PLAYBACK_AUDIO_SPEC_HEADER } from '@/lib/playback-protocol'
 import {
   getLyricSidecarPath,
   getTranslationLyricSidecarPath,
   isLyricSidecarPath,
 } from '@/lib/server/lyric-cache'
+
+export interface AudioUpstream { url: string; contentType: string; audioSpec?: string }
+type AudioUpstreamResolver = () => Promise<string | AudioUpstream>
 
 // ============================================================================
 // 配置
@@ -148,6 +154,7 @@ interface InflightEntry {
   downloadedBytes: number
   /** contentType */
   contentType: string | null
+  audioSpec?: string
   /** 已知路径（fetch header 后 resolve） */
   paths: ResolvedPaths | null
   /** 是否已完成（用于 close 后清理） */
@@ -223,7 +230,7 @@ class AudioServe {
    */
   async serve(opts: {
     cacheKey: string
-    upstreamUrlResolver: () => Promise<string>
+    upstreamUrlResolver: AudioUpstreamResolver
     rangeHeader: string | null
     isHead: boolean
     intervalSec: number
@@ -234,8 +241,8 @@ class AudioServe {
 
     // 总开关关闭 → 流式透传（不缓存、不支持 seek）
     if (!cfg.enabled) {
-      const url = await opts.upstreamUrlResolver()
-      return this.passthroughUpstream(url, opts.rangeHeader)
+      const upstream = await opts.upstreamUrlResolver()
+      return this.passthroughUpstream(upstream, opts.rangeHeader, opts.isHead)
     }
 
     // 1. 已完整缓存 → 本地 Range（任意 seek）
@@ -319,7 +326,7 @@ class AudioServe {
     // 9. 跟随交付请求区间的全部字节（见设计原则 5）：
     //    无 Range → 200 完整文件；Range → 206 完整区间。
     //    body 从磁盘增量读取，跟随 downloadedBytes 推进；上游失败时流 error。
-    return buildFollowResponse(
+    const response = buildFollowResponse(
       filePath,
       entry,
       size,
@@ -328,6 +335,8 @@ class AudioServe {
       range !== null,
       opts.isHead
     )
+    if (entry.audioSpec) response.headers.set(PLAYBACK_AUDIO_SPEC_HEADER, entry.audioSpec)
+    return response
   }
 
   // --------------------------------------------------------------------------
@@ -376,8 +385,18 @@ class AudioServe {
       const contentType = record.contentType || 'audio/mpeg'
       const range = parseRange(rangeHeader, size)
       if (range === 'unsatisfiable') return buildUnsatisfiable(size)
-      if (range === null) return buildFullResponse(filePath, size, contentType, isHead)
-      return buildPartialResponse(filePath, size, contentType, range, isHead)
+      const response = range === null ? buildFullResponse(filePath, size, contentType, isHead)
+        : buildPartialResponse(filePath, size, contentType, range, isHead)
+      if (isHead && contentType === 'audio/flac') {
+        const file = await fsp.open(/* turbopackIgnore: true */ filePath, 'r')
+        try {
+          const header = Buffer.alloc(22)
+          const { bytesRead } = await file.read(header)
+          const spec = formatFlacSpec(header.subarray(0, bytesRead))
+          if (spec) response.headers.set(PLAYBACK_AUDIO_SPEC_HEADER, spec)
+        } finally { await file.close() }
+      }
+      return response
     } catch (e) {
       logger.error(`[AudioServe] tryServeFromDisk 失败 ${cacheKey}:`, e)
       return null
@@ -398,7 +417,7 @@ class AudioServe {
 
   private async startDownload(
     cacheKey: string,
-    upstreamUrlResolver: () => Promise<string>,
+    upstreamUrlResolver: AudioUpstreamResolver,
     intervalSec: number,
     onCached?: () => Promise<void>
   ): Promise<InflightEntry> {
@@ -431,14 +450,14 @@ class AudioServe {
   private async runDownload(
     cacheKey: string,
     entry: InflightEntry,
-    upstreamUrlResolver: () => Promise<string>,
+    upstreamUrlResolver: AudioUpstreamResolver,
     intervalSec: number,
     onCached?: () => Promise<void>
   ): Promise<void> {
     let stallTimer: NodeJS.Timeout | null = null
     try {
       // ① URL 解析：洛雪脚本挂起时不再永久卡死（inflight entry 也不残留）
-      const url = await this.withTimeout(
+      const upstream = await this.withTimeout(
         upstreamUrlResolver(),
         this.resolveTimeoutMs,
         '解析上游 URL 超时',
@@ -451,9 +470,11 @@ class AudioServe {
 
       let resp: Response
       try {
-        resp = await fetch(url, {
+        resp = await fetch(typeof upstream === 'string' ? upstream : upstream.url, {
           signal: controller.signal,
-          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+          headers: typeof upstream === 'string'
+            ? { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+            : buildUpstreamHeaders(upstream.url),
         })
       } catch (e) {
         throw e
@@ -462,12 +483,14 @@ class AudioServe {
       refreshTimer()
 
       if (!resp.ok) {
+        void resp.body?.cancel().catch(() => {})
         throw new Error(`upstream ${resp.status} ${resp.statusText}`)
       }
 
       const cl = resp.headers.get('content-length')
       const size = cl ? parseInt(cl, 10) : NaN
-      entry.contentType = resp.headers.get('content-type')
+      entry.contentType = typeof upstream === 'string' ? resp.headers.get('content-type') : upstream.contentType
+      if (typeof upstream !== 'string') entry.audioSpec = upstream.audioSpec
 
       // 无 Content-Length → 无法缓存，直接 passthrough 给首个客户端
       // 但本设计的 serve() 走的是「全部从磁盘读」语义，不支持 passthrough 分支
@@ -661,18 +684,22 @@ class AudioServe {
   // --------------------------------------------------------------------------
 
   private async passthroughUpstream(
-    upstreamUrl: string,
-    rangeHeader: string | null
+    upstream: string | AudioUpstream,
+    rangeHeader: string | null,
+    isHead: boolean,
   ): Promise<Response> {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), this.fetchTimeoutMs)
     if (timer.unref) timer.unref()
     let resp: Response
     try {
-      resp = await fetch(upstreamUrl, {
+      resp = await fetch(typeof upstream === 'string' ? upstream : upstream.url, {
+        method: isHead ? 'HEAD' : 'GET',
         signal: controller.signal,
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          ...(typeof upstream === 'string'
+            ? { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+            : buildUpstreamHeaders(upstream.url)),
           ...(rangeHeader ? { Range: rangeHeader } : {}),
         },
       })
@@ -681,15 +708,16 @@ class AudioServe {
       clearTimeout(timer)
     }
     const headers: Record<string, string> = { 'Cache-Control': 'no-store' }
-    const ct = resp.headers.get('content-type')
+    const ct = resp.ok && typeof upstream !== 'string' ? upstream.contentType : resp.headers.get('content-type')
     if (ct) headers['Content-Type'] = ct
+    if (resp.ok && typeof upstream !== 'string' && upstream.audioSpec) headers[PLAYBACK_AUDIO_SPEC_HEADER] = upstream.audioSpec
     const cl = resp.headers.get('content-length')
     if (cl) headers['Content-Length'] = cl
     for (const name of ['Content-Range', 'Accept-Ranges', 'ETag', 'Last-Modified']) {
       const value = resp.headers.get(name)
       if (value) headers[name] = value
     }
-    return new Response(resp.body, { status: resp.status, headers })
+    return new Response(isHead ? null : resp.body, { status: resp.status, headers })
   }
 
   // --------------------------------------------------------------------------

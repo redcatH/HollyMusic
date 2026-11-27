@@ -2,10 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireUser, AuthError } from '@/lib/services/user-context'
 import { logger } from '@/lib/logger'
 import { resolveMusicInfoById } from '@/lib/db'
-import { musicSourceManager } from '@/lib/music-source-manager'
-import { audioServe } from '@/lib/audio-serve'
-import { cacheNativeLyricForMusic } from '@/lib/services/lyrics'
-import { parseIntervalToSeconds } from '@/lib/types/player'
+import { isQuality } from '@/lib/quality-options'
+import { serveMusicAudio } from '@/lib/server/music-audio'
 import type { QualityType } from '@/lib/types/music'
 import {
   isValidUrl,
@@ -16,6 +14,7 @@ import {
   buildUpstreamHeaders,
   buildContentDisposition,
   buildFilenameFromMusicInfo,
+  inferExtension,
 } from '@/lib/server/download-utils'
 
 /**
@@ -28,7 +27,7 @@ import {
  *    - requireUser 鉴权
  *    - resolveMusicInfoById(uid) 从 DB 解析 MusicInfo
  *    - 后端用 buildFilenameFromMusicInfo 组装文件名（不接收前端 filename，安全）
- *    - audioServe.serve({ cacheKey, upstreamUrlResolver, ... })
+ *    - 按所选音质共用播放文件缓存
  *      · 缓存命中（播放过）→ 磁盘读，0 回源
  *      · 缓存 miss → 回源一次 + 边下边落盘 + 跟随交付完整文件（下次命中）
  *    - 注入 Content-Disposition: attachment
@@ -80,37 +79,14 @@ async function handleDownloadByUid(
     )
   }
 
-  // 2. cacheKey 与 /api/audio 完全一致，确保命中同一份磁盘缓存
-  const cacheKey = `${musicInfo.source}:${musicInfo.songmid}:${quality}`
-
-  // 3. upstreamUrlResolver：只在 cache miss 时调用一次（audioServe 内部去重）
-  const upstreamUrlResolver = async (): Promise<string> => {
-    if (!musicSourceManager.isInitialized()) {
-      await musicSourceManager.initialize()
-    }
-    return musicSourceManager.getMusicUrl(musicInfo, quality)
-  }
-
-  // 4. 确保 audioServe 已初始化（创建缓存目录等）
-  await audioServe.ensureInitialized()
-
-  // 5. 委托 audioServe（缓存命中 → 磁盘读；miss → 回源 + 边下边落盘 + 跟随交付）
-  //    透传客户端 Range 头：普通下载（window.location.href）无 Range，audioServe
-  //    返回 200 完整文件；浏览器断点续传携带 Range，返回 206 完整区间
-  const rangeHeader = request.headers.get('range')
-  const audioResp = await audioServe.serve({
-    cacheKey,
-    upstreamUrlResolver,
-    rangeHeader,
-    isHead: false,
-    intervalSec: parseIntervalToSeconds(musicInfo.interval),
-    onCached: () => cacheNativeLyricForMusic(musicInfo),
+  const audioResp = await serveMusicAudio({
+    musicInfo, quality, isHead: request.method === 'HEAD', exact: true, rangeHeader: request.headers.get('range'),
   })
 
   // 6. audioServe 错误响应（502/503）直接透传
   if (!audioResp.ok) {
     logger.warn(
-      `[download] audioServe 返回 ${audioResp.status} uid=${uid} cacheKey=${cacheKey} ip=${clientIP}`
+      `[download] audioServe 返回 ${audioResp.status} uid=${uid} ip=${clientIP}`
     )
     return new NextResponse(audioResp.body, {
       status: audioResp.status,
@@ -121,12 +97,14 @@ async function handleDownloadByUid(
   // 7. 后端组装文件名（不信任前端输入，从 DB MusicInfo 构造）+
   //    注入 Content-Disposition: attachment（复制 audioServe 的头 + 追加）
   //    非侵入式：不改 audio-serve.ts，仅在外层包装
-  const finalFilename = sanitizeFilename(buildFilenameFromMusicInfo(musicInfo, quality))
+  const contentType = audioResp.headers.get('content-type')
+  const extension = inferExtension('', contentType)
+  const finalFilename = sanitizeFilename(buildFilenameFromMusicInfo(musicInfo, quality, extension))
   const headers = new Headers(audioResp.headers)
   headers.set('Content-Disposition', buildContentDisposition(finalFilename))
 
   logger.info(
-    `[download] ok uid=${uid} cacheKey=${cacheKey} ip=${clientIP} status=${audioResp.status}`
+    `[download] ok uid=${uid} ip=${clientIP} status=${audioResp.status}`
   )
 
   return new NextResponse(audioResp.body, {
@@ -278,8 +256,6 @@ function getClientIP(request: NextRequest): string {
 // GET handler（两种模式分流）
 // ============================================================================
 
-const VALID_QUALITIES: QualityType[] = ['128k', '320k', 'flac', 'flac24bit']
-
 export async function GET(request: NextRequest) {
   try {
     await requireUser(request)
@@ -292,8 +268,8 @@ export async function GET(request: NextRequest) {
 
     // uid 模式（推荐）：filename 后端组装，不读取前端传入
     if (uid) {
-      const quality = (searchParams.get('quality') || '320k') as QualityType
-      if (!VALID_QUALITIES.includes(quality)) {
+      const quality = searchParams.get('quality') || '320k'
+      if (!isQuality(quality)) {
         return NextResponse.json(
           { error: `不支持的音质: ${quality}` },
           { status: 400 }
@@ -324,6 +300,13 @@ export async function GET(request: NextRequest) {
     logger.error('[download] GET 未预期错误:', error)
     return NextResponse.json({ error: '下载失败' }, { status: 500 })
   }
+}
+
+export async function HEAD(request: NextRequest): Promise<Response> {
+  if (!request.nextUrl.searchParams.get('uid')) return new Response(null, { status: 400 })
+  const response = await GET(request)
+  void response.body?.cancel().catch(() => {})
+  return new Response(null, { status: response.status, headers: response.headers })
 }
 
 /**

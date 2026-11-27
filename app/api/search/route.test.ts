@@ -71,7 +71,7 @@ describe('GET /api/search', () => {
     await Promise.all(requests)
     expect(search).toHaveBeenCalledExactlyOnceWith('wy', 'test', 2, 20)
     expect(upsertMusicInfosInTransaction).toHaveBeenCalledTimes(1)
-    expect(set.mock.calls[0][0]).toBe('search:v2:wy:test:2:20')
+    expect(set.mock.calls[0][0]).toBe('search:v3:wy:test:2:20')
   })
 
   it('缓存命中不请求上游、不重复入库', async () => {

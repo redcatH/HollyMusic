@@ -18,8 +18,8 @@ describe('capQuality', () => {
 describe('detectCodecCap', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('SSR（无 window/document）→ 不限制 flac24bit', () => {
-    expect(detectCodecCap()).toBe('flac24bit')
+  it('SSR（无 window/document）→ 不限制母带', () => {
+    expect(detectCodecCap()).toBe('master')
   })
 
   it('canPlayType 明确不支持 FLAC（空串）→ 压到 320k', () => {
@@ -30,13 +30,13 @@ describe('detectCodecCap', () => {
     expect(canPlayType).toHaveBeenCalled()
   })
 
-  it('canPlayType 返回 maybe/probably → 不限制 flac24bit', () => {
+  it('canPlayType 返回 maybe/probably → 不限制母带', () => {
     vi.stubGlobal('window', {})
     vi.stubGlobal('document', {
       createElement: () => ({
         canPlayType: (t: string) => (t.includes('flac') ? 'maybe' : ''),
       }),
     })
-    expect(detectCodecCap()).toBe('flac24bit')
+    expect(detectCodecCap()).toBe('master')
   })
 })

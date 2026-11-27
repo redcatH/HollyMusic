@@ -8,10 +8,15 @@ import type { QualityInfo, QualityType } from '@/lib/types/music'
 import { PLAYBACK_QUALITIES } from '@/lib/playback-protocol'
 
 /** 合法音质，按从高到低排序（index 0 = 最高） */
-export const QUALITY_ORDER: QualityType[] = ['flac24bit', 'flac', '320k', '128k']
+export const QUALITY_ORDER: QualityType[] = ['master', 'flac24bit', 'flac', '320k', '128k']
+export const SURROUND_QUALITIES: QualityType[] = ['atmos_plus', 'atmos']
 
 /** 合法音质集合（用于校验 localStorage 持久化值） */
 export const VALID_QUALITIES: QualityType[] = [...PLAYBACK_QUALITIES]
+
+export function isQuality(value: unknown): value is QualityType {
+  return VALID_QUALITIES.some(quality => quality === value)
+}
 
 /** 音质按钮 / 标签的简短文案 */
 export const QUALITY_LABEL: Record<QualityType, string> = {
@@ -19,6 +24,9 @@ export const QUALITY_LABEL: Record<QualityType, string> = {
   '128k': '128K',
   flac: 'FLAC',
   flac24bit: 'Hi-Res',
+  master: '母带',
+  atmos: '空间混音',
+  atmos_plus: '六声道版',
 }
 
 /** 音质的完整描述（下拉菜单副标题） */
@@ -27,6 +35,9 @@ export const QUALITY_TITLE: Record<QualityType, string> = {
   '128k': '128K 标准',
   flac: 'FLAC 无损',
   flac24bit: 'Hi-Res 无损',
+  master: '母带音质',
+  atmos: '空间混音版',
+  atmos_plus: '六声道版',
 }
 
 /**
@@ -37,11 +48,11 @@ export function getAvailableQualities(types?: QualityInfo[]): QualityType[] {
   if (!types || types.length === 0) return []
   const present = new Set<QualityType>()
   for (const t of types) {
-    if (t && (t.type as QualityType) && QUALITY_ORDER.includes(t.type)) {
+    if (t && isQuality(t.type)) {
       present.add(t.type)
     }
   }
-  return QUALITY_ORDER.filter(q => present.has(q)) // QUALITY_ORDER 已是高→低
+  return [...QUALITY_ORDER, ...SURROUND_QUALITIES].filter(q => present.has(q))
 }
 
 /**
@@ -52,7 +63,8 @@ export function getAvailableQualities(types?: QualityInfo[]): QualityType[] {
  *  - 支持列表为空（数据异常）→ 返回 preference，交由服务端降级 / 报错
  */
 export function resolveQuality(preference: QualityType, types?: QualityInfo[]): QualityType {
-  const available = getAvailableQualities(types)
+  const available = getAvailableQualities(types).filter(q => QUALITY_ORDER.includes(q) && (q !== 'master' || preference === 'master'))
+  if (SURROUND_QUALITIES.includes(preference)) return preference
   if (available.length === 0) return preference
   if (available.includes(preference)) return preference
   const prefIdx = QUALITY_ORDER.indexOf(preference) // preference 合法时必 >= 0

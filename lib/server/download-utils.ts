@@ -174,6 +174,7 @@ export function inferExtension(url: string, contentType?: string | null): string
       'audio/flac': '.flac',
       'audio/wav': '.wav',
       'audio/aac': '.aac',
+      'audio/eac3': '.eac3',
       'audio/ogg': '.ogg',
       'audio/webm': '.webm',
       'audio/wma': '.wma',
@@ -349,7 +350,7 @@ function stripHtml(s: string): string {
 
 /** 音质 → 扩展名；FLAC 系用 .flac，其余（mp3 码率档）用 .mp3 */
 function extForQuality(q: QualityType): string {
-  return q === 'flac' || q === 'flac24bit' ? '.flac' : '.mp3'
+  return q === '128k' || q === '320k' ? '.mp3' : '.flac'
 }
 
 /**
@@ -363,8 +364,8 @@ function extForQuality(q: QualityType): string {
  * @param quality 音质，决定扩展名（flac 系 → .flac，其余 → .mp3）
  * @returns 形如 "万能青年旅店 - 杀死那个石家庄人.mp3" 的文件名（未 sanitize，供 buildContentDisposition 进一步处理）
  */
-export function buildFilenameFromMusicInfo(mi: MusicInfo, quality: QualityType = '320k'): string {
+export function buildFilenameFromMusicInfo(mi: MusicInfo, quality: QualityType = '320k', extension = extForQuality(quality)): string {
   const singer = stripHtml(mi.singer || '').trim() || 'unknown'
   const name = stripHtml(mi.name || '').trim() || 'audio'
-  return `${singer} - ${name}${extForQuality(quality)}`
+  return `${singer} - ${name}${extension}`
 }

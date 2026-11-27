@@ -1,7 +1,8 @@
 import type { MusicInfo, QualityType, SourceConfig, SourceType } from '@/lib/types/music'
+import { QUALITY_ORDER, SURROUND_QUALITIES } from '@/lib/quality-options'
 
 export const TEST_PLATFORMS = ['tx', 'wy', 'kw', 'kg', 'mg'] as const
-export const TEST_QUALITIES: QualityType[] = ['flac24bit', 'flac', '320k', '128k']
+export const TEST_QUALITIES: QualityType[] = [...QUALITY_ORDER, ...SURROUND_QUALITIES]
 export const PLATFORM_NAMES: Record<SourceType, string> = { tx: '腾讯', wy: '网易', kw: '酷我', kg: '酷狗', mg: '咪咕' }
 export type TestSamples = Partial<Record<SourceType, MusicInfo>>
 export type TestCapability = Partial<Record<SourceType, QualityType[]>>

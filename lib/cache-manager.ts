@@ -152,4 +152,4 @@ export const searchCache = new CacheManager({
   'discovery:': budget('DISCOVERY_CACHE', 200, 32 * 1024 * 1024),
   '': budget('OTHER_SEARCH_CACHE', 1000, 16 * 1024 * 1024),
 })
-export const urlCache = new CacheManager()
+export const urlCache = new CacheManager({ 'audio-selection:': { maxEntries: 2048, maxBytes: 512 * 1024 } })

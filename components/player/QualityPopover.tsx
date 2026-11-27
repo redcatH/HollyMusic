@@ -18,6 +18,8 @@ export function QualityPopover() {
   const quality = usePlayerStore(s => s.quality)
   const currentTrack = usePlayerStore(s => s.currentTrack)
   const setQuality = usePlayerStore(s => s.setQuality)
+  const preferSurround = usePlayerStore(s => s.preferSurround)
+  const setPreferSurround = usePlayerStore(s => s.setPreferSurround)
 
   const [open, setOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -69,8 +71,9 @@ export function QualityPopover() {
         className={`flex items-center gap-0.5 rounded-md px-2 py-2 text-xs font-semibold tabular-nums transition-colors hover:bg-accent ${
           quality !== '320k' ? 'text-primary' : 'text-foreground/70 hover:text-foreground'
         }`}
-        aria-haspopup="listbox"
+        aria-controls={open ? 'desktop-quality-options' : undefined}
         aria-expanded={open}
+        aria-label="切换音质"
         title="切换音质"
       >
         {QUALITY_LABEL[quality]}
@@ -80,11 +83,15 @@ export function QualityPopover() {
       {open && pos && (
         <div
           ref={panelRef}
-          role="listbox"
+          id="desktop-quality-options"
+          role="group"
+          aria-label="播放音质设置"
           className="fixed z-50 w-44 rounded-md border border-border bg-card p-1 text-sm shadow-lg"
           style={{ right: pos.right, bottom: pos.bottom }}
         >
           <QualityList
+            preferSurround={preferSurround}
+            onSurroundChange={setPreferSurround}
             items={items}
             current={quality}
             types={types}

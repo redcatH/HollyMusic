@@ -1,14 +1,10 @@
 import { NextRequest } from 'next/server'
 import { resolveMusicInfoById } from '@/lib/db'
 import { subsonicError } from '@/lib/subsonic'
-import { getAvailableQualities, resolveQuality } from '@/lib/quality-options'
-import { parseSubsonicQualityPreference } from '@/lib/subsonic-quality'
-import { musicSourceManager } from '@/lib/music-source-manager'
-import { audioServe } from '@/lib/audio-serve'
+import { getAvailableQualities, QUALITY_ORDER, resolveQuality } from '@/lib/quality-options'
+import { getSubsonicStereoPreference, parseSubsonicQualityPreference } from '@/lib/subsonic-quality'
 import { logger } from '@/lib/logger'
-import { cacheNativeLyricForMusic } from '@/lib/services/lyrics'
-import type { MusicInfo } from '@/lib/types/music'
-import { parseIntervalToSeconds } from '@/lib/types/player'
+import { serveMusicAudio } from '@/lib/server/music-audio'
 
 // ============================================================================
 // STREAM HANDLER
@@ -56,7 +52,8 @@ export async function handleStream(request: NextRequest): Promise<Response> {
     }
 
     // ========== STEP 3: 确定音质 ==========
-    const supportedQualities = getAvailableQualities(musicInfo.types)
+    const supportedQualities = getAvailableQualities(musicInfo.types).filter(q =>
+      QUALITY_ORDER.includes(q) && (q !== 'master' || getSubsonicStereoPreference() === 'master'))
     if (supportedQualities.length === 0) {
       logger.warn(`[handleStream] No supported qualities for ${musicInfo.songmid}`)
       return subsonicError(request, 0, 'No supported audio quality available')
@@ -73,36 +70,17 @@ export async function handleStream(request: NextRequest): Promise<Response> {
       `[handleStream] Stream request: ${musicInfo.name} - ${musicInfo.singer} (quality: ${quality})`
     )
 
-    // ========== STEP 4: 委托给 audioServe ==========
-    // audioServe 内部处理：
-    // - 已缓存 → 本地 Range
-    // - 进行中 → attach（不重复打上游）
-    // - miss → 调 upstreamUrlResolver 一次，多用户并发也只 1 次
-    await audioServe.ensureInitialized()
-
-    const cacheKey = `${musicInfo.source}:${musicInfo.songmid}:${quality}`
-    const upstreamUrlResolver = async (): Promise<string> => {
-      if (!musicSourceManager.isInitialized()) {
-        await musicSourceManager.initialize()
-      }
-      return musicSourceManager.getMusicUrl(musicInfo as MusicInfo, quality)
-    }
-
-    const rangeHeader = request.headers.get('range')
-    const response = await audioServe.serve({
-      cacheKey,
-      upstreamUrlResolver,
-      rangeHeader,
+    const response = await serveMusicAudio({
+      musicInfo, quality,
+      rangeHeader: request.headers.get('range'),
       isHead: request.method === 'HEAD',
-      intervalSec: parseIntervalToSeconds((musicInfo as MusicInfo).interval),
-      onCached: () => cacheNativeLyricForMusic(musicInfo as MusicInfo),
     })
 
     // Subsonic 客户端期望失败时返回 XML 错误。
     // audioServe 的错误响应（503/502/416）对原生 <audio> 是正确的，
     // 这里仅对非音频错误响应包一层 XML，避免破坏 Subsonic 协议语义。
     const ct = response.headers.get('content-type') || ''
-    if (response.status >= 400 && (ct.includes('application/json') || ct === '')) {
+    if (response.status >= 400 && response.status !== 416 && (ct.includes('application/json') || ct === '')) {
       const body = await response.text().catch(() => '')
       return subsonicError(request, 0, `Stream failed: ${response.status} ${body.slice(0, 200)}`)
     }

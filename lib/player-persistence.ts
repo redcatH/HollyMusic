@@ -81,7 +81,7 @@ export function syncPlayerPreferences(): () => void {
       if (event.storageArea !== window.localStorage) return
       const preferences = playerPreferencesStorage.read() ?? DEFAULT_PLAYER_PREFERENCES
       usePlayerStore.getState().setPlaybackMode(preferences.playbackMode)
-      usePlayerStore.setState(preferences)
+      usePlayerStore.setState({ ...preferences, preferSurround: preferences.preferSurround ?? false })
     } catch { /* 浏览器禁用存储时仍可操作播放器。 */ }
   }
   window.addEventListener('storage', onStorage)

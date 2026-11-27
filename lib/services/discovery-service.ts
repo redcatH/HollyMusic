@@ -3,6 +3,7 @@ import he from 'he'
 import { searchCache } from '@/lib/cache-manager'
 import { getStorageSongmidForMusicInfo, upsertMusicInfosInTransaction } from '@/lib/db'
 import { logger } from '@/lib/logger'
+import { neteaseExtendedQualities, qqExtendedQualities } from '@/lib/platform-qualities'
 import type { MusicInfo, QualityInfo, QualityType, Song } from '@/lib/types/music'
 import { collectCollectionPages } from './paged-collection'
 
@@ -79,6 +80,7 @@ type QQFile = {
   size_320mp3?: number
   size_flac?: number
   size_hires?: number
+  size_new?: number[]
 }
 type QQSong = {
   id?: number
@@ -255,6 +257,10 @@ function toMusicInfo(song: QQSong): MusicInfo | null {
   addQuality('320k', song.file?.size_320mp3)
   addQuality('flac', song.file?.size_flac)
   addQuality('flac24bit', song.file?.size_hires)
+  for (const quality of qqExtendedQualities(song.file?.size_new)) {
+    types.push(quality)
+    qualityMap[quality.type] = quality
+  }
 
   return {
     name: song.name || song.title || '',
@@ -301,6 +307,7 @@ function toWyMusicInfo(raw: {
   pc?: { ar?: string; sn?: string; alb?: string }
   dt?: number; duration?: number
   l?: WyQuality; h?: WyQuality; sq?: WyQuality; hr?: WyQuality
+  je?: WyQuality; jm?: WyQuality; db?: WyQuality
   lMusic?: WyQuality; bMusic?: WyQuality; hMusic?: WyQuality; sqMusic?: WyQuality; hrMusic?: WyQuality
 }): MusicInfo | null {
   const name = raw.pc?.sn || raw.name
@@ -319,7 +326,10 @@ function toWyMusicInfo(raw: {
   add('128k', raw.l?.size || raw.lMusic?.size || raw.bMusic?.size)
   add('320k', raw.h?.size || raw.hMusic?.size)
   add('flac', raw.sq?.size || raw.sqMusic?.size)
-  add('flac24bit', raw.hr?.size || raw.hrMusic?.size)
+  for (const quality of neteaseExtendedQualities({ ...raw, hr: raw.hr ?? raw.hrMusic })) {
+    types.push(quality)
+    qualityMap[quality.type] = quality
+  }
   return {
     name,
     singer: raw.pc?.ar || artists.map(item => item.name || '').filter(Boolean).join('、') || '未知歌手',
@@ -1327,7 +1337,7 @@ const toplistFetchers = { tx: getTxToplistDetail, wy: getWyToplistDetail, kw: ge
 
 export async function getToplistDetail(source: DiscoverySource, id: string): Promise<DiscoveryCollectionDetail | null> {
   if (!getBoards(source).some(board => board.id === id)) return null
-  const key = `discovery:v3:${source}:toplist:${id}`
+  const key = `discovery:v4:${source}:toplist:${id}`
   const cached = getCached<DiscoveryCollectionDetail>(key)
   if (cached) return cached
   const existing = pendingToplists.get(key)
@@ -1386,7 +1396,7 @@ export async function getRecommendedPlaylists(source: DiscoverySource = 'tx', li
 }
 
 export async function getRecommendedPlaylistDetail(source: DiscoverySource, id: string): Promise<DiscoveryCollectionDetail | null> {
-  const cacheKey = `discovery:v3:${source}:playlist:${id}`
+  const cacheKey = `discovery:v4:${source}:playlist:${id}`
   const cached = getCached<DiscoveryCollectionDetail>(cacheKey)
   if (cached) return cached
   if (source === 'wy') {

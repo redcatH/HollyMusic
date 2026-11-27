@@ -43,6 +43,7 @@ let resolveResult: { songmid: string; source: 'kw'; name: string; singer: string
 }
 
 vi.mock('@/lib/db', () => ({
+  getStorageSongmidForMusicInfo: (song: { songmid: string }) => song.songmid,
   resolveMusicInfoById: vi.fn(async (uid: string) => {
     if (uid === 'not-found') return null
     return resolveResult
@@ -162,7 +163,7 @@ describe('GET /api/download (uid 模式)', () => {
     await GET(req)
     expect(serveSpy).toHaveBeenCalledTimes(1)
     const arg = serveSpy.mock.calls[0][0]
-    expect(arg.cacheKey).toBe('kw:196030664:320k')
+    expect(arg.cacheKey).toBe('audio-v2:kw:196030664:320k')
   })
 
   it('无 Range 请求 → serve 收到 rangeHeader=null（普通下载，交付完整 200）', async () => {

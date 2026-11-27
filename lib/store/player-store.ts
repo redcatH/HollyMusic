@@ -8,7 +8,8 @@ import { create } from 'zustand'
 import { toTrack, type Track, type PlaybackMode } from '@/lib/types/player'
 import type { QualityType } from '@/lib/types/music'
 import { buildAudioUrl, getTrackByUid } from '@/lib/api/music'
-import { resolveQuality, nextLowerQuality, VALID_QUALITIES } from '@/lib/quality-options'
+import { resolveQuality, nextLowerQuality, QUALITY_ORDER, isQuality } from '@/lib/quality-options'
+import { PLAYBACK_AUDIO_SPEC_HEADER, PLAYBACK_QUALITY_HEADER } from '@/lib/playback-protocol'
 import { detectCodecCap, capQuality } from '@/lib/codec-support'
 import { reportPlay } from '@/lib/api/history'
 import { useAuthStore } from '@/hooks/useAuth'
@@ -42,6 +43,7 @@ const DEGRADABLE_ERR_CODES = new Set([3, 4])
 let sleepTimerHandle: ReturnType<typeof setTimeout> | null = null
 const SLEEP_STEPS = [15, 30, 45, 60] // 分钟
 let streamRequestId = 0
+let streamSelection: AbortController | null = null
 let playbackCommandId = 0
 
 interface PlayerStore {
@@ -76,11 +78,13 @@ interface PlayerStore {
   playbackMode: PlaybackMode
   /** 当前播放音质（持久化到 localStorage） */
   quality: QualityType
+  preferSurround?: boolean
   keepScreenAwake: boolean
   /** 系统实际授权状态；不持久化。 */
   wakeLockStatus: 'idle' | 'active' | 'released' | 'unsupported' | 'error'
   /** 当前歌曲实际播放音质（loadStreamUrl 时由 resolveQuality 算出，不持久化；无曲目时 null） */
   effectiveQuality: QualityType | null
+  effectiveAudioSpec?: string | null
   /** 浏览器原生解码能力上限（启动 canPlayType 探测得出）。
    *  loadStreamUrl 会用它再压一遍音质，避免请求已知解不了的高音质格式。仅内存，不持久化：
    *  浏览器更新后下次启动重新探测即可恢复。 */
@@ -117,6 +121,7 @@ interface PlayerStore {
   cyclePlaybackMode: () => void
   setPlaybackMode: (mode: PlaybackMode) => void
   setQuality: (q: QualityType) => void
+  setPreferSurround: (enabled: boolean) => void
   setKeepScreenAwake: (enabled: boolean) => void
 
   next: () => void
@@ -204,6 +209,9 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
   },
 
   loadStreamUrl: async (track, forceQuality?, options?) => {
+    streamSelection?.abort()
+    const selection = new AbortController()
+    streamSelection = selection
     const requestId = ++streamRequestId
     const commandId = playbackCommandId
     const seekNonce = get().seekNonce
@@ -214,8 +222,12 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     // forceQuality：解码失败降级重试时强制指定（绕过用户偏好），见 handleTrackError。
     // codecCap：浏览器能力上限（启动 canPlayType 探测），把已知解不了的格式压掉，
     //          避免对不支持 FLAC 的浏览器反复请求 FLAC。
-    const resolved = forceQuality ?? track.playback?.quality ?? resolveQuality(get().quality, track.musicInfo.types)
-    const eff = capQuality(resolved, get().codecCap)
+    const preference = get().quality
+    const resolved = forceQuality ?? track.playback?.quality ?? (preference === 'master' ? preference : resolveQuality(preference, track.musicInfo.types))
+    let eff = capQuality(resolved, get().codecCap)
+    const surround = !forceQuality && !track.playback?.quality && get().preferSurround === true
+      && capQuality('atmos_plus', get().codecCap) === 'atmos_plus'
+    const preferredLocal = surround ? 'atmos_plus' : eff
     const auth = useAuthStore.getState()
     const localPlayback = track.playback?.source === 'local'
     const offline = !!(localPlayback || options?.offline || auth.offlineUsername || (typeof navigator !== 'undefined' && !navigator.onLine))
@@ -223,10 +235,26 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     let local: Awaited<ReturnType<typeof getOfflineAudio>> = null
     try {
       // uid 包含渠道与歌曲 ID；在线仅命中相同音质，离线保留可播放音质回退。
-      if (username) local = await getOfflineAudio(username, track.uid, eff,
-        offline && !localPlayback ? VALID_QUALITIES.filter(q => capQuality(q, get().codecCap) === q
-          && (!forceQuality || VALID_QUALITIES.indexOf(q) <= VALID_QUALITIES.indexOf(forceQuality))) : [eff])
+      if (username) local = await getOfflineAudio(username, track.uid, preferredLocal,
+        offline && !localPlayback ? [...(surround ? ['atmos_plus' as const] : []), ...QUALITY_ORDER.filter(q => capQuality(q, get().codecCap) === q
+          && (q !== 'master' || eff === 'master')
+          && (!forceQuality || QUALITY_ORDER.indexOf(q) >= QUALITY_ORDER.indexOf(forceQuality)))] : [preferredLocal])
     } catch { /* 在线读取失败继续请求服务端；离线时显示未缓存。 */ }
+    let streamUrl = buildAudioUrl(track.uid, eff, { surround })
+    let effectiveAudioSpec: string | null = null
+    if (!local && !offline && !selection.signal.aborted && typeof window !== 'undefined') {
+      try {
+        const signal = AbortSignal.any([selection.signal, AbortSignal.timeout(27_000)])
+        const response = await fetch(streamUrl, { method: 'HEAD', cache: 'no-store', signal })
+        const selected = response.headers.get(PLAYBACK_QUALITY_HEADER)
+        if (response.ok && isQuality(selected)) {
+          eff = selected
+          effectiveAudioSpec = response.headers.get(PLAYBACK_AUDIO_SPEC_HEADER)
+          streamUrl = buildAudioUrl(track.uid, eff, { exact: true })
+        }
+      } catch { /* 仍可由原生媒体加载和重试。 */ }
+    }
+    if (streamSelection === selection) streamSelection = null
     const currentAuth = useAuthStore.getState()
     if (requestId !== streamRequestId || get().currentTrack?.uid !== track.uid
       || username !== (currentAuth.offlineUsername ?? currentAuth.username)) {
@@ -237,7 +265,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     const autoplay = commandId === playbackCommandId ? options?.autoplay ?? true : get().isPlaying
     const startTime = seekNonce === get().seekNonce ? options?.startTime ?? 0 : get().currentTime
     if (local) {
-      set({ streamUrl: local.url, streamNonce: get().streamNonce + 1, effectiveQuality: local.quality,
+      set({ streamUrl: local.url, streamNonce: get().streamNonce + 1, effectiveQuality: local.quality, effectiveAudioSpec: null,
         seekTarget: null, currentTime: startTime, isFetchingUrl: false,
         isPlaying: autoplay, bufferProgress: null, urlFetchError: null })
       return
@@ -247,11 +275,12 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
       return
     }
     set({
-      streamUrl: buildAudioUrl(track.uid, eff),
+      streamUrl,
       streamNonce: get().streamNonce + 1,
       seekTarget: null,
       currentTime: startTime,
       effectiveQuality: eff,
+      effectiveAudioSpec,
       isFetchingUrl: false,
       isPlaying: autoplay,
       bufferProgress: null,
@@ -317,7 +346,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
       // 音频错误会上报暂停；仅后续用户命令可以改变恢复时的播放意图。
       const autoplay = commandId === playbackCommandId ? wasPlaying : get().isPlaying
       if (local) {
-        set({ streamUrl: local.url, streamNonce: get().streamNonce + 1, effectiveQuality: local.quality,
+        set({ streamUrl: local.url, streamNonce: get().streamNonce + 1, effectiveQuality: local.quality, effectiveAudioSpec: null,
           seekTarget: null, isFetchingUrl: false, isPlaying: autoplay, bufferProgress: null, urlFetchError: null })
         return
       }
@@ -330,7 +359,8 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     // 降到最低档仍失败，才走下面的跳歌逻辑。网络错误(2)不降级（换格式无意义）。
     if (errCode !== undefined && DEGRADABLE_ERR_CODES.has(errCode)) {
       const { currentTrack, effectiveQuality } = get()
-      const lower = effectiveQuality ? nextLowerQuality(effectiveQuality) : null
+      const lower = effectiveQuality === 'atmos_plus' || effectiveQuality === 'atmos'
+        ? get().quality : effectiveQuality ? nextLowerQuality(effectiveQuality) : null
       if (currentTrack && lower) {
         // ponytail: 只对当前歌曲降级重试，不再全局下调 codecCap。
         // errCode 3/4 多是单首音源坏数据 / 网络截断 / 服务端返回非音频，而非浏览器能力不足；
@@ -339,7 +369,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
         logger.warn(
           `[player] 解码失败(err=${errCode})，${effectiveQuality} → ${lower} 降级重试：${currentTrack.name}`
         )
-        get().loadStreamUrl(currentTrack, lower, { startTime: get().currentTime })
+        await get().loadStreamUrl(currentTrack, lower, { startTime: get().currentTime })
         return
       }
     }
@@ -371,10 +401,16 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     get().setPlaybackMode(modes[(modes.indexOf(get().playbackMode) + 1) % modes.length])
   },
   setQuality: (q) => {
+    if (!QUALITY_ORDER.includes(q)) return
     set({ quality: q })
     // 切音质需重建 streamUrl（不同音质独立缓存键）
-    const { currentTrack, streamUrl, currentTime, isPlaying } = get()
-    if (currentTrack && streamUrl) void get().loadStreamUrl(currentTrack, undefined, { startTime: currentTime, autoplay: isPlaying })
+    const { currentTrack, streamUrl, isFetchingUrl, currentTime, isPlaying } = get()
+    if (currentTrack && (streamUrl || isFetchingUrl)) void get().loadStreamUrl(currentTrack, undefined, { startTime: currentTime, autoplay: isPlaying })
+  },
+  setPreferSurround: (enabled) => {
+    set({ preferSurround: enabled })
+    const { currentTrack, streamUrl, isFetchingUrl, currentTime, isPlaying } = get()
+    if (currentTrack && (streamUrl || isFetchingUrl)) void get().loadStreamUrl(currentTrack, undefined, { startTime: currentTime, autoplay: isPlaying })
   },
 
   next: () => {
@@ -509,7 +545,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
 usePlayerStore.subscribe((state, previous) => {
   if (state.volume === previous.volume && state.isMuted === previous.isMuted
     && state.playbackMode === previous.playbackMode && state.quality === previous.quality
-    && state.keepScreenAwake === previous.keepScreenAwake) return
-  const { volume, isMuted, playbackMode, quality, keepScreenAwake } = state
-  playerPreferencesStorage.write({ volume, isMuted, playbackMode, quality, keepScreenAwake })
+    && state.keepScreenAwake === previous.keepScreenAwake && state.preferSurround === previous.preferSurround) return
+  const { volume, isMuted, playbackMode, quality, keepScreenAwake, preferSurround } = state
+  playerPreferencesStorage.write({ volume, isMuted, playbackMode, quality, keepScreenAwake, preferSurround })
 })

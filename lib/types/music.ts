@@ -3,7 +3,7 @@
  */
 
 // 音质类型
-export type QualityType = '128k' | '320k' | 'flac' | 'flac24bit'
+export type QualityType = '128k' | '320k' | 'flac' | 'flac24bit' | 'master' | 'atmos' | 'atmos_plus'
 
 // 音源类型
 export type SourceType = 'kw' | 'kg' | 'tx' | 'wy' | 'mg'
@@ -12,6 +12,7 @@ export type SourceType = 'kw' | 'kg' | 'tx' | 'wy' | 'mg'
 export interface QualityInfo {
   type: QualityType
   size: string
+  sizeBytes?: number
   hash?: string
 }
 
@@ -26,7 +27,7 @@ export interface MusicInfo {
   interval: string
   img?: string | null
   types: QualityInfo[]
-  _types: Record<QualityType, Partial<QualityInfo>>
+  _types: Partial<Record<QualityType, Partial<QualityInfo>>>
   typeUrl: Record<string, string>
   // 特定音源的额外字段
   hash?: string // kg
