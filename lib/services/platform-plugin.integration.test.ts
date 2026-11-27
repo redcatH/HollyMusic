@@ -100,68 +100,24 @@ it('上传接口直接启用多平台功能，换版后拒绝旧游标并支持�
   expect((await search.searchSongs('qs', '样本', 1, 30)).list[0].name).toBe('原版 qs')
 }, 30000)
 
-it('汽水示例保留其他包的绑定，可选测试和手动切换不互相阻塞', async () => {
-  const content = await readFile('examples/platform-plugins/qishui.js', 'utf8')
-  const { revision: previous } = await admin.uploadPlatformPlugin(packageSource('1.0.0', '原版'), 1)
-  const { revision, activeCount, conflicts } = await admin.uploadPlatformPlugin(content, 1)
-  expect(revision.manifest.platforms[0]).toMatchObject({ id: 'qs', capabilities: expect.arrayContaining(['getRadioTracks', 'searchSongs']) })
-  expect(revision.tests).toEqual({})
-  expect(conflicts).toEqual([{ platform: 'qs', capability: 'searchSongs' }])
-  expect(activeCount).toBe(revision.manifest.platforms[0].capabilities.length - 1)
-  expect(await catalog.getPluginBinding('qs', 'searchSongs')).toBe(previous.id)
-  expect(await catalog.getPluginBinding('qs', 'listPlaylistCategories')).toBe(revision.id)
-  expect(await catalog.getPluginBinding('qs', 'listPlaylists')).toBe(revision.id)
-  expect(await admin.testPlatformPlugin({ revisionId: revision.id, platform: 'qs', capability: 'listPlaylistCategories' })).toMatchObject({ ok: true, count: 5 })
-  await expect(admin.changePluginBindings({ requestId: 'undeclared', changes: [
-    { platform: 'tx', capability: 'getRadioTracks', before: null, after: revision.id },
-  ] }, 1)).rejects.toThrow('此版本未声明对应功能')
-  await admin.changePluginBindings({ requestId: 'manual-switch', changes: [
-    { platform: 'qs', capability: 'searchSongs', before: previous.id, after: revision.id },
-  ] }, 1)
-  expect(await catalog.getPluginBinding('qs', 'searchSongs')).toBe(revision.id)
-}, 15000)
-
-it('汽水歌单插件从封面三元组拼出图片，兼容现成地址和不完整数据', async () => {
+it('离线 demo 插件覆盖导入、按需测试和多项目录能力', async () => {
   const { runPlatformJob } = createRequire(import.meta.url)('../source-testing/platform-plugin.cjs')
-  const content = await readFile('examples/platform-plugins/qishui.js', 'utf8')
-  const root = 'https://p3-luna.douyinpic.com/img/'
-  const artwork = {
-    uri: 'ies-music/pgc_cover_fixture',
-    urls: [root, 'https://p6-luna.douyinpic.com/img/'],
-    template_prefix: 'tplv-fixture',
-  }
-  const expected = `${root}${artwork.uri}~tplv-fixture-resize:480:480.webp`
-  const direct = 'https://p6-luna.douyinpic.com/img/full-cover.webp'
-  const playlist = { id: '101', title: '歌单测试', url_cover: artwork }
-  const resource = (item: object) => ({ entity: { playlist: item } })
-  const run = (capability: string, body: object) => runPlatformJob({
-    action: 'platformCall', content, platform: 'qs', capability, input: { limit: 12, id: '101', keyword: '样本' },
-  }, (_url: string, _options: unknown, respond: (error: null, result: { statusCode: number; body: object }) => void) => {
-    respond(null, { statusCode: 200, body })
+  const content = await readFile('examples/platform-plugins/demo-catalog.js', 'utf8')
+  const { revision, activeCount, conflicts } = await admin.uploadPlatformPlugin(content, 1)
+  expect(revision.manifest.platforms[0]).toMatchObject({ id: 'demo', capabilities: expect.arrayContaining(['getPlaylist', 'searchSongs']) })
+  expect(revision.tests).toEqual({})
+  expect(conflicts).toEqual([])
+  expect(activeCount).toBe(revision.manifest.platforms[0].capabilities.length)
+  expect(await admin.testPlatformPlugin({ revisionId: revision.id, platform: 'demo', capability: 'searchSongs', sample: '示例' })).toMatchObject({
+    ok: true, count: 2, sampleId: 'demo-song-1',
   })
+  expect(await admin.testPlatformPlugin({ revisionId: revision.id, platform: 'demo', capability: 'listPlaylistCategories' })).toMatchObject({ ok: true, count: 2 })
 
-  const recommended = await run('listPlaylists', { inner_block: [{ resources: [
-    resource(playlist),
-    resource({ ...playlist, id: '102', url_cover: { urls: [root, direct] } }),
-    resource({ ...playlist, id: '103', url_cover: { urls: [root] }, cover_url: direct }),
-    resource({ ...playlist, id: '104', url_cover: { urls: [root] } }),
-  ] }] })
-  expect(recommended.items.map((item: { cover: string }) => item.cover)).toEqual([expected, direct, direct, ''])
-
-  const searched = await run('searchPlaylists', { result_groups: [{ id: 'playlists', data: [resource(playlist)] }] })
-  expect(searched.items[0].cover).toBe(expected)
-  const details = await run('getPlaylist', { playlist, media_resources: [
-    { entity: { track_wrapper: { track: { id: '123', title: '测试歌曲', album: { url_cover: artwork } } } } },
-  ] })
-  expect(details.collection.cover).toBe(expected)
-  expect(details.items[0].cover).toBe(expected)
-
-  const chart = await run('getChart', { chart: { id: '201', title: '榜单测试', track_ranks: [], style: { bg_url: artwork } } })
-  expect(chart.collection.cover).toBe(expected)
-  const radio = await run('listRadioStations', { blocks: [{ inner_block: [{
-    type: 'discover_radio', title: '电台测试', inner_block_id: '301', resources: [{ style: { cover_url_list: [artwork] } }],
-  }] }] })
-  expect(radio.items[0].cover).toBe(expected)
+  const result = await runPlatformJob({
+    action: 'platformCall', content, platform: 'demo', capability: 'getPlaylist', input: { id: 'demo-playlist-1', limit: 12 },
+  }, () => { throw new Error('离线 demo 不应发起网络请求') })
+  expect(result).toMatchObject({ collection: { id: 'demo-playlist-1', cover: 'https://example.com/demo-playlist.webp' } })
+  expect(result.items).toHaveLength(2)
 })
 
 it('可以删除单个版本或整个插件，并保留其他包和安全的变更记录', async () => {

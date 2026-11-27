@@ -1,8 +1,8 @@
 # 平台插件开发指南
 
-[返回项目首页](../README.md) · [汽水音乐完整示例](../examples/platform-plugins/qishui.js) · [平台插件架构](platform-plugins-design.md)
+[返回项目首页](../README.md) · [离线 demo 插件](../examples/platform-plugins/demo-catalog.js) · [平台插件架构](platform-plugins-design.md)
 
-平台插件从 `v0.33.0-preview.3` 起可用，用于为搜索、发现和 Subsonic `search3` 提供目录数据。歌曲 ID 应与播放音源约定一致，实际播放和下载由已启用的兼容 LX 音源提供。
+平台插件从 `v0.33.0-preview.3` 起可用，用于为搜索、发现和 Subsonic `search3` 提供目录数据。歌曲 ID 应与播放音源约定一致，实际播放和下载由已启用的兼容 LX 音源提供。仓库只提供离线 demo，不包含真实平台适配脚本。
 
 ## 编写第一个插件
 
@@ -72,7 +72,7 @@ holly.register({
 | 分类 | `id`、`name` | |
 
 - 条目 `id` 是 1–128 字符的字符串，可用英文字母、数字、下划线、点、冒号及连字符。`qs` 的歌曲 ID 只接受 1–24 位数字字符串。处理长数字 ID 时，从上游读取并保留字符串，避免 JavaScript `Number` 丢失精度。
-- `durationMs` 使用整数毫秒。`cover` 使用完整的 HTTPS 图片地址。上游拆分域名、路径或模板时，先在插件内拼出完整地址，参考[汽水音乐示例](../examples/platform-plugins/qishui.js)。
+- `durationMs` 使用整数毫秒。`cover` 使用完整的 HTTPS 图片地址。上游拆分域名、路径或模板时，先在插件内拼出完整地址，参考[离线 demo](../examples/platform-plugins/demo-catalog.js)。
 - `qualities` 接受音质字符串，如 `['320k', 'flac']`，也可传 `{ type, size?, sizeBytes?, hash? }` 对象。支持 `128k`、`320k`、`flac`、`flac24bit`（可写 `hires`）、`master`、`atmos`、`atmos_plus`。仅填写上游已确认的档位，未知时省略。取流时会再结合已启用音源支持的档位。
 - 部分 LX 音源还需要 `hash`、`strMediaMid`、`albumMid`、`albumAudioId`、`copyrightId` 或 `upstreamSongId`。根据目标平台和音源填写对应的上游原值。[完整字段契约](../lib/server/platform-plugin-contract.ts)
 
@@ -98,6 +98,8 @@ const page = await request('https://api.example.com/playlist', {
 2. 展开「功能测试（可选）」，先测单曲或歌单搜索。演示脚本使用关键词「示例」。上游返回合法空页时，普通页面会显示无结果，后台功能测试会提示更换样本。
 3. 测试歌单、榜单或电台详情时，先测试相应列表，页面会自动填入第一个条目的 ID。再到搜索和发现页验证结果、封面和翻页。有播放需求时，在「音源管理」用真实歌曲验证音源取流。
 4. 修改脚本后递增 `version` 并重新导入。在同一包的新版中移除的功能会停用。需要恢复时，可在变更记录回滚仍保留的版本。删除插件或版本后，如需恢复该文件，请重新导入。
+
+真实平台适配涉及平台条款、数据来源和音频版权。请自行确认授权并在你的部署环境中维护脚本，不要把真实平台密钥、接口脚本或用户凭据提交到公共仓库。
 
 | 现象 | 检查项 |
 | --- | --- |
