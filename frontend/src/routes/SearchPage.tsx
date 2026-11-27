@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useSearch } from '@/hooks/useSearch'
+import { usePlatforms } from '@/hooks/usePlatforms'
 import { useSearchStore } from '@/lib/store/search-store'
 import { SongList } from '@/components/shared/SongList'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
@@ -9,16 +10,12 @@ import { Search, Music, X, CloudOff, Loader2 } from 'lucide-react'
 import { toTrack } from '@/lib/types/player'
 import type { SourceType } from '@/lib/types/music'
 
-const SOURCES: { value: SourceType | 'all'; label: string }[] = [
-  { value: 'all', label: '全部平台' },
-  { value: 'tx', label: 'QQ' },
-  { value: 'wy', label: '网易' },
-  { value: 'kw', label: '酷我' },
-  { value: 'kg', label: '酷狗' },
-  { value: 'mg', label: '咪咕' },
-]
+const LABELS: Record<string, string> = { tx: 'QQ', wy: '网易', kw: '酷我', kg: '酷狗', mg: '咪咕', qs: '汽水' }
 
 export function SearchPage() {
+  const platforms = usePlatforms()
+  const searchPlatforms = useMemo(() => platforms.filter(item => item.capabilities.includes('searchSongs')), [platforms])
+  const SOURCES = useMemo(() => [{ value: 'all', label: '全部平台' }, ...searchPlatforms.map(item => ({ value: item.id, label: LABELS[item.id] ?? item.name }))], [searchPlatforms])
   // keyword/source/results/loading 全部来自 search-store（外部状态）：
   // 离开搜索页再回来时输入框与结果都保留。
   const { results, loading, pendingSources, error, keyword, lastKeyword, source, lastSource,
@@ -39,18 +36,19 @@ export function SearchPage() {
     initialized.current = true
     const query = (searchParams.get('q') || '').trim()
     const selected = SOURCES.find(item => item.value === searchParams.get('source'))?.value ?? 'all'
+    const ids = searchPlatforms.map(item => item.id)
     state.setKeyword(memoryDraft.current?.keyword ?? query)
     state.setSource(memoryDraft.current?.source ?? selected)
     memoryDraft.current = null
-    if (state.lastKeyword !== query || state.lastSource !== selected) void state.run(query, selected)
-  }, [searchParams, setSearchParams])
+    if (state.lastKeyword !== query || state.lastSource !== selected || (selected === 'all' && state.activeSources.join(',') !== ids.join(','))) void state.run(query, selected, ids)
+  }, [SOURCES, searchPlatforms, searchParams, setSearchParams])
 
   const commitSearch = (query: string, selected: SourceType | 'all') => {
     const trimmed = query.trim()
     setKeyword(trimmed)
     setSource(selected)
     if (searchParams.get('q') === trimmed && (searchParams.get('source') || 'all') === selected) {
-      void run(trimmed, selected)
+      void run(trimmed, selected, searchPlatforms.map(item => item.id))
     } else setSearchParams({ q: trimmed, source: selected })
   }
 
@@ -149,7 +147,7 @@ export function SearchPage() {
       ) : tracks.length > 0 ? (
         <>
           <p className="mb-3 text-xs text-muted-foreground">已加载 {tracks.length} 首</p>
-          <SongList tracks={tracks} refreshQualities={false} />
+          <SongList tracks={tracks} refreshQualities={false} unavailablePlatforms={searchPlatforms.filter(item => item.playable === false).map(item => item.id)} />
         </>
       ) : lastKeyword ? (
         // 用 lastKeyword（最近一次搜索的词）而非输入框实时文本：

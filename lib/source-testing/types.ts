@@ -1,11 +1,15 @@
 import type { MusicInfo, QualityType, SourceConfig, SourceType } from '@/lib/types/music'
 import { QUALITY_ORDER, SURROUND_QUALITIES } from '@/lib/quality-options'
 
-export const TEST_PLATFORMS = ['tx', 'wy', 'kw', 'kg', 'mg'] as const
+export const TEST_PLATFORMS: readonly string[] = ['tx', 'wy', 'kw', 'kg', 'mg', 'qs']
 export const TEST_QUALITIES: QualityType[] = [...QUALITY_ORDER, ...SURROUND_QUALITIES]
-export const PLATFORM_NAMES: Record<SourceType, string> = { tx: '腾讯', wy: '网易', kw: '酷我', kg: '酷狗', mg: '咪咕' }
+export const PLATFORM_NAMES: Record<SourceType, string> = { tx: '腾讯', wy: '网易', kw: '酷我', kg: '酷狗', mg: '咪咕', qs: '汽水' }
 export type TestSamples = Partial<Record<SourceType, MusicInfo>>
 export type TestCapability = Partial<Record<SourceType, QualityType[]>>
+
+export function canTestSampleQuality(song: MusicInfo | undefined, quality: QualityType): boolean {
+  return !!song && (Object.hasOwn(song._types, quality) || (song.source === 'qs' && !song.types.length))
+}
 export interface AudioFacts {
   codec: string | null; duration: number | null; sampleRate: number | null
   bitsPerSample: number | null; bitrate: number | null; lossless: boolean | null; channels: number | null

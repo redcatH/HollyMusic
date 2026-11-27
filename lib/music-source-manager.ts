@@ -14,6 +14,7 @@ import { decodeLyricEntities } from './server/lyric-decode'
 import { normalizeStructuredLyricText } from './server/lyric-normalize'
 import { QUALITY_ORDER } from './quality-options'
 import { enrichAudioDetails } from './server/platform-audio-details'
+import { describePlaybackError, PlaybackError } from './server/playback-diagnostics'
 
 export interface ResolvedMusicUrl {
   url: string
@@ -287,6 +288,7 @@ class MusicSourceManager {
     qualities: readonly QualityType[],
     validate?: (candidate: ResolvedMusicUrl) => Promise<void>,
     signal?: AbortSignal,
+    requestId?: string,
   ): Promise<ResolvedMusicUrl> {
     // 在获取 URL 时检查配置是否变更
     if (this.initialized && this.checkConfigChanged()) {
@@ -308,21 +310,25 @@ class MusicSourceManager {
 
       availableInstances = this.instances.filter(i => i.initialized)
       if (availableInstances.length === 0) {
-        throw new Error('没有可用的音源')
+        throw new PlaybackError('NO_SOURCE', '没有可用的音源')
       }
     }
 
     const deadline = Date.now() + this.musicUrlTotalTimeoutMs
+    let failureCode = 'QUALITY_NOT_DECLARED'
     outer: for (const quality of qualities) {
       let enriched: MusicInfo | undefined
+      let declared = false
       for (const instance of availableInstances) {
         if (!this.isAllowedByPt(instance, musicInfo.source)) continue
         const config = instance.sourceInfo?.sources[musicInfo.source]
         if (!config?.actions.includes('musicUrl')) continue
         const aliases = quality === 'flac24bit' ? ['flac24bit', 'hires'] : [quality]
         for (const token of aliases.filter(item => config.qualitys.includes(item))) {
+          declared = true
           signal?.throwIfAborted()
           if (Date.now() >= deadline) break outer
+          let stage = 'source-url'
           try {
             enriched ??= validate ? await enrichAudioDetails(musicInfo, quality) : musicInfo
             signal?.throwIfAborted()
@@ -338,25 +344,41 @@ class MusicSourceManager {
               Math.min(this.musicUrlTimeoutMs, remaining),
               '获取音频地址超时',
             )
-            if (typeof url !== 'string' || !url.trim() || !isTrustworthyUrl(url)) continue
+            if (typeof url !== 'string' || !url.trim()) {
+              throw new PlaybackError('EMPTY_SOURCE_URL', '音源未返回可用链接')
+            }
+            if (!isTrustworthyUrl(url)) {
+              throw new PlaybackError('INVALID_SOURCE_URL', '音源返回的链接未通过地址检查')
+            }
             signal?.throwIfAborted()
             const candidate = { url, quality, script: instance.config.name }
-            if (validate) await validate(candidate)
+            if (validate) {
+              stage = 'audio-probe'
+              await validate(candidate)
+            }
             return candidate
           } catch (error) {
+            const detail = error instanceof PlaybackError ? error : undefined
+            failureCode = detail?.code ?? (stage === 'source-url' ? 'SOURCE_URL_FAILED' : 'AUDIO_PROBE_FAILED')
+            logger.warn('[playback] 音源候选失败', {
+              requestId, source: musicInfo.source, songmid: musicInfo.songmid, quality, token,
+              script: describePlaybackError(instance.config.name).message, stage, code: failureCode,
+              ...detail?.details, ...describePlaybackError(detail?.cause ?? error),
+            })
             signal?.throwIfAborted()
-            logger.debug('音源候选失败', { source: musicInfo.source, quality, script: instance.config.name,
-              reason: error instanceof Error ? error.name : '上游失败' })
           }
         }
       }
+      if (!declared) logger.debug('[playback] 音源未声明该档位', {
+        requestId, source: musicInfo.source, songmid: musicInfo.songmid, quality,
+      })
     }
 
     // 所有音源都失败
     if (Date.now() > deadline) {
-      throw new Error('无法获取播放链接: 所有音源均失败（总超时）')
+      throw new PlaybackError('SOURCE_TIMEOUT', '无法获取播放链接: 所有音源均失败（总超时）')
     }
-    throw new Error(`无法获取播放链接: 所有音源均失败 (歌曲: ${musicInfo.name})`)
+    throw new PlaybackError(failureCode, '无法获取播放链接: 所有音源均失败')
   }
 
   /**
@@ -543,6 +565,15 @@ class MusicSourceManager {
    */
   isInitialized(): boolean {
     return this.initialized
+  }
+
+  async getPlayablePlatforms(platforms: string[]): Promise<Set<string>> {
+    if (this.initialized && this.checkConfigChanged()) this.resetInstances()
+    await this.initialize()
+    return new Set(platforms.filter(platform => this.instances.some(instance => {
+      const config = instance.sourceInfo?.sources[platform]
+      return instance.initialized && this.isAllowedByPt(instance, platform) && config?.actions.includes('musicUrl')
+    })))
   }
 
   /**

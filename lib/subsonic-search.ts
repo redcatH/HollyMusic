@@ -10,14 +10,15 @@ import { getSearchCacheTTL } from '@/lib/cache-config'
 import { getSearchSources } from '@/lib/search-config'
 import type { AuthResult } from '@/lib/auth'
 import { listHistory } from '@/lib/services/history-service'
+import { BUILTIN_PLATFORM_IDS } from '@/lib/platform-plugins'
+import { getPluginPage, getPluginSearchBindings } from '@/lib/services/platform-catalog'
+import { parseIntervalToSeconds } from '@/lib/types/player'
 // song id 统一使用 `source-songmid` 复合格式，保证跨源唯一
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 /** Subsonic 搜索前缀所支持的内置渠道。 */
-export const SUBSONIC_SEARCH_SOURCES = ['tx', 'wy', 'kw', 'kg', 'mg'] as const
-
-type SubsonicSearchSource = typeof SUBSONIC_SEARCH_SOURCES[number]
+export const SUBSONIC_SEARCH_SOURCES = [...BUILTIN_PLATFORM_IDS, 'qs'] as const
 
 /**
  * 解析 Subsonic 搜索关键词中的渠道前缀。
@@ -25,16 +26,16 @@ type SubsonicSearchSource = typeof SUBSONIC_SEARCH_SOURCES[number]
  * 例如 `tx:风说` 会转换为 QQ 音乐渠道和实际关键词 `风说`。未识别的
  * 前缀保持原样，继续执行原有的多渠道聚合搜索，避免改变普通歌曲名的行为。
  */
-export function parseSubsonicSearchQuery(rawQuery: string): {
+export function parseSubsonicSearchQuery(rawQuery: string, sources: readonly string[] = SUBSONIC_SEARCH_SOURCES): {
   query: string
-  source?: SubsonicSearchSource
+  source?: string
 } {
   const query = rawQuery.trim()
-  const match = query.match(/^(tx|wy|kw|kg|mg)\s*:\s*(.*)$/i)
-  if (!match) return { query }
+  const match = query.match(/^([a-z][a-z0-9]{0,15})\s*:\s*(.*)$/i)
+  if (!match || !sources.includes(match[1].toLowerCase())) return { query }
 
   return {
-    source: match[1].toLowerCase() as SubsonicSearchSource,
+    source: match[1].toLowerCase(),
     query: match[2].trim(),
   }
 }
@@ -53,11 +54,7 @@ export function parseSongCount(raw: string | null): number {
 }
 
 function parseDuration(interval: string | undefined) {
-  if (!interval) return 0
-  const parts = interval.split(':').map(p => parseInt(p))
-  if (parts.length === 2) return parts[0] * 60 + (parts[1] || 0)
-  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + (parts[2] || 0)
-  return 0
+  return interval ? parseIntervalToSeconds(interval) : 0
 }
 
 /** song 节点构造（空 query 随机分支用；与 getRandomSongs 端点同规则） */
@@ -102,7 +99,8 @@ async function handleRecentSearch(
 export async function handleSearch(request: NextRequest, authRes?: AuthResult) {
   const url = new URL(request.url)
   const rawQuery = (url.searchParams.get('query') || url.searchParams.get('q') || '').trim()
-  const { query: q, source: selectedSource } = parseSubsonicSearchQuery(rawQuery)
+  const bindings = rawQuery ? await getPluginSearchBindings().catch(() => new Map<string, string>()) : new Map<string, string>()
+  const { query: q, source: selectedSource } = parseSubsonicSearchQuery(rawQuery, [...SUBSONIC_SEARCH_SOURCES, ...bindings.keys()])
   const songCount = parseSongCount(url.searchParams.get('songCount'))
   const songOffset = parseOffset(url.searchParams.get('songOffset') ?? undefined)
 
@@ -133,8 +131,8 @@ export async function handleSearch(request: NextRequest, authRes?: AuthResult) {
   }
 
   // aggregate sources used for search (moved outside try so cache key can be computed)
-  const sources = selectedSource ? [selectedSource] : getSearchSources()
-  const cacheKey = buildSubsonicSearchCacheKey(q, sources, songCount, songOffset)
+  const sources = selectedSource ? [selectedSource] : [...new Set([...getSearchSources(), ...bindings.keys()])]
+  const cacheKey = buildSubsonicSearchCacheKey(q, sources.map(source => bindings.has(source) ? `${source}@${bindings.get(source)}` : source), songCount, songOffset)
   // 缓存 payload 对象而非序列化结果，命中后仍可按 f= 参数渲染 XML/JSON
   const cachedPayload = searchCache.get(cacheKey) as SubsonicPayload | null
   if (cachedPayload) {
@@ -155,7 +153,26 @@ export async function handleSearch(request: NextRequest, authRes?: AuthResult) {
       // 每源最多取 10 首：只并发当前需要的渠道，不为小 songCount 请求全部渠道。
       const batchSize = Math.min(sources.length - sourceIndex, Math.max(1, Math.ceil((targetCount - songs.length) / 10)))
       const batch = sources.slice(sourceIndex, sourceIndex + batchSize)
-      const responses = await Promise.allSettled(batch.map(src => musicSearch.search(src, q, 1, 10)))
+      const responses = await Promise.allSettled(batch.map(async src => {
+        const revision = bindings.get(src)
+        if (!revision) return (BUILTIN_PLATFORM_IDS as readonly string[]).includes(src) ? musicSearch.search(src, q, 1, 10) : { list: [] }
+        const list: MusicInfo[] = []
+        let cursor: string | undefined
+        const deadline = performance.now() + 10_000
+        for (let page = 1; page <= 5 && list.length < targetCount && performance.now() < deadline; page++) {
+          try {
+            const result = await getPluginPage(src, 'searchSongs', { keyword: q, limit: 20 }, page, revision, cursor)
+            if (!result) break
+            list.push(...result.items as MusicInfo[])
+            if (!result.continuation) break
+            cursor = result.continuation
+          } catch (error) {
+            if (!list.length) throw error
+            break
+          }
+        }
+        return { list: [...new Map(list.map(song => [song.songmid, song])).values()] }
+      }))
       for (const [index, response] of responses.entries()) {
         const src = batch[index]
         if (response.status === 'rejected') {
@@ -185,6 +202,7 @@ export async function handleSearch(request: NextRequest, authRes?: AuthResult) {
             if (raw.albumName) musicInfo.albumName = raw.albumName
             if (raw.album) musicInfo.albumName = raw.album
             if (raw.img !== undefined) musicInfo.img = raw.img
+            if (raw.catalogCover === true) musicInfo.catalogCover = true
             if (raw.hash) musicInfo.hash = raw.hash
             if (raw.copyrightId) musicInfo.copyrightId = raw.copyrightId
             if (raw.songId !== undefined) musicInfo.songId = raw.songId

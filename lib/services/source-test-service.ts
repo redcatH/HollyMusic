@@ -8,7 +8,7 @@ import { readSourceScriptFile } from '@/lib/server/source-script-file'
 import { buildUpstreamHeaders } from '@/lib/server/download-utils'
 import { runSourceTestJob, type SourceTestJob } from '@/lib/server/source-test-runner'
 import { publicRequest } from '@/lib/source-testing/network.cjs'
-import { intervalSeconds, parseTestSamples, TEST_PLATFORMS, TEST_QUALITIES,
+import { canTestSampleQuality, intervalSeconds, parseTestSamples, TEST_PLATFORMS, TEST_QUALITIES,
   type AudioFacts, type SourceTestDraft, type SourceTestResult, type TestCapability } from '@/lib/source-testing/types'
 import type { SourceConfig } from '@/lib/types/music'
 import { getSystemSetting } from './system-settings'
@@ -188,7 +188,7 @@ export async function prepareTest(id: string, ownerId: number, mode: 'quick' | '
       const song = samples[platform]
       if (!song) continue
       for (const quality of state.capabilities[platform] || []) {
-        if (!Object.hasOwn(song._types, quality)) continue
+        if (!canTestSampleQuality(song, quality)) continue
         const key = `${platform}:${quality}`
         if (!keys || keys.includes(key)) results.push({ key, platform, quality, song, mode, status: 'waiting', message: '等待测试' })
       }

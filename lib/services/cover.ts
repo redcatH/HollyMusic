@@ -9,10 +9,27 @@ import { resolve } from 'path'
 import { readFileSync } from 'fs'
 import * as dbAPI from '../db'
 import { logger } from '../logger'
+import { BUILTIN_PLATFORM_IDS } from '@/lib/platform-plugins'
+import { publicRequest } from '@/lib/source-testing/network.cjs'
 
 // 原生封面获取模块（参考 lx-music 各源 pic 实现）
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { getPic: getPicNative } = require('../music-core/music-pic')
+
+export function hasCatalogCover(source: string): boolean {
+  return !(BUILTIN_PLATFORM_IDS as readonly string[]).includes(source)
+}
+
+export async function fetchCatalogCover(value: string | null | undefined): Promise<Response | null> {
+  if (!value?.startsWith('https://')) return null
+  const cover = await publicRequest(value, { maxBytes: 5 * 1024 * 1024, timeout: 5000 }).catch(() => null)
+  if (!cover || cover.status !== 200 || !cover.data.length) return null
+  const contentType = String(cover.headers['content-type'] ?? '')
+  if (!/^image\/(?:jpeg|png|gif|webp|avif)(?:;|$)/i.test(contentType)) return null
+  return new Response(new Uint8Array(cover.data), { headers: {
+    'Content-Type': contentType, 'Cache-Control': 'public, max-age=3600', 'X-Content-Type-Options': 'nosniff',
+  } })
+}
 
 /**
  * 获取指定歌曲的封面图响应。
@@ -37,6 +54,7 @@ export async function getCoverResponse(id: string): Promise<Response> {
     }
 
     try {
+      if (musicInfo.catalogCover || hasCatalogCover(musicInfo.source)) return (await fetchCatalogCover(musicInfo.img)) ?? serveDefaultCoverArt()
       const picUrl = await getPicNative(musicInfo)
       if (picUrl) {
         const fetched = await fetchImageFromUrl(picUrl)

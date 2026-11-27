@@ -25,7 +25,7 @@ import { readSourceScriptFile, readSourceScriptBytes } from '@/lib/server/source
 const CONFIG_PATH = path.resolve(process.cwd(), 'config/music-sources.json')
 const SCRIPTS_DIR = path.resolve(process.cwd(), 'custom-sources')
 
-const VALID_PLATFORMS = ['tx', 'wy', 'kw', 'kg', 'mg'] as const
+const VALID_PLATFORMS: readonly string[] = ['tx', 'wy', 'kw', 'kg', 'mg', 'qs']
 const MAX_SCRIPT_SIZE = 5 * 1024 * 1024 // 5MB
 const SUBSCRIPTION_REQUEST_TIMEOUT_MS = 15_000
 const MAX_SUBSCRIPTION_REDIRECTS = 3

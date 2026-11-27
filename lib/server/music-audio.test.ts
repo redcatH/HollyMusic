@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { describePlaybackError } from '@/lib/server/playback-diagnostics'
+import { PLAYBACK_ATTEMPTS_HEADER, PLAYBACK_CANDIDATES_FAILED, PLAYBACK_ERROR_HEADER, PLAYBACK_REQUEST_ID_HEADER } from '@/lib/playback-protocol'
 import type { MusicInfo } from '@/lib/types/music'
 
 const { serve, request } = vi.hoisted(() => ({ serve: vi.fn(), request: vi.fn() }))
@@ -59,5 +61,35 @@ describe('音频回源与回退', () => {
     const response = await serveMusicAudio({ musicInfo: song, quality: 'master', exact: true, rangeHeader: null, isHead: false })
     expect(response.status).toBe(502)
     expect(serve).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ cacheKey: 'audio-v2:tx:song:master' }))
+  })
+
+  it('提供 HEAD 排错信息，响应不含音频或错误正文', async () => {
+    serve.mockResolvedValue(new Response('private upstream detail', {
+      status: 502, headers: { [PLAYBACK_ERROR_HEADER]: 'AUDIO_PARSE_FAILED' },
+    }))
+    const response = await serveMusicAudio({
+      musicInfo: song, quality: '128k', rangeHeader: null, isHead: true, requestId: 'test-request-id',
+    })
+    expect(response.status).toBe(502)
+    expect(response.body).toBeNull()
+    expect(response.headers.get(PLAYBACK_REQUEST_ID_HEADER)).toBe('test-request-id')
+    expect(response.headers.get(PLAYBACK_ERROR_HEADER)).toBe(PLAYBACK_CANDIDATES_FAILED)
+    expect(JSON.parse(response.headers.get(PLAYBACK_ATTEMPTS_HEADER)!)).toEqual([
+      { quality: '128k', status: 502, code: 'AUDIO_PARSE_FAILED' },
+    ])
+  })
+
+  it('解析失败时保留上游状态、内容类型和样本格式，省略响应正文', async () => {
+    request.mockResolvedValue({
+      status: 206, data: Buffer.from('{"token":"private-response"}'),
+      headers: { 'content-type': 'application/json; charset=utf-8', 'content-range': 'bytes 0-27/28' },
+    })
+    await expect(verifyMusicAudio('https://example.com/audio?token=private-url', '128k')).rejects.toMatchObject({
+      code: 'AUDIO_PARSE_FAILED',
+      details: { host: 'example.com', upstreamStatus: 206, contentType: 'application/json', sampleFormat: 'JSON-like', totalBytes: 28 },
+    })
+    const diagnostic = describePlaybackError(new Error('请求 https://example.com/path?token=private-url 失败，Authorization: Bearer private-header'))
+    expect(diagnostic.message).toContain('失败')
+    expect(diagnostic.message).not.toMatch(/example\.com|private-/)
   })
 })

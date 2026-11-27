@@ -7,6 +7,7 @@ import type { QualityType } from '@/lib/types/music'
 interface SongListProps {
   tracks: Track[]
   refreshQualities?: boolean
+  unavailablePlatforms?: string[]
   history?: { entryIds: number[]; onRemove: (id: number) => Promise<void> }
   localPlayback?: { qualities: QualityType[]; onRemove: (index: number) => void }
   playlist?: {
@@ -16,7 +17,7 @@ interface SongListProps {
   }
 }
 
-const SongListItem = memo(function SongListItem({ track, queue, index, playlist, localPlayback, history, refreshQualities }: {
+const SongListItem = memo(function SongListItem({ track, queue, index, playlist, localPlayback, history, refreshQualities, playbackUnavailable }: {
   track: Track
   queue: Track[]
   index: number
@@ -24,12 +25,14 @@ const SongListItem = memo(function SongListItem({ track, queue, index, playlist,
   localPlayback: SongListProps['localPlayback']
   history: SongListProps['history']
   refreshQualities: boolean
+  playbackUnavailable: boolean
 }) {
   return <SongRow
     track={track}
     queue={queue}
     index={index}
     refreshQualities={refreshQualities}
+    playbackUnavailable={playbackUnavailable}
     historyEntry={history ? { id: history.entryIds[index], onRemove: history.onRemove } : undefined}
     localPlayback={localPlayback ? { quality: localPlayback.qualities[index], onRemove: () => localPlayback.onRemove(index) } : undefined}
     playlistEntry={playlist ? { playlistId: playlist.id, entryId: playlist.entryIds[index], onRemoved: playlist.onRemoved } : undefined}
@@ -40,14 +43,14 @@ function trackKey(track: Track, index: number): string {
   return `${track.uid}-${index}`
 }
 
-export const SongList = memo(function SongList({ tracks, playlist, localPlayback, history, refreshQualities = true }: SongListProps) {
+export const SongList = memo(function SongList({ tracks, playlist, localPlayback, history, refreshQualities = true, unavailablePlatforms }: SongListProps) {
   const playbackTracks = useMemo<Track[]>(() => localPlayback
     ? tracks.map((track, index) => ({ ...track, playback: { source: 'local', quality: localPlayback.qualities[index] } }))
     : tracks, [tracks, localPlayback])
   const renderTrack = useCallback((track: Track, index: number) => <SongListItem
     track={track} queue={playbackTracks} index={index} playlist={playlist} localPlayback={localPlayback} history={history}
-    refreshQualities={refreshQualities}
-  />, [playbackTracks, playlist, localPlayback, history, refreshQualities])
+    refreshQualities={refreshQualities} playbackUnavailable={!localPlayback && (unavailablePlatforms?.includes(track.source) ?? false)}
+  />, [playbackTracks, playlist, localPlayback, history, refreshQualities, unavailablePlatforms])
 
   if (tracks.length === 0) return null
   return <VirtualList items={playbackTracks} itemKey={trackKey} renderItem={renderTrack}

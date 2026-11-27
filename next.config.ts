@@ -28,6 +28,8 @@ const nextConfig: NextConfig = {
     '/rest/**': [
       './lib/generated/prisma/**/*',
       './prisma/**/*',
+      './lib/music-core/**/*',
+      './lib/source-testing/*.cjs',
     ],
   },
 

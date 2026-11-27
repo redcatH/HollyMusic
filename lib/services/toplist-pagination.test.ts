@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { get, set, upsert } = vi.hoisted(() => ({ get: vi.fn(), set: vi.fn(), upsert: vi.fn() }))
 vi.mock('@/lib/cache-manager', () => ({ searchCache: { get, set } }))
-vi.mock('@/lib/db', () => ({ upsertMusicInfosInTransaction: upsert, getStorageSongmidForMusicInfo: (song: { songmid: string }) => song.songmid }))
+vi.mock('@/lib/db', () => ({ upsertMusicInfosInTransaction: upsert, getStorageSongmidForMusicInfo: (song: { songmid: string }) => song.songmid,
+  prisma: { platformPluginBinding: { findUnique: vi.fn(async () => null) } } }))
 vi.mock('@/lib/logger', () => ({ logger: { warn: vi.fn(), error: vi.fn() } }))
 const { getToplistDetail } = await import('./discovery-service')
 

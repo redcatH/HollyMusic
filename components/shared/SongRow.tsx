@@ -25,9 +25,10 @@ interface SongRowProps {
   localPlayback?: { quality: QualityType; onRemove: () => void }
   historyEntry?: { id: number; onRemove: (id: number) => Promise<void> }
   refreshQualities?: boolean
+  playbackUnavailable?: boolean
 }
 
-export function SongRow({ track, queue, index, playlistEntry, localPlayback, historyEntry, refreshQualities }: SongRowProps) {
+export function SongRow({ track, queue, index, playlistEntry, localPlayback, historyEntry, refreshQualities, playbackUnavailable }: SongRowProps) {
   const currentTrack = usePlayerStore(s => s.currentTrack)
   const isPlaying = usePlayerStore(s => s.isPlaying)
   const effectiveQuality = usePlayerStore(s => s.effectiveQuality)
@@ -68,6 +69,7 @@ export function SongRow({ track, queue, index, playlistEntry, localPlayback, his
   const longPress = useLongPress((x, y) => { if (!localPlayback) openMenu(track, x, y, playlistEntry) })
 
   const handlePlay = () => {
+    if (playbackUnavailable) { toast.error('暂无可用播放音源'); return }
     const state = usePlayerStore.getState()
     if (isCurrent && (!localPlayback || (state.streamUrl?.startsWith('blob:') && state.effectiveQuality === localPlayback.quality))) {
       usePlayerStore.getState().togglePlay()
@@ -142,7 +144,7 @@ export function SongRow({ track, queue, index, playlistEntry, localPlayback, his
         <Heart className={`h-4 w-4 ${isFav ? 'fill-current' : ''}`} />
       </button>}
 
-      {!localPlayback && authenticated && (
+      {!localPlayback && authenticated && !playbackUnavailable && (
         <button
           onClick={() => setDownloadOpen(true)}
           disabled={downloading}

@@ -29,7 +29,8 @@ import { logger } from '@/lib/logger'
 import { checkTrialAudio } from '@/lib/server/audio-integrity'
 import { formatFlacSpec } from '@/lib/server/flac-info'
 import { buildUpstreamHeaders } from '@/lib/server/download-utils'
-import { PLAYBACK_AUDIO_SPEC_HEADER } from '@/lib/playback-protocol'
+import { PLAYBACK_AUDIO_SPEC_HEADER, PLAYBACK_ERROR_HEADER } from '@/lib/playback-protocol'
+import { describePlaybackError, PlaybackError } from '@/lib/server/playback-diagnostics'
 import {
   getLyricSidecarPath,
   getTranslationLyricSidecarPath,
@@ -277,7 +278,7 @@ class AudioServe {
 
     // 失败的 entry
     if (entry.error instanceof Error) {
-      return this.build502(entry.error.message)
+      return this.build502(entry.error)
     }
 
     // 无 Content-Length → passthrough（无法 seek，给客户端顺序流）
@@ -310,7 +311,7 @@ class AudioServe {
     // 但 await waitForBytes 后 entry.error 实际可能被设置）
     const failureErr = entry.error as Error | null
     if (failureErr) {
-      return this.build502(failureErr.message)
+      return this.build502(failureErr)
     }
 
     // 8. 找到实际可读文件路径（entry done 后可能 rename 过）
@@ -582,7 +583,7 @@ class AudioServe {
       entry.error = e instanceof Error ? e : new Error(String(e))
       entry.done = true
       entry.emitter.emit('error', entry.error)
-      logger.warn(`[AudioServe] failed ${cacheKey}: ${entry.error.message}`)
+      logger.warn('[AudioServe] 音频流失败', { cacheKey, ...describePlaybackError(entry.error) })
     } finally {
       if (stallTimer) clearTimeout(stallTimer)
       // 完成（成功或失败）后从 Map 移除
@@ -821,10 +822,13 @@ class AudioServe {
     )
   }
 
-  private build502(message: string): Response {
+  private build502(error: Error): Response {
     return new Response(
-      JSON.stringify({ success: false, error: { code: 'UPSTREAM_FAILED', message } }),
-      { status: 502, headers: { 'Content-Type': 'application/json' } }
+      JSON.stringify({ success: false, error: { code: 'UPSTREAM_FAILED', message: describePlaybackError(error).message } }),
+      { status: 502, headers: {
+        'Content-Type': 'application/json',
+        [PLAYBACK_ERROR_HEADER]: error instanceof PlaybackError ? error.code : 'AUDIO_STREAM_FAILED',
+      } }
     )
   }
 }

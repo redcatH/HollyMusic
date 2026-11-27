@@ -37,13 +37,15 @@ interface SearchStore {
   error: string | null
   reqId: number
   nextPage: number | null
+  nextCursor?: string
+  activeSources: SourceType[]
   pageSize: number
   pageKeys: string[]
   loadingMore: boolean
   loadMoreError: string | null
   setKeyword: (keyword: string) => void
   setSource: (source: SourceType | 'all') => void
-  run: (keyword: string, source: SourceType | 'all') => Promise<void>
+  run: (keyword: string, source: SourceType | 'all', platforms?: SourceType[]) => Promise<void>
   loadMore: () => Promise<void>
   retrySource: (source: SourceType) => Promise<void>
   reset: () => void
@@ -53,6 +55,7 @@ const initialState = {
   keyword: '', source: 'all' as const, lastKeyword: '', lastSource: 'all' as const,
   results: [] as Song[], loading: false, pendingSources: 0, sourceErrors: {}, error: null,
   nextPage: null, pageSize: 30, pageKeys: [] as string[], loadingMore: false, loadMoreError: null,
+  nextCursor: undefined as string | undefined, activeSources: ALL_SOURCES,
 }
 
 /** 一个 Web 搜索会话：聚合仅首批，单平台独立翻页；导航离开时保留当前会话。 */
@@ -66,9 +69,10 @@ export const useSearchStore = create<SearchStore>((set, get) => {
       const state = get()
       const results = uniqueSongs([...state.results.filter(song => song.source !== source), ...response.list])
       set({
-        results: ALL_SOURCES.flatMap(s => results.filter(song => song.source === s)),
+        results: state.activeSources.flatMap(s => results.filter(song => song.source === s)),
         ...(state.lastSource !== 'all' ? {
           nextPage: response.nextPage ?? null, pageSize: response.limit,
+          nextCursor: response.nextCursor,
           pageKeys: [response.list.map(song => song.uid).join(',')],
         } : {}),
       })
@@ -80,7 +84,7 @@ export const useSearchStore = create<SearchStore>((set, get) => {
       if (get().reqId === reqId) {
         const state = get()
         const pendingSources = state.pendingSources - 1
-        const allFailed = Object.keys(state.sourceErrors).length === (state.lastSource === 'all' ? ALL_SOURCES.length : 1)
+        const allFailed = Object.keys(state.sourceErrors).length === state.activeSources.length
         set({ pendingSources, loading: state.results.length === 0 && pendingSources > 0,
           error: pendingSources === 0 && allFailed ? Object.values(state.sourceErrors)[0] ?? null : null })
       }
@@ -91,13 +95,13 @@ export const useSearchStore = create<SearchStore>((set, get) => {
     ...initialState, reqId: 0,
     setKeyword: keyword => set({ keyword }),
     setSource: source => set({ source }),
-    run: async (keyword, source) => {
+    run: async (keyword, source, platforms = ALL_SOURCES) => {
       cancelRequests()
       const trimmed = keyword.trim()
       const reqId = get().reqId + 1
-      const sources = source === 'all' ? ALL_SOURCES : [source]
+      const sources = source === 'all' ? platforms : [source]
       set({ ...initialState, keyword: get().keyword, source: get().source, lastKeyword: trimmed,
-        lastSource: source, reqId, loading: Boolean(trimmed), pendingSources: trimmed ? sources.length : 0 })
+        lastSource: source, activeSources: sources, reqId, loading: Boolean(trimmed && sources.length), pendingSources: trimmed ? sources.length : 0 })
       if (trimmed) await Promise.all(sources.map(s => firstPage(s, trimmed, reqId)))
     },
     retrySource: async source => {
@@ -116,7 +120,8 @@ export const useSearchStore = create<SearchStore>((set, get) => {
       requests.add(controller)
       set({ loadingMore: true, loadMoreError: null })
       try {
-        const response = await search(lastSource, lastKeyword, nextPage, pageSize, controller.signal)
+        const response = await (state.nextCursor ? search(lastSource, lastKeyword, nextPage, pageSize, controller.signal, state.nextCursor)
+          : search(lastSource, lastKeyword, nextPage, pageSize, controller.signal))
         if (get().reqId !== reqId) return
         const pageKey = response.list.map(song => song.uid).join(',')
         if ((response.list.length > 0 && get().pageKeys.includes(pageKey))
@@ -124,7 +129,7 @@ export const useSearchStore = create<SearchStore>((set, get) => {
           || response.limit !== pageSize || (response.hasMore && response.list.length === 0)) {
           throw new Error('平台返回了异常分页，请重试')
         }
-        set({ results: uniqueSongs([...get().results, ...response.list]), nextPage: response.nextPage,
+        set({ results: uniqueSongs([...get().results, ...response.list]), nextPage: response.nextPage, nextCursor: response.nextCursor,
           pageKeys: [...get().pageKeys, pageKey] })
       } catch (error) {
         if (get().reqId === reqId) set({ loadMoreError: friendlyError(error) })

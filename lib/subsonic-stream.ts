@@ -6,6 +6,7 @@ import { getSubsonicStereoPreference, parseSubsonicQualityPreference } from '@/l
 import { logger } from '@/lib/logger'
 import { serveMusicAudio } from '@/lib/server/music-audio'
 import { enrichAudioDetails } from '@/lib/server/platform-audio-details'
+import { BUILTIN_PLATFORM_IDS } from '@/lib/platform-plugins'
 
 // ============================================================================
 // STREAM HANDLER
@@ -56,7 +57,7 @@ export async function handleStream(request: NextRequest): Promise<Response> {
     const musicInfo = await enrichAudioDetails(storedMusicInfo, preference)
     const supportedQualities = getAvailableQualities(musicInfo.types).filter(q =>
       QUALITY_ORDER.includes(q) && (q !== 'master' || getSubsonicStereoPreference() === 'master'))
-    if (supportedQualities.length === 0) {
+    if (supportedQualities.length === 0 && (BUILTIN_PLATFORM_IDS as readonly string[]).includes(musicInfo.source)) {
       logger.warn(`[handleStream] No supported qualities for ${musicInfo.songmid}`)
       return subsonicError(request, 0, 'No supported audio quality available')
     }

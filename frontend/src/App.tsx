@@ -210,6 +210,7 @@ export function App() {
                 <Route path="/recommend" element={<RecommendedMusicPage />} />
                 <Route path="/discover/toplists/:id" element={<DiscoveryCollectionPage kind="toplists" />} />
                 <Route path="/discover/playlists/:id" element={<DiscoveryCollectionPage kind="playlists" />} />
+                <Route path="/discover/radios/:id" element={<DiscoveryCollectionPage kind="radios" />} />
                 <Route path="/search" element={<SearchPage />} />
                 <Route path="/favorites" element={<FavoritesPage />} />
                 <Route path="/playlists" element={<PlaylistsPage />} />

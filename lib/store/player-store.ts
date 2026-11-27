@@ -9,7 +9,7 @@ import { toTrack, type Track, type PlaybackMode } from '@/lib/types/player'
 import type { QualityType } from '@/lib/types/music'
 import { buildAudioUrl, getTrackByUid } from '@/lib/api/music'
 import { resolveQuality, nextLowerQuality, QUALITY_ORDER, isQuality } from '@/lib/quality-options'
-import { PLAYBACK_AUDIO_SPEC_HEADER, PLAYBACK_QUALITY_HEADER } from '@/lib/playback-protocol'
+import { PLAYBACK_ATTEMPTS_HEADER, PLAYBACK_AUDIO_SPEC_HEADER, PLAYBACK_CANDIDATES_FAILED, PLAYBACK_ERROR_HEADER, PLAYBACK_QUALITY_HEADER, PLAYBACK_REQUEST_ID_HEADER } from '@/lib/playback-protocol'
 import { detectCodecCap, capQuality } from '@/lib/codec-support'
 import { reportPlay } from '@/lib/api/history'
 import { useAuthStore } from '@/hooks/useAuth'
@@ -243,6 +243,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     } catch { /* 在线读取失败继续请求服务端；离线时显示未缓存。 */ }
     let streamUrl = buildAudioUrl(track.uid, eff, { surround })
     let effectiveAudioSpec: string | null = null
+    let candidatesFailed = false
     if (!local && !offline && !selection.signal.aborted && typeof window !== 'undefined') {
       try {
         const signal = AbortSignal.any([selection.signal, AbortSignal.timeout(27_000)])
@@ -252,8 +253,22 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
           eff = selected
           effectiveAudioSpec = response.headers.get(PLAYBACK_AUDIO_SPEC_HEADER)
           streamUrl = buildAudioUrl(track.uid, eff, { exact: true })
+        } else {
+          const code = response.headers.get(PLAYBACK_ERROR_HEADER)
+          candidatesFailed = !response.ok && code === PLAYBACK_CANDIDATES_FAILED
+          logger.warn('[player] 音频预检未拿到可播放档位', {
+            uid: track.uid, requestedQuality: eff, surround, method: 'HEAD',
+            status: response.status, code, requestId: response.headers.get(PLAYBACK_REQUEST_ID_HEADER),
+            contentType: response.headers.get('content-type'), selectedQuality: selected,
+            attempts: response.headers.get(PLAYBACK_ATTEMPTS_HEADER),
+          })
         }
-      } catch { /* 仍可由原生媒体加载和重试。 */ }
+      } catch (error) {
+        if (!selection.signal.aborted) {
+          logger.warn('[player] 音频预检请求异常', { uid: track.uid, requestedQuality: eff, surround,
+            name: error instanceof Error ? error.name : 'Error', message: error instanceof Error ? error.message : undefined })
+        }
+      }
     }
     if (streamSelection === selection) streamSelection = null
     const currentAuth = useAuthStore.getState()
@@ -273,6 +288,11 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     }
     if (offline) {
       set({ streamUrl: null, isPlaying: false, isFetchingUrl: false, urlFetchError: '此歌曲尚未完整缓存，请联网播放后重试' })
+      return
+    }
+    if (candidatesFailed) {
+      set({ streamUrl: null, effectiveQuality: null, effectiveAudioSpec: null, isFetchingUrl: false, bufferProgress: null })
+      await get().handleTrackError('音源没有返回可播放的音频', undefined, autoplay)
       return
     }
     set({

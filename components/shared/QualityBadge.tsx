@@ -9,7 +9,12 @@ export function QualityBadge({ uid, musicInfo }: { uid?: string; musicInfo: Musi
   const surround = types?.some(item => item.type === 'atmos_plus') ? 'atmos_plus'
     : types?.some(item => item.type === 'atmos') ? 'atmos' : null
   const master = types?.some(item => item.type === 'master')
-  if (q === 'unknown' && !surround && !master) return null
+  if (q === 'unknown' && !surround && !master) {
+    return musicInfo.source === 'qs' ? (
+      <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+        title="暂无这首歌的音质信息">音质未知</span>
+    ) : null
+  }
   const stereoLabel = q === 'unknown' ? null : q === '192k' ? '192K' : QUALITY_LABEL[q]
   const label = [master ? QUALITY_LABEL.master : stereoLabel, surround && QUALITY_LABEL[surround]].filter(Boolean).join(' · ')
   const isLossless = master || surround || q === 'flac' || q === 'flac24bit'

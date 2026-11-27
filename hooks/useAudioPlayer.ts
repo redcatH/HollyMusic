@@ -237,8 +237,12 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
     const onError = () => {
       if (!isCurrent()) return
       const err = audio.error
+      if (err?.code === MediaError.MEDIA_ERR_ABORTED) return
       const wasPlaying = playbackIntentRef.current === 'playing'
-      logger.error('[useAudioPlayer] audio error', err)
+      logger.error('[useAudioPlayer] 媒体加载失败', {
+        code: err?.code, message: err?.message,
+        readyState: audio.readyState, networkState: audio.networkState, currentTime: audio.currentTime,
+      })
       optsRef.current.onLoading?.(null)
       optsRef.current.onPlayState?.(false)
       stopProgress()
@@ -255,8 +259,6 @@ export function useAudioPlayer(opts: UseAudioPlayerOptions) {
           case MediaError.MEDIA_ERR_DECODE:
             msg = '音频解码失败'
             break
-          case MediaError.MEDIA_ERR_ABORTED:
-            return // 主动 abort（如切歌时），不算错误
         }
       }
       optsRef.current.onError?.(msg, err?.code, wasPlaying)

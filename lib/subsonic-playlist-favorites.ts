@@ -7,9 +7,10 @@ import { resolveSubsonicMediaMeta } from './subsonic-media'
 import { getRecommendedPlaylistDetail, isDiscoverySource, type DiscoveryCollectionDetail } from './services/discovery-service'
 import { getFavoritePlaylistById, listFavoritePlaylistRecords, removeFavoritePlaylistById } from './services/favorite-playlist-service'
 import { parseIntervalToSeconds } from './types/player'
+import { PLATFORM_NAMES } from './platform-plugins'
 
 const prisma = new PrismaClient()
-const SOURCE_NAMES = { tx: 'QQ音乐', wy: '网易云音乐', kw: '酷我音乐', kg: '酷狗音乐', mg: '咪咕音乐' }
+const SOURCE_NAMES: Record<string, string> = { ...PLATFORM_NAMES, tx: 'QQ音乐' }
 
 /** 收藏记录与本地歌单使用独立 ID 空间，原平台 ID 不进入协议解析。 */
 export function isFavoritePlaylistId(id: string): boolean {
@@ -30,7 +31,7 @@ export async function getSubsonicFavoritePlaylist(id: string, authRes: AuthResul
 }
 
 function toPlaylistNode(playlist: FavoritePlaylist, username: string): SubsonicPlaylistNode {
-  const source = isDiscoverySource(playlist.source) ? SOURCE_NAMES[playlist.source] : playlist.source
+  const source = SOURCE_NAMES[playlist.source] ?? playlist.source
   const id = `fp-${playlist.id}`
   return {
     id,

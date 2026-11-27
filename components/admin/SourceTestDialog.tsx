@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { CheckCircle2, FlaskConical, Loader2, Search, Trash2, X } from 'lucide-react'
 import { search } from '@/lib/api/search'
 import { cancelSourceTest, commitSourceTest, discardSourceTest, getSourceTest, listSourceTests, loadTestSamples, runSourceTest, saveTestSamples, startSourceTest } from '@/lib/api/source-tests'
-import { PLATFORM_NAMES, TEST_PLATFORMS, type SourceTestDraft, type TestSamples } from '@/lib/source-testing/types'
+import { canTestSampleQuality, PLATFORM_NAMES, TEST_PLATFORMS, type SourceTestDraft, type TestSamples } from '@/lib/source-testing/types'
 import type { Song, SourceType } from '@/lib/types/music'
 import { usePlayerStore } from '@/lib/store/player-store'
 import { ModalMask } from '@/components/shared/ModalMask'
@@ -171,9 +171,9 @@ export function SourceTestDialog({ initialDraft, onClose, onCommitted }: { initi
     return () => { alive = false; clearTimeout(timer) }
   }, [running, draft.id])
   const available = TEST_PLATFORMS.filter(p => Object.hasOwn(draft.capabilities, p))
-  const testable = available.filter(p => (draft.capabilities[p] || []).some(quality => samples[p] && Object.hasOwn(samples[p]._types, quality)))
+  const testable = available.filter(p => (draft.capabilities[p] || []).some(quality => canTestSampleQuality(samples[p], quality)))
   const selectedKeys = available.flatMap(p => testPlatforms.includes(p) ? (draft.capabilities[p] || [])
-    .filter(quality => samples[p] && Object.hasOwn(samples[p]._types, quality)).map(quality => `${p}:${quality}`) : [])
+    .filter(quality => canTestSampleQuality(samples[p], quality)).map(quality => `${p}:${quality}`) : [])
   const action = async (work: () => Promise<void>) => {
     if (busyRef.current) return
     busyRef.current = true; setBusy(true); setError('')

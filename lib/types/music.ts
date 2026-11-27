@@ -6,7 +6,7 @@
 export type QualityType = '128k' | '320k' | 'flac' | 'flac24bit' | 'master' | 'atmos' | 'atmos_plus'
 
 // 音源类型
-export type SourceType = 'kw' | 'kg' | 'tx' | 'wy' | 'mg'
+export type SourceType = string
 
 // 音质信息
 export interface QualityInfo {
@@ -26,6 +26,7 @@ export interface MusicInfo {
   albumName?: string
   interval: string
   img?: string | null
+  catalogCover?: boolean
   types: QualityInfo[]
   _types: Partial<Record<QualityType, Partial<QualityInfo>>>
   typeUrl: Record<string, string>

@@ -11,6 +11,7 @@ import { attachAnalysisPipeline, getExistingAnalysisPipeline } from '@/lib/clien
 import { defaultEqualizer } from '@/lib/client/equalizer'
 import { useEqualizerStore } from '@/lib/store/equalizer-store'
 import { EqualizerPanel } from '@/components/player/EqualizerPanel'
+import { PLAYBACK_ATTEMPTS_HEADER, PLAYBACK_CANDIDATES_FAILED, PLAYBACK_ERROR_HEADER, PLAYBACK_REQUEST_ID_HEADER } from '@/lib/playback-protocol'
 
 // 保留真实的 PC/手机按钮、进度条、store 和音频 hook，只隔离附属服务与音频硬件。
 vi.mock('@/hooks/useMediaSession', () => ({ useMediaSession: () => {} }))
@@ -49,6 +50,22 @@ let root: Root
 let container: HTMLDivElement
 let audio: TestAudio
 let hidden = true
+
+it('预检确认全部候选失败时结束该曲，不把失败地址交给音频元素', async () => {
+  const fetchProbe = vi.fn().mockResolvedValue(new Response(null, { status: 502, headers: {
+    [PLAYBACK_REQUEST_ID_HEADER]: 'test-request-id',
+    [PLAYBACK_ERROR_HEADER]: PLAYBACK_CANDIDATES_FAILED,
+    [PLAYBACK_ATTEMPTS_HEADER]: '[{"quality":"128k","status":502,"code":"AUDIO_PARSE_FAILED"}]',
+  } }))
+  vi.stubGlobal('fetch', fetchProbe)
+  await act(async () => { await usePlayerStore.getState().playTrack(second, [second]) })
+
+  expect(fetchProbe).toHaveBeenCalledTimes(1)
+  expect(fetchProbe).toHaveBeenCalledWith(expect.stringContaining('uid=kw-second'), expect.objectContaining({ method: 'HEAD' }))
+  expect(usePlayerStore.getState()).toMatchObject({ streamUrl: null, isFetchingUrl: false, isPlaying: false,
+    urlFetchError: expect.stringContaining('音源没有返回可播放的音频') })
+  expect(audio.src).not.toContain('uid=kw-second')
+})
 
 async function ready(duration = 180) {
   await act(async () => {

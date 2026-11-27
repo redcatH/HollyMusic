@@ -10,6 +10,7 @@ import { fetchLyricForMusic } from './services/lyrics'
 import { getPlaylistCoverForUser } from './services/playlist-service'
 import { getSubsonicFavoritePlaylist, isFavoritePlaylistId, loadFavoritePlaylistDetail } from './subsonic-playlist-favorites'
 import type { MusicInfo } from './types/music'
+import { fetchCatalogCover, hasCatalogCover } from './services/cover'
 
 // 原生封面获取模块（参考 lx-music 各源 pic 实现），替代黑盒脚本与第三方聚合 API
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -53,6 +54,7 @@ export async function handleCoverArtAsync(request: NextRequest, authRes: AuthRes
     // 通过原生音源模块获取封面 URL（参考 lx-music 各源 pic 实现）
     // 优先级：DB 已存的 img(wy/mg) → 拼 URL(tx) → 实时请求(kw/kg)
     try {
+      if (musicInfo.catalogCover || hasCatalogCover(musicInfo.source)) return (await fetchCatalogCover(musicInfo.img)) ?? serveDefaultCoverArt(request)
       const picUrl = await getPicNative(musicInfo)
       if (picUrl) {
         const fetched = await fetchImageFromUrl(picUrl)
@@ -95,6 +97,8 @@ async function servePlaylistCoverArt(request: NextRequest, authRes: AuthResult, 
     }
     if (!musicInfo) return serveDefaultCoverArt(request)
 
+    if (musicInfo.catalogCover || hasCatalogCover(musicInfo.source)) return (await fetchCatalogCover(musicInfo.img)) ?? serveDefaultCoverArt(request)
+
     const picUrl = await getPicNative(musicInfo)
     if (!picUrl) return serveDefaultCoverArt(request)
     return (await fetchImageFromUrl(picUrl)) ?? serveDefaultCoverArt(request)
@@ -111,7 +115,7 @@ async function serveFavoritePlaylistCoverArt(request: NextRequest, authRes: Auth
 
     const fetchCover = async (url: string | null | undefined): Promise<Response | null> => {
       if (!url || !isHttpUrl(url)) return null
-      const response = await fetchImageFromUrl(url)
+      const response = hasCatalogCover(playlist.source) ? await fetchCatalogCover(url) : await fetchImageFromUrl(url)
       // 收藏属于个人资料，不能让共享缓存绕过账号权限。
       if (response) response.headers.set('Cache-Control', 'private, max-age=300')
       return response
@@ -125,7 +129,8 @@ async function serveFavoritePlaylistCoverArt(request: NextRequest, authRes: Auth
     if (liveCover) return liveCover
     const firstTrack = detail?.tracks[0]
     if (firstTrack) {
-      const trackCover = await fetchCover(await getPicNative(firstTrack))
+      const trackCover = firstTrack.catalogCover ? await fetchCatalogCover(firstTrack.img) : await fetchCover(hasCatalogCover(firstTrack.source) ? firstTrack.img : await getPicNative(firstTrack))
+      if (trackCover) trackCover.headers.set('Cache-Control', 'private, max-age=300')
       if (trackCover) return trackCover
     }
   } catch (err) {

@@ -6,6 +6,8 @@ import { logger } from '@/lib/logger'
 import { neteaseExtendedQualities, qqExtendedQualities } from '@/lib/platform-qualities'
 import type { MusicInfo, QualityInfo, QualityType, Song } from '@/lib/types/music'
 import { collectCollectionPages } from './paged-collection'
+import { BUILTIN_PLATFORM_IDS, isPlatformId } from '@/lib/platform-plugins'
+import { getPluginPage, persistPluginSongs } from './platform-catalog'
 
 const QQ_MUSICU_URL = 'https://u.y.qq.com/cgi-bin/musicu.fcg'
 const QQ_SINGLE_SONG_URL = 'https://c.y.qq.com/v8/fcg-bin/fcg_play_single_song.fcg'
@@ -57,10 +59,15 @@ export type DiscoveryPlaylistSort = 'recommend' | 'hot' | 'new' | 'collect' | 's
 export interface DiscoveryPlaylistFilter { tag?: string; sort?: DiscoveryPlaylistSort; keyword?: string }
 
 /** 发现页支持的音乐平台。 */
-export type DiscoverySource = 'tx' | 'wy' | 'kw' | 'kg' | 'mg'
+export type DiscoverySource = string
+type BuiltinDiscoverySource = typeof BUILTIN_PLATFORM_IDS[number]
+
+function isBuiltinDiscoverySource(source: string): source is BuiltinDiscoverySource {
+  return (BUILTIN_PLATFORM_IDS as readonly string[]).includes(source)
+}
 
 export function isDiscoverySource(value: string | null): value is DiscoverySource {
-  return value === 'tx' || value === 'wy' || value === 'kw' || value === 'kg' || value === 'mg'
+  return isPlatformId(value)
 }
 
 export interface DiscoveryCollectionDetail {
@@ -1272,7 +1279,7 @@ function collectCovers(results: PromiseSettledResult<readonly [string, string]>[
   return covers
 }
 
-const toplistCoverFetchers: Record<DiscoverySource, () => Promise<Map<string, string>>> = {
+const toplistCoverFetchers: Record<BuiltinDiscoverySource, () => Promise<Map<string, string>>> = {
   wy: getWyToplistCovers,
   tx: getTxToplistCovers,
   kw: getKwToplistCovers,
@@ -1280,7 +1287,7 @@ const toplistCoverFetchers: Record<DiscoverySource, () => Promise<Map<string, st
   mg: getMgToplistCovers,
 }
 
-async function getToplistCovers(source: DiscoverySource): Promise<Map<string, string>> {
+async function getToplistCovers(source: BuiltinDiscoverySource): Promise<Map<string, string>> {
   const cacheKey = `discovery:v1:${source}:toplist-covers`
   const cached = getCached<Map<string, string>>(cacheKey)
   if (cached) return cached
@@ -1302,6 +1309,9 @@ async function getToplistCovers(source: DiscoverySource): Promise<Map<string, st
 }
 
 export async function getToplists(source: DiscoverySource = 'tx'): Promise<DiscoveryToplist[]> {
+  const plugin = await getPluginPage(source, 'listCharts', { limit: 100 })
+  if (plugin) return plugin.items as DiscoveryToplist[]
+  if (!isBuiltinDiscoverySource(source)) return []
   const covers = await getToplistCovers(source)
   return getBoards(source).map(board => ({ ...board, cover: covers.get(board.id) || '' }))
 }
@@ -1336,6 +1346,8 @@ const pendingToplists = new Map<string, Promise<DiscoveryCollectionDetail | null
 const toplistFetchers = { tx: getTxToplistDetail, wy: getWyToplistDetail, kw: getKwToplistDetail, kg: getKgToplistDetail, mg: getMgToplistDetail }
 
 export async function getToplistDetail(source: DiscoverySource, id: string): Promise<DiscoveryCollectionDetail | null> {
+  const plugin = await getPluginCollection(source, 'getChart', id)
+  if (plugin || !isBuiltinDiscoverySource(source)) return plugin
   if (!getBoards(source).some(board => board.id === id)) return null
   const key = `discovery:v4:${source}:toplist:${id}`
   const cached = getCached<DiscoveryCollectionDetail>(key)
@@ -1357,6 +1369,10 @@ export async function getRecommendedPlaylists(source: DiscoverySource = 'tx', li
   const safeLimit = Math.max(1, Math.min(Math.floor(limit), 30))
   const safePage = Math.max(1, Math.floor(page))
   const keyword = filter.keyword?.trim().slice(0, 100) || ''
+  const plugin = await getPluginPage(source, keyword ? 'searchPlaylists' : 'listPlaylists',
+    { keyword: keyword || undefined, categoryId: filter.tag, limit: safeLimit }, safePage)
+  if (plugin) return plugin.items as DiscoveryPlaylist[]
+  if (!isBuiltinDiscoverySource(source)) return []
   // keyword 存在时使用各音乐平台的搜索接口；空关键词才是歌单广场/推荐列表。
   const cacheKey = `discovery:v10:${source}:${keyword ? 'playlist-search' : 'playlist-list'}:${safeLimit}:${safePage}:${filter.tag || ''}:${filter.sort || 'recommend'}:${keyword}`
   const cached = getCached<DiscoveryPlaylist[]>(cacheKey)
@@ -1396,6 +1412,8 @@ export async function getRecommendedPlaylists(source: DiscoverySource = 'tx', li
 }
 
 export async function getRecommendedPlaylistDetail(source: DiscoverySource, id: string): Promise<DiscoveryCollectionDetail | null> {
+  const plugin = await getPluginCollection(source, 'getPlaylist', id)
+  if (plugin || !isBuiltinDiscoverySource(source)) return plugin
   const cacheKey = `discovery:v4:${source}:playlist:${id}`
   const cached = getCached<DiscoveryCollectionDetail>(cacheKey)
   if (cached) return cached
@@ -1423,6 +1441,25 @@ export async function getRecommendedPlaylistDetail(source: DiscoverySource, id: 
   if (!detail) return null
   searchCache.set(cacheKey, detail, CACHE_TTL)
   return detail
+}
+
+async function getPluginCollection(source: string, capability: 'getPlaylist' | 'getChart', id: string): Promise<DiscoveryCollectionDetail | null> {
+  const input = { id, limit: 50 }
+  const result = await getPluginPage(source, capability, input)
+  if (!result?.collection) return null
+  const collected = new Map((result.items as MusicInfo[]).map(song => [getStorageSongmidForMusicInfo(song), song]))
+  let cursor = result.continuation
+  const deadline = performance.now() + 10_000
+  for (let page = 2; page <= 8 && cursor && performance.now() < deadline; page++) {
+    const next = await getPluginPage(source, capability, input, page, result.revision, cursor)
+    if (!next) break
+    for (const song of next.items as MusicInfo[]) collected.set(getStorageSongmidForMusicInfo(song), song)
+    if (cursor === next.continuation) break
+    cursor = next.continuation
+  }
+  const tracks = await persistPluginSongs([...collected.values()])
+  const { name, description, cover, author } = result.collection
+  return { id, name, description, cover, author, tracks }
 }
 
 

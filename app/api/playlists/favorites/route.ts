@@ -3,6 +3,8 @@ import { createErrorResponse, createSuccessResponse, ErrorCodes } from '@/lib/ap
 import type { FavoritePlaylistInput } from '@/lib/api/favorite-playlists'
 import { logger } from '@/lib/logger'
 import { isDiscoverySource } from '@/lib/services/discovery-service'
+import { BUILTIN_PLATFORM_IDS } from '@/lib/platform-plugins'
+import { getPluginBinding } from '@/lib/services/platform-catalog'
 import { listFavoritePlaylists, removeFavoritePlaylist, saveFavoritePlaylist } from '@/lib/services/favorite-playlist-service'
 import { AuthError, requireUser } from '@/lib/services/user-context'
 
@@ -42,7 +44,10 @@ export async function POST(request: NextRequest) {
   try {
     const user = await requireUser(request)
     const playlist = parsePlaylist(await request.json().catch(() => null))
-    if (!playlist) return createErrorResponse(ErrorCodes.INVALID_PARAMS, '歌单收藏参数无效', 400)
+    if (!playlist || (!(BUILTIN_PLATFORM_IDS as readonly string[]).includes(playlist.source)
+      && !await getPluginBinding(playlist.source, 'getPlaylist').catch(() => null))) {
+      return createErrorResponse(ErrorCodes.INVALID_PARAMS, '歌单收藏参数无效', 400)
+    }
     return createSuccessResponse(await saveFavoritePlaylist(user.id, playlist))
   } catch (error) { return handleError(error) }
 }

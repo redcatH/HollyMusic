@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => null)
     const uids: unknown = body?.uids
     if (!Array.isArray(uids) || uids.length < 1 || uids.length > TRACK_QUALITY_BATCH_SIZE
-      || !uids.every(uid => typeof uid === 'string' && /^(?:tx|wy|kg|kw|mg)-[\w-]{1,128}$/.test(uid))) {
+      || !uids.every(uid => typeof uid === 'string' && /^[a-z][a-z0-9]{0,15}-[\w.:-]{1,128}$/.test(uid))) {
       return createErrorResponse(ErrorCodes.INVALID_PARAMS, '歌曲 ID 或批量大小无效', 400)
     }
 

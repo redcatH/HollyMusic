@@ -15,50 +15,59 @@
  * uid 格式：`${source}-${存储songmid}`，与 resolveMusicInfoById 一致。
  */
 
+import { randomUUID } from 'node:crypto'
 import { NextRequest } from 'next/server'
 import { logger } from '@/lib/logger'
 import { resolveMusicInfoById } from '@/lib/db'
+import { PLAYBACK_ERROR_HEADER, PLAYBACK_REQUEST_ID_HEADER } from '@/lib/playback-protocol'
 import { isQuality } from '@/lib/quality-options'
 import { serveMusicAudio } from '@/lib/server/music-audio'
-
-function buildErrorResponse(status: number, code: string, message: string): Response {
-  return new Response(
-    JSON.stringify({ success: false, error: { code, message } }),
-    { status, headers: { 'Content-Type': 'application/json' } }
-  )
-}
+import { describePlaybackError } from '@/lib/server/playback-diagnostics'
 
 async function handleAudio(request: NextRequest, isHead: boolean): Promise<Response> {
-  try {
-    const { searchParams } = new URL(request.url)
-    const uid = searchParams.get('uid')
-    const quality = searchParams.get('quality') || '320k'
+  const requestId = randomUUID()
+  const { searchParams } = new URL(request.url)
+  const uid = searchParams.get('uid')
+  const quality = searchParams.get('quality') || '320k'
+  const logContext = { requestId, method: request.method, uid: uid?.slice(0, 146), quality: isQuality(quality) ? quality : undefined }
 
+  function fail(status: number, code: string, message: string, error?: unknown): Response {
+    logger.warn('[/api/audio] 请求失败', { ...logContext, status, code, message,
+      cause: error === undefined ? undefined : describePlaybackError(error) })
+    return new Response(isHead ? null : JSON.stringify({ success: false, error: { code, message, requestId } }), {
+      status,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store',
+        [PLAYBACK_REQUEST_ID_HEADER]: requestId,
+        [PLAYBACK_ERROR_HEADER]: code,
+      },
+    })
+  }
+
+  try {
     if (!uid) {
-      return buildErrorResponse(400, 'INVALID_PARAMS', '缺少必填参数: uid')
+      return fail(400, 'INVALID_PARAMS', '缺少必填参数: uid')
     }
 
     if (!isQuality(quality)) {
-      return buildErrorResponse(400, 'QUALITY_NOT_SUPPORTED', `不支持的音质: ${quality}`)
+      return fail(400, 'QUALITY_NOT_SUPPORTED', '不支持所选音质')
     }
 
     // 从 DB 解析 uid → MusicInfo（search 时已 upsert，正常流程都有）
     const musicInfo = await resolveMusicInfoById(uid)
     if (!musicInfo) {
-      return buildErrorResponse(404, 'NOT_FOUND', `找不到歌曲信息: ${uid}`)
+      return fail(404, 'NOT_FOUND', '找不到歌曲信息')
     }
 
     return await serveMusicAudio({
-      musicInfo, quality, isHead,
+      musicInfo, quality, isHead, requestId,
       exact: searchParams.get('exact') === '1',
       surround: searchParams.get('surround') === '1',
       rangeHeader: request.headers.get('range'),
     })
   } catch (error) {
-    logger.error('[/api/audio] 失败:', error)
-    const message = error instanceof Error ? error.message : '音频 serve 失败'
-    const status = message.includes('无法获取播放链接') ? 502 : 500
-    return buildErrorResponse(status, 'AUDIO_SERVE_FAILED', message)
+    return fail(500, 'AUDIO_SERVE_FAILED', '音频服务请求失败', error)
   }
 }
 

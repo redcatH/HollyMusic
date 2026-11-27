@@ -12,6 +12,8 @@ import { logger } from '@/lib/logger'
 import { requireUser, AuthError } from '@/lib/services/user-context'
 import { searchSongs, SearchStorageError } from '@/lib/services/search-service'
 import type { SourceType } from '@/lib/types/music'
+import { isPlatformId } from '@/lib/platform-plugins'
+import { PluginError } from '@/lib/server/platform-plugin-contract'
 
 export async function GET(request: NextRequest) {
   try {
@@ -31,11 +33,10 @@ export async function GET(request: NextRequest) {
       return createErrorResponse(ErrorCodes.INVALID_PARAMS, '缺少必填参数: keyword', 400)
     }
 
-    const validSources: SourceType[] = ['kw', 'kg', 'tx', 'wy', 'mg']
-    if (!validSources.includes(source)) {
+    if (!isPlatformId(source)) {
       return createErrorResponse(
         ErrorCodes.SOURCE_NOT_SUPPORTED,
-        `不支持的音源: ${source}，支持: ${validSources.join(', ')}`,
+        `不支持的音源: ${source}`,
         400
       )
     }
@@ -44,8 +45,11 @@ export async function GET(request: NextRequest) {
       return createErrorResponse(ErrorCodes.INVALID_PARAMS, '参数错误: page 为 1–10000 的整数，limit 为 1–100 的整数，关键词不超过 200 字符', 400)
     }
 
-    return createSuccessResponse(await searchSongs(source, keyword, page, limit))
+    const cursor = searchParams.get('cursor') || undefined
+    if ((cursor?.length ?? 0) > 256) return createErrorResponse(ErrorCodes.INVALID_PARAMS, '续页参数无效', 400)
+    return createSuccessResponse(await searchSongs(source, keyword, page, limit, cursor))
   } catch (error) {
+    if (error instanceof PluginError) return createErrorResponse(ErrorCodes.SOURCE_NOT_SUPPORTED, error.message, error.status)
     if (error instanceof SearchStorageError) return createErrorResponse(ErrorCodes.INTERNAL_ERROR, error.message, 500)
     if (error instanceof AuthError) {
       return createErrorResponse('UNAUTHORIZED', error.message, 401)
@@ -55,7 +59,6 @@ export async function GET(request: NextRequest) {
       ErrorCodes.SEARCH_FAILED,
       error instanceof Error ? error.message : '搜索失败',
       500,
-      error instanceof Error ? error.stack : undefined
     )
   }
 }

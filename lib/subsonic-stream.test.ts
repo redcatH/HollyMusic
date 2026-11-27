@@ -110,6 +110,16 @@ describe('Subsonic stream 音质与实际解析调用', () => {
     }
   })
 
+  it('汽水搜索结果音质未知时仍由默认音源尝试取流', async () => {
+    const musicInfo = { ...song([]), source: 'qs', songmid: '701' }
+    resolveMusicInfoById.mockResolvedValue(musicInfo)
+    serve.mockImplementationOnce(async () => new Response(null, { status: 502 }))
+      .mockImplementationOnce(async () => new Response(null, { status: 502 }))
+    const response = await handleStream(new NextRequest('http://localhost/rest/stream.view?id=qs-701&format=raw'))
+    expect(response.status).toBe(200)
+    expect(getMusicUrl).toHaveBeenCalledWith(musicInfo, ['320k'], expect.any(Function), expect.any(AbortSignal))
+  })
+
   it('缓存命中保持 Range 与 HEAD，不重新解析上游', async () => {
     resolveMusicInfoById.mockResolvedValue(song(ALL))
     serve.mockResolvedValue(new Response(null, { status: 206, headers: { 'Content-Type': 'audio/flac' } }))

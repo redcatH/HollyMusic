@@ -6,6 +6,9 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { RemoteCoverImage } from '@/components/shared/RemoteCoverImage'
 import { getRecommendedPlaylists, getToplists } from '@/lib/api/discovery'
+import { getPlatformCatalog } from '@/lib/api/platforms'
+import { usePlatforms } from '@/hooks/usePlatforms'
+import type { CatalogItem } from '@/lib/server/platform-plugin-contract'
 import type { DiscoveryPlaylist, DiscoveryPlaylistSort, DiscoverySource, DiscoveryToplist } from '@/lib/services/discovery-service'
 
 const CHANNELS: Array<{ source: DiscoverySource; label: string }> = [
@@ -62,17 +65,27 @@ export function HomePage({ active = true }: { active?: boolean }) {
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const detailState = { discoveryFrom: location.pathname + location.search + location.hash }
-  const source = getDiscoverySource(searchParams.get('source'))
+  const platforms = usePlatforms()
+  const channels = platforms.filter(item => item.capabilities.some(capability => capability !== 'searchSongs'))
+  const platform = platforms.find(item => item.id === searchParams.get('source'))
+  const source = platform?.id ?? getDiscoverySource(searchParams.get('source'))
+  const supports = (name: import('@/lib/platform-plugins').PluginCapability) => !platform || platform.capabilities.includes(name)
+  const overridden = (name: import('@/lib/platform-plugins').PluginCapability) => platform?.pluginCapabilities?.includes(name) === true
+  const hasPluginCategories = overridden('listPlaylistCategories') && overridden('listPlaylists')
   const playlistPage = getPlaylistPage(searchParams.get('page'))
-  const categories = PLAYLIST_CATEGORIES[source] || []
+  const [pluginCategories, setPluginCategories] = useState<{ source: string; items: CatalogItem[] }>()
+  const categories = hasPluginCategories ? (pluginCategories?.source === source ? pluginCategories.items : []) : PLAYLIST_CATEGORIES[source] || []
   const categoryParam = searchParams.get('category') || ''
   const category = categories.some(item => item.id === categoryParam) ? categoryParam : ''
-  const sorts = PLAYLIST_SORTS[source]
+  const sorts = overridden('listPlaylists') ? [{ id: 'recommend' as const, name: '推荐' }] : PLAYLIST_SORTS[source] ?? [{ id: 'recommend' as const, name: '推荐' }]
   const sortParam = searchParams.get('sort')
   const playlistSort = sorts.some(item => item.id === sortParam) ? sortParam as DiscoveryPlaylistSort : sorts[0].id
   const keywordParam = searchParams.get('keyword') || ''
   const [toplists, setToplists] = useState<DiscoveryToplist[]>([])
   const [playlists, setPlaylists] = useState<DiscoveryPlaylist[]>([])
+  const [listCursor, setListCursor] = useState<string>()
+  const [radios, setRadios] = useState<{ source: string; items: CatalogItem[]; error?: string }>()
+  const [reloadEpoch, setReloadEpoch] = useState(0)
   const [keyword, setKeyword] = useState(keywordParam)
   const [loadingToplists, setLoadingToplists] = useState(true)
   const [loadingPlaylists, setLoadingPlaylists] = useState(true)
@@ -81,6 +94,13 @@ export function HomePage({ active = true }: { active?: boolean }) {
   const [playlistsError, setPlaylistsError] = useState<string | null>(null)
   const toplistRequestId = useRef(0)
   const playlistRequestId = useRef(0)
+  const cursorHistory = useRef(new Map<string, string>())
+  const playlistCapability = keywordParam ? 'searchPlaylists' : 'listPlaylists'
+  const usePluginPlaylists = overridden(playlistCapability)
+  const hasRadio = overridden('listRadioStations')
+  const hasCharts = supports('listCharts')
+  const hasPlaylists = supports('listPlaylists') || supports('searchPlaylists')
+  const playlistKey = JSON.stringify([source, keywordParam, category])
 
   useEffect(() => setKeyword(keywordParam), [keywordParam])
 
@@ -109,7 +129,7 @@ export function HomePage({ active = true }: { active?: boolean }) {
     setLoadingToplists(true)
     setToplistsError(null)
     try {
-      const boardData = await getToplists(source)
+      const boardData = hasCharts ? await getToplists(source) : []
       if (requestId === toplistRequestId.current) setToplists(boardData)
     } catch (err) {
       if (requestId === toplistRequestId.current) setToplistsError(err instanceof Error ? err.message : '加载失败')
@@ -118,13 +138,26 @@ export function HomePage({ active = true }: { active?: boolean }) {
     }
   }
 
-  const loadPlaylists = async () => {
+  const loadPlaylists = async (refresh = false) => {
     const requestId = ++playlistRequestId.current
     setLoadingPlaylists(true)
     setPlaylistsError(null)
     try {
-      const playlistData = await getRecommendedPlaylists(source, PLAYLIST_PAGE_SIZE, playlistPage, { tag: category || undefined, sort: playlistSort, keyword: keywordParam || undefined })
-      if (requestId === playlistRequestId.current) setPlaylists(playlistData)
+      let items: DiscoveryPlaylist[] = []
+      let next: string | undefined
+      if (usePluginPlaylists) {
+        const cursor = cursorHistory.current.get(`${playlistKey}:${playlistPage}`)
+        const data = await getPlatformCatalog<CatalogItem>(source, playlistCapability, { limit: PLAYLIST_PAGE_SIZE, page: playlistPage,
+          categoryId: !keywordParam && category ? category : undefined, keyword: keywordParam || undefined, cursor, refresh: refresh ? 1 : undefined })
+        items = data.items
+        next = data.nextCursor
+      } else if (supports(playlistCapability)) {
+        items = await getRecommendedPlaylists(source, PLAYLIST_PAGE_SIZE, playlistPage, { tag: category || undefined, sort: playlistSort, keyword: keywordParam || undefined })
+      }
+      if (requestId === playlistRequestId.current) {
+        setPlaylists(items)
+        setListCursor(next)
+      }
     } catch (err) {
       if (requestId === playlistRequestId.current) setPlaylistsError(err instanceof Error ? err.message : '加载失败')
     } finally {
@@ -136,21 +169,39 @@ export function HomePage({ active = true }: { active?: boolean }) {
     void loadToplists()
     // 渠道变化时才需要重新加载榜单。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source])
+  }, [source, hasCharts])
 
   useEffect(() => {
     void loadPlaylists()
     // 歌单区域响应翻页、筛选及已防抖的关键字变化；关键字由服务端搜索接口处理。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source, playlistPage, category, playlistSort, keywordParam])
+  }, [source, playlistPage, category, playlistSort, keywordParam, usePluginPlaylists, hasPlaylists])
 
-  const isLastPlaylistPage = playlists.length < PLAYLIST_PAGE_SIZE
+  useEffect(() => {
+    if (!hasPluginCategories) return
+    const controller = new AbortController()
+    void getPlatformCatalog<CatalogItem>(source, 'listPlaylistCategories', { limit: 100, refresh: reloadEpoch ? 1 : undefined }, controller.signal)
+      .then(data => { if (!controller.signal.aborted) setPluginCategories({ source, items: data.items }) }).catch(() => {})
+    return () => controller.abort()
+  }, [source, hasPluginCategories, reloadEpoch])
+
+  useEffect(() => {
+    if (!hasRadio) return
+    const controller = new AbortController()
+    void getPlatformCatalog<CatalogItem>(source, 'listRadioStations', { limit: 30, refresh: reloadEpoch ? 1 : undefined }, controller.signal)
+      .then(data => { if (!controller.signal.aborted) setRadios({ source, items: data.items }) })
+      .catch(error => { if (!controller.signal.aborted) setRadios({ source, items: [], error: error.message }) })
+    return () => controller.abort()
+  }, [source, hasRadio, reloadEpoch])
+
+  const isLastPlaylistPage = usePluginPlaylists ? !listCursor : playlists.length < PLAYLIST_PAGE_SIZE
   const isLoading = loadingToplists || loadingPlaylists
-  const featuredPlaylist = playlists[0]
+  const featuredPlaylist = supports('getPlaylist') ? playlists[0] : undefined
   const visibleToplists = showAllToplists ? toplists : toplists.slice(0, 4)
 
   const refresh = () => {
-    void Promise.all([loadToplists(), loadPlaylists()])
+    setReloadEpoch(previous => previous + 1)
+    void Promise.all([loadToplists(), loadPlaylists(true)])
   }
 
   return (
@@ -163,7 +214,7 @@ export function HomePage({ active = true }: { active?: boolean }) {
         </div>
 
         <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden desktop:col-span-2 desktop:row-start-2 desktop:flex-wrap desktop:gap-1" role="tablist" aria-label="音乐渠道">
-          {CHANNELS.map(channel => (
+          {channels.map(item => ({ source: item.id, label: CHANNELS.find(channel => channel.source === item.id)?.label ?? item.name })).map(channel => (
             <button key={channel.source} onClick={() => { setSearchParams({ source: channel.source }); setToplists([]); setPlaylists([]); setShowAllToplists(false) }} className={`min-h-10 shrink-0 whitespace-nowrap rounded-full px-2 py-2 text-xs font-medium transition sm:px-4 sm:text-sm ${source === channel.source ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}`} role="tab" aria-label={channel.label} aria-selected={source === channel.source}>
               {channel.label.slice(0, 2)}<span className="hidden desktop:inline">{channel.label.slice(2)}</span>
             </button>
@@ -186,7 +237,7 @@ export function HomePage({ active = true }: { active?: boolean }) {
         </Link>
       )}
 
-      <section className="mb-8">
+      {hasCharts && <section className="mb-8">
         <div className="mb-4 flex items-center justify-between gap-2">
           <h2 className="section-title">正在流行</h2>
           {toplists.length > 4 && <button type="button" onClick={() => setShowAllToplists(value => !value)} aria-expanded={showAllToplists} className="flex min-h-9 items-center gap-1 text-xs font-medium text-muted-foreground hover:text-primary">{showAllToplists ? '收起榜单' : `全部榜单 · ${toplists.length}`}<ChevronRight className={`h-3.5 w-3.5 transition-transform ${showAllToplists ? '-rotate-90' : ''}`} /></button>}
@@ -196,7 +247,7 @@ export function HomePage({ active = true }: { active?: boolean }) {
         ) : (
           <div className="grid grid-cols-1 gap-2.5 min-[480px]:grid-cols-2 2xl:grid-cols-4">
             {visibleToplists.map(item => (
-              <Link key={item.id} to={`/discover/toplists/${item.id}?source=${source}`} state={detailState} className="group flex min-w-0 items-center gap-3 rounded-2xl border border-border/50 bg-card/80 p-2.5 transition hover:border-primary/25 hover:bg-card hover:shadow-sm">
+              <Link key={item.id} to={supports('getChart') ? `/discover/toplists/${encodeURIComponent(item.id)}?source=${source}` : '#'} aria-disabled={!supports('getChart')} onClick={event => { if (!supports('getChart')) event.preventDefault() }} state={detailState} className="group flex min-w-0 items-center gap-3 rounded-2xl border border-border/50 bg-card/80 p-2.5 transition hover:border-primary/25 hover:bg-card hover:shadow-sm">
                 <div className="w-12 shrink-0"><Cover src={item.cover} icon={Trophy} /></div>
                 <div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold group-hover:text-primary">{item.name}</div><div className="mt-1 truncate text-xs text-muted-foreground">{item.description || '聆听此刻的热门音乐'}</div></div>
                 <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/60 group-hover:text-primary" />
@@ -204,15 +255,26 @@ export function HomePage({ active = true }: { active?: boolean }) {
             ))}
           </div>
         )}
-      </section>
+      </section>}
 
-      <section>
+      {hasRadio && <section className="mb-8">
+        <h2 className="section-title mb-4">漫游电台</h2>
+        {radios?.source !== source ? <LoadingSkeleton count={3} /> : radios.error ? <EmptyState icon={Music} title="漫游电台加载失败" description={radios.error} /> :
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">{radios.items.map(item => (
+            <Link key={item.id} to={supports('getRadioTracks') ? `/discover/radios/${encodeURIComponent(item.id)}?source=${source}` : '#'} aria-disabled={!supports('getRadioTracks')}
+              onClick={event => { if (!supports('getRadioTracks')) event.preventDefault() }} state={detailState}
+              className="rounded-xl border border-border/60 bg-card p-3 text-sm hover:text-primary">{item.name}</Link>
+          ))}</div>}
+      </section>}
+
+      {hasPlaylists && <section>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 className="section-title">发现好歌单</h2>
           <div className="flex max-w-full flex-wrap items-center gap-2">
-            <label className="relative"><Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" /><input value={keyword} onChange={event => setKeyword(event.target.value)} placeholder="搜索歌单" aria-label="搜索歌单" className="h-9 w-36 rounded-full border border-border/60 bg-card pl-8 pr-2 text-xs outline-none focus:ring-1 focus:ring-primary" /></label>
-            <select value={category} aria-label="歌单分类" onChange={event => updatePlaylistParams({ category: event.target.value || undefined, page: '1' })} className="h-9 rounded-full border border-border/60 bg-card px-3 text-xs">{categories.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-            <select value={playlistSort} aria-label="歌单排序" onChange={event => updatePlaylistParams({ sort: event.target.value, page: '1' })} className="h-9 rounded-full border border-border/60 bg-card px-3 text-xs">{sorts.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+            {supports('searchPlaylists') && <label className="relative"><Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" /><input value={keyword} onChange={event => setKeyword(event.target.value)} placeholder="搜索歌单" aria-label="搜索歌单" className="h-9 w-36 rounded-full border border-border/60 bg-card pl-8 pr-2 text-xs outline-none focus:ring-1 focus:ring-primary" /></label>}
+            {categories.length > 0 && <select value={category} aria-label="歌单分类" onChange={event => updatePlaylistParams({ category: event.target.value || undefined, page: '1' })} className="h-9 rounded-full border border-border/60 bg-card px-3 text-xs">{hasPluginCategories && <option value="">全部分类</option>}{categories.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>}
+            {sorts.length > 1 && <select value={playlistSort} aria-label="歌单排序" onChange={event => updatePlaylistParams({ sort: event.target.value, page: '1' })} className="h-9 rounded-full border border-border/60 bg-card px-3 text-xs">{sorts.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>}
+            {usePluginPlaylists && !keywordParam && <button type="button" disabled={loadingPlaylists} onClick={() => void loadPlaylists(true)} className="h-9 rounded-full border border-border/60 px-3 text-xs disabled:opacity-50">换一批</button>}
           </div>
         </div>
         {loadingPlaylists && playlists.length === 0 ? <LoadingSkeleton count={PLAYLIST_PAGE_SIZE} /> : playlistsError ? (
@@ -220,7 +282,7 @@ export function HomePage({ active = true }: { active?: boolean }) {
         ) : playlists.length === 0 ? <EmptyState icon={ListMusic} title="暂无推荐歌单" /> : (
           <div className={`-mx-2 grid grid-cols-2 gap-x-1 gap-y-4 transition-opacity sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 ${loadingPlaylists ? 'pointer-events-none opacity-50' : ''}`} aria-busy={loadingPlaylists}>
             {playlists.map(item => (
-              <Link key={item.id} to={`/discover/playlists/${item.id}?source=${source}`} state={detailState} className="album-tile group min-w-0 rounded-2xl p-2">
+              <Link key={item.id} to={supports('getPlaylist') ? `/discover/playlists/${encodeURIComponent(item.id)}?source=${source}` : '#'} aria-disabled={!supports('getPlaylist')} onClick={event => { if (!supports('getPlaylist')) event.preventDefault() }} state={detailState} className="album-tile group min-w-0 rounded-2xl p-2">
                 <div className="cover-elevation relative rounded-xl"><Cover src={item.cover} icon={ListMusic} />{item.playCount > 0 && <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-black/55 px-2 py-1 text-[10px] text-white"><Play className="h-2.5 w-2.5 fill-current" />{formatPlayCount(item.playCount)}</span>}</div>
                 <div className="mt-3 line-clamp-2 text-sm font-medium leading-relaxed group-hover:text-primary">{item.name}</div>
                 <div className="mt-1 truncate text-xs text-muted-foreground">{item.author}{item.songCount && item.songCount > 0 ? ` · ${item.songCount} 首` : ''}</div>
@@ -228,14 +290,17 @@ export function HomePage({ active = true }: { active?: boolean }) {
             ))}
           </div>
         )}
-        {(playlists.length > 0 || playlistPage > 1) && (
+        {(usePluginPlaylists ? !!listCursor || playlistPage > 1 : playlists.length > 0 || playlistPage > 1) && (
           <div className="mt-6 flex items-center justify-center gap-3">
             <button onClick={() => updatePlaylistParams({ page: String(Math.max(1, playlistPage - 1)) })} disabled={playlistPage === 1 || loadingPlaylists} className="flex items-center gap-1 rounded-full border border-border px-3 py-2 text-sm hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"><ChevronLeft className="h-4 w-4" /> 上一页</button>
             <span className="text-sm text-muted-foreground">第 {playlistPage} 页</span>
-            <button onClick={() => updatePlaylistParams({ page: String(playlistPage + 1) })} disabled={isLastPlaylistPage || loadingPlaylists} className="flex items-center gap-1 rounded-full border border-border px-3 py-2 text-sm hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50">下一页 <ChevronRight className="h-4 w-4" /></button>
+            <button onClick={() => {
+              if (listCursor) cursorHistory.current.set(`${playlistKey}:${playlistPage + 1}`, listCursor)
+              updatePlaylistParams({ page: String(playlistPage + 1) })
+            }} disabled={isLastPlaylistPage || loadingPlaylists} className="flex items-center gap-1 rounded-full border border-border px-3 py-2 text-sm hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50">下一页 <ChevronRight className="h-4 w-4" /></button>
           </div>
         )}
-      </section>
+      </section>}
     </div>
   )
 }

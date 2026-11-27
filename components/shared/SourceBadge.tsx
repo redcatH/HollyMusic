@@ -6,6 +6,7 @@ const SOURCE_LABELS: Record<string, string> = {
   kw: '酷我',
   kg: '酷狗',
   mg: '咪咕',
+  qs: '汽水',
 }
 
 const SOURCE_COLORS: Record<string, string> = {

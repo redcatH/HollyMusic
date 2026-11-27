@@ -3,6 +3,7 @@ import path from 'node:path'
 import { publicRequest } from '@/lib/source-testing/network.cjs'
 import { UPSTREAM_USER_AGENT } from '@/lib/server/download-utils'
 import type { MusicInfo, QualityType, SourceType } from '@/lib/types/music'
+import type { PluginCapability, PluginInput } from '@/lib/platform-plugins'
 
 // Reuse the playback runner's permission flags and environment whitelist, without its shared slots.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -15,8 +16,10 @@ export type SourceTestJob =
   | { action: 'inspect'; content: string }
   | { action: 'resolve'; content: string; platform: SourceType; quality: QualityType; song: MusicInfo }
   | { action: 'analyze'; audio: string }
+  | { action: 'platformInspect'; content: string }
+  | { action: 'platformCall'; content: string; platform: string; capability: PluginCapability; input: PluginInput; origins: string[] }
 
-interface RunnerState { active: number; flags?: Promise<string[]>; children: Set<ChildProcessWithoutNullStreams>; exitHookBound?: boolean }
+interface RunnerState { active: number; platformActive?: number; flags?: Promise<string[]>; children: Set<ChildProcessWithoutNullStreams>; exitHookBound?: boolean }
 const globals = globalThis as typeof globalThis & { localSourceTestRunner?: RunnerState }
 const state = globals.localSourceTestRunner ??= { active: 0, children: new Set() }
 if (!state.exitHookBound) {
@@ -39,13 +42,18 @@ async function executionFlags(): Promise<string[]> {
 
 /** Every operation gets its own process and VM, including when playback is configured as inline. */
 export async function runSourceTestJob<T>(job: SourceTestJob, signal?: AbortSignal, timeoutMs?: number): Promise<T> {
+  const platformJob = job.action === 'platformInspect' || job.action === 'platformCall'
+  const counter = platformJob ? 'platformActive' : 'active'
   if (signal?.aborted) throw new Error('测试已取消')
-  if (state.active >= 2) throw new Error('本地测试正在执行，请稍后重试')
+  if ((state[counter] ?? 0) >= (platformJob ? 8 : 2)) throw new Error('本地执行任务繁忙，请稍后重试')
   const input = JSON.stringify(job)
   if (Buffer.byteLength(input) > MAX_INPUT_BYTES) throw new Error('测试输入超过大小限制')
-  state.active++
+  state[counter] = (state[counter] ?? 0) + 1
   try {
     const flags = await executionFlags()
+    if (platformJob && !flags.some(flag => flag === '--permission' || flag === '--experimental-permission')) {
+      throw new Error('运行环境不支持平台插件隔离')
+    }
     if (signal?.aborted) throw new Error('测试已取消')
     const childEnv = buildChildEnv()
     // A legacy playback setting must never relax test networking or choose main-process execution.
@@ -124,6 +132,7 @@ export async function runSourceTestJob<T>(job: SourceTestJob, signal?: AbortSign
           }
           const response = await publicRequest(message.url, {
             method, body, headers, signal: network.signal, timeout: 10000,
+            origins: job.action === 'platformCall' ? job.origins : job.action === 'platformInspect' ? [] : undefined,
           }) as { status: number; headers: Record<string, unknown>; data: Buffer }
           send(id, { status: response.status, headers: response.headers, data: response.data.toString('base64') })
         } catch {
@@ -156,5 +165,5 @@ export async function runSourceTestJob<T>(job: SourceTestJob, signal?: AbortSign
       child.stdin.write(input + '\n')
       if (signal?.aborted) abort()
     })
-  } finally { state.active-- }
+  } finally { state[counter] = (state[counter] ?? 1) - 1 }
 }

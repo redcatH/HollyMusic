@@ -8,7 +8,8 @@ const { get, set, getStorageSongmidForMusicInfo, upsertMusicInfosInTransaction }
 }))
 
 vi.mock('@/lib/cache-manager', () => ({ searchCache: { get, set } }))
-vi.mock('@/lib/db', () => ({ getStorageSongmidForMusicInfo, upsertMusicInfosInTransaction }))
+vi.mock('@/lib/db', () => ({ getStorageSongmidForMusicInfo, upsertMusicInfosInTransaction,
+  prisma: { platformPluginBinding: { findUnique: vi.fn(async () => null) } } }))
 vi.mock('@/lib/logger', () => ({ logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 
 const { getRecommendedPlaylistDetail, getRecommendedPlaylists, getToplistDetail } = await import('./discovery-service')

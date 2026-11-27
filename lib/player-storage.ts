@@ -1,6 +1,7 @@
 import { createBrowserStorage, isRecord, readStorageValue, type StorageArea } from '@/lib/browser-storage'
 import { QUALITY_ORDER, VALID_QUALITIES, isQuality } from '@/lib/quality-options'
 import type { MusicInfo, QualityInfo, QualityType, SourceType } from '@/lib/types/music'
+import { isPlatformId } from '@/lib/platform-plugins'
 import { toTrack, type PlaybackMode, type Track } from '@/lib/types/player'
 import { MAX_PLAYBACK_HISTORY, projectPlaybackQueue, restoreLegacyQueue, type PlaybackQueue, type PlaybackVisit, type QueueEntry } from '@/lib/player-queue'
 
@@ -33,7 +34,6 @@ export const DEFAULT_PLAYER_PREFERENCES: PlayerPreferences = {
 }
 export const PLAYER_PREFERENCES_KEY = 'holly-player-preferences'
 const LEGACY_QUALITY_KEY = 'player:quality'
-const SOURCES: SourceType[] = ['kw', 'kg', 'tx', 'wy', 'mg']
 
 function parsePreferences(value: unknown): PlayerPreferences | null {
   if (!isRecord(value)) return null
@@ -66,7 +66,7 @@ export function loadPlayerPreferences(): PlayerPreferences {
 export function parseTrack(value: unknown): Track | null {
   if (!isRecord(value) || typeof value.uid !== 'string' || !value.uid || !isRecord(value.musicInfo)) return null
   const info = value.musicInfo
-  if (typeof info.source !== 'string' || !SOURCES.includes(info.source as SourceType)
+  if (!isPlatformId(info.source)
     || !value.uid.startsWith(`${info.source}-`) || typeof info.songmid !== 'string' || !info.songmid
     || typeof info.name !== 'string' || typeof info.singer !== 'string') return null
   const types: QualityInfo[] = []

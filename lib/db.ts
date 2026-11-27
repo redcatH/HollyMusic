@@ -26,6 +26,7 @@ function computeChecksum(mi: MusicInfo) {
     _types: mi._types || {},
     typeUrl: mi.typeUrl || {},
     img: mi.img || null,
+    ...(mi.catalogCover ? { catalogCover: true } : {}),
     hash: (mi as any).hash || null,
     copyrightId: (mi as any).copyrightId || null,
     songId: (mi as any).songId || null,
@@ -335,7 +336,10 @@ export function getStorageSongmidForMusicInfo(mi: MusicInfo): string {
 }
 
 type MusicInfoWriteClient = Pick<PrismaClient, 'musicInfo'>
-type UpsertMusicInfoAction = { action: 'insert' | 'update' | 'noop' }
+type UpsertMusicInfoAction = {
+  action: 'insert' | 'update' | 'noop'
+  preservedQualities?: Pick<MusicInfo, 'types' | '_types'>
+}
 
 function isUniqueConstraintError(error: unknown): boolean {
   return Boolean(
@@ -349,9 +353,11 @@ function isUniqueConstraintError(error: unknown): boolean {
 async function upsertMusicInfoWithClient(
   client: MusicInfoWriteClient,
   mi: MusicInfo,
+  preserveQualities = false,
 ): Promise<UpsertMusicInfoAction> {
-  const checksum = computeChecksum(mi)
-  const dataJson = JSON.stringify(mi)
+  let checksum = computeChecksum(mi)
+  let dataJson = JSON.stringify(mi)
+  let preservedQualities: UpsertMusicInfoAction['preservedQualities']
   // 存储键：kg 用 FileHash，其他源用原 songmid（详见 getStorageSongmid）
   const storageSongmid = getStorageSongmid(mi)
 
@@ -364,6 +370,7 @@ async function upsertMusicInfoWithClient(
       },
       select: {
         checksum: true,
+        data: true,
       },
     })
 
@@ -421,14 +428,28 @@ async function upsertMusicInfoWithClient(
         },
         select: {
           checksum: true,
+          data: true,
         },
       })
       if (!existing) throw error
     }
   }
 
+  if ((preserveQualities || mi.source === 'qs') && !mi.types?.length && existing.data) {
+    try {
+      const previous = JSON.parse(existing.data) as MusicInfo
+      if (previous.types?.length) {
+        const qualities = { types: previous.types, _types: previous._types ?? {} }
+        if (preserveQualities) preservedQualities = qualities
+        mi = { ...mi, ...qualities }
+        checksum = computeChecksum(mi)
+        dataJson = JSON.stringify(mi)
+      }
+    } catch { /* allow repairing an unreadable metadata snapshot */ }
+  }
+
   if (existing.checksum === checksum) {
-    return { action: 'noop' }
+    return preservedQualities ? { action: 'noop', preservedQualities } : { action: 'noop' }
   }
 
   const durationSeconds = (() => {
@@ -470,7 +491,7 @@ async function upsertMusicInfoWithClient(
         trcUrl: (mi as any).trcUrl || null,
       },
   })
-  return { action: 'update' }
+  return preservedQualities ? { action: 'update', preservedQualities } : { action: 'update' }
 }
 
 export async function upsertMusicInfo(mi: MusicInfo): Promise<UpsertMusicInfoAction> {
@@ -486,12 +507,12 @@ export async function upsertMusicInfo(mi: MusicInfo): Promise<UpsertMusicInfoAct
  * 将一批歌曲作为同一个 SQLite 事务入库，避免每首歌曲各自提交造成大量磁盘同步与写锁竞争。
  * 任一写入失败会回滚整批，由调用方决定是否降级继续返回业务数据。
  */
-export async function upsertMusicInfosInTransaction(musicInfos: MusicInfo[]): Promise<UpsertMusicInfoAction[]> {
+export async function upsertMusicInfosInTransaction(musicInfos: MusicInfo[], options?: { preserveQualities: boolean }): Promise<UpsertMusicInfoAction[]> {
   if (musicInfos.length === 0) return []
   return prisma.$transaction(async tx => {
     const actions: UpsertMusicInfoAction[] = []
     for (const musicInfo of musicInfos) {
-      actions.push(await upsertMusicInfoWithClient(tx, musicInfo))
+      actions.push(await upsertMusicInfoWithClient(tx, musicInfo, options?.preserveQualities))
     }
     return actions
   }, { maxWait: 10_000, timeout: 30_000 })

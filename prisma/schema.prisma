@@ -36,6 +36,37 @@ model SourceTestDraft {
   @@index([ownerId, expiresAt])
 }
 
+model PlatformPluginRevision {
+  id           String   @id
+  packageId    String
+  version      String
+  digest       String
+  content      String
+  manifestJson String
+  testsJson    String   @default("{}")
+  ownerId      Int
+  createdAt    DateTime @default(now())
+
+  @@unique([packageId, version])
+}
+
+model PlatformPluginBinding {
+  platform     String
+  capability   String
+  revisionId   String?
+  updatedAt    DateTime @updatedAt
+
+  @@id([platform, capability])
+}
+
+model PlatformPluginChange {
+  id           String   @id
+  requestJson  String
+  changesJson  String
+  ownerId      Int
+  createdAt    DateTime @default(now())
+}
+
 model MusicInfo {
   id        Int      @id @default(autoincrement())
   source    String

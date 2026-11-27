@@ -14,6 +14,7 @@ vi.mock('@/lib/services/user-context', () => ({
 }))
 vi.mock('@/lib/cache-manager', () => ({ searchCache: { get, set } }))
 vi.mock('@/lib/db', () => ({
+  prisma: { platformPluginBinding: { findUnique: vi.fn(async () => null) } },
   getStorageSongmidForMusicInfo: vi.fn((musicInfo: { songmid: string }) => musicInfo.songmid),
   upsertMusicInfosInTransaction,
 }))

@@ -30,7 +30,7 @@ export function useSearch() {
   const runStore = useSearchStore(s => s.run)
 
   const run = useCallback(
-    (kw: string, src: SourceType | 'all') => runStore(kw, src),
+    (kw: string, src: SourceType | 'all', platforms?: SourceType[]) => runStore(kw, src, platforms),
     [runStore]
   )
 

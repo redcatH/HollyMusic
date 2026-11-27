@@ -11,6 +11,10 @@ export const OFFLINE_AUDIO_CACHE_PREFIX = 'holly-audio-v1:'
 export const PLAYBACK_QUALITIES = ['128k', '320k', 'flac', 'flac24bit', 'master', 'atmos', 'atmos_plus'] as const satisfies readonly QualityType[]
 export const PLAYBACK_QUALITY_HEADER = 'x-holly-quality'
 export const PLAYBACK_AUDIO_SPEC_HEADER = 'x-holly-audio-spec'
+export const PLAYBACK_REQUEST_ID_HEADER = 'x-holly-audio-request-id'
+export const PLAYBACK_ERROR_HEADER = 'x-holly-audio-error'
+export const PLAYBACK_ATTEMPTS_HEADER = 'x-holly-audio-attempts'
+export const PLAYBACK_CANDIDATES_FAILED = 'AUDIO_CANDIDATES_FAILED'
 export const PLAYBACK_MESSAGE = {
   CAPTURE: 'holly-capture-audio', RELEASE: 'holly-release-audio', CACHED_AUDIO: 'holly-cached-audio',
   PRUNE: 'holly-prune-audio', DIAGNOSTIC: 'holly-sw-diagnostic',
