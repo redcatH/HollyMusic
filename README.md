@@ -6,11 +6,12 @@
 
 [![Release](https://img.shields.io/github/v/release/redcatH/HollyMusic)](https://github.com/redcatH/HollyMusic/releases) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?logo=docker&logoColor=white)](https://github.com/redcatH/HollyMusic/pkgs/container/hollymusic) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-[快速部署](#快速部署) · [界面预览](#界面预览) · [音质与播放](#音质与播放) · [使用文档](#使用文档) · [交流与贡献](#交流与贡献)
+[快速部署](#快速部署) · [界面预览](#界面预览) · [音质与播放](#音质与播放) · [平台插件与汽水音乐](#平台插件与汽水音乐) · [使用文档](#使用文档) · [交流与贡献](#交流与贡献)
 
 ## 为什么选 Holly Music
 
-- **复用已有音源**：导入 LX Music 自定义音源脚本，用一个搜索框检索多个平台。
+- **复用已有音源**。导入 LX Music 自定义音源脚本，为所选平台提供播放与下载。
+- **扩展搜索和发现**。一个平台插件脚本可为多个平台提供单曲搜索、歌单、榜单或漫游内容。
 - **音源先测再用**：按平台和音质检测、完整检查与试听，确认后再导入或更新；支持下载当前脚本备份。
 - **带上自己的歌单**：导入网易云 CSV 或 QQ 公开歌单，也能收藏随平台更新的歌单；歌曲收藏支持按歌名、歌手或专辑搜索。
 - **电脑手机都好用**：响应式界面、深浅主题、沉浸歌词和 PWA 离线听歌，支持锁屏播放控制；浏览器支持时可开启前台播放常亮。
@@ -36,12 +37,22 @@
 
 ## 音质与播放
 
-以下功能可在 `v0.33.0` 预览系列中体验。桌面端点击底部播放栏的音质按钮，手机端打开「更多 → 音质」即可设置播放偏好。[预览版更新说明](docs/releases/v0.33.0-preview.2.md)
+以下功能可在 `v0.33.0` 预览系列中体验。桌面端点击底部播放栏的音质按钮，手机端打开「更多 → 音质」即可设置播放偏好。[预览版更新说明](docs/releases/v0.33.0-preview.3.md)
 
 - **母带与 Hi-Res**。音质菜单还提供 FLAC、320K 和 128K。可播放的档位取决于歌曲、已启用的音源和浏览器。当前音源取流失败时，播放器会先尝试支持同一档位的其他音源，再降档。歌名旁显示实际播放的音质。
 - **优先环绕**。开关默认关闭。开启后优先尝试六声道版（`atmos_plus`），无法播放时回退到立体声。环绕输出取决于浏览器和播放设备。
 - **已有歌单和收藏**。打开歌单、收藏或播放历史时，页面会补查可获取的音质信息，已有歌曲无需重新添加。歌曲行显示最高已知立体声档位及环绕标识，下载弹窗列出已识别的档位，例如母带、空间混音（`atmos`）和六声道版。
 - **Subsonic**。原格式或不限码率播放默认最高使用 Hi-Res 立体声。要让这类请求尝试母带，可在服务端 `.env` 中设置 `SUBSONIC_STEREO_MAX_QUALITY=master`，然后重建应用容器。[Subsonic 配置与音质说明](docs/API.md)
+
+## 平台插件与汽水音乐
+
+从 `v0.33.0-preview.3` 起，管理员可在「系统管理 → 平台插件」导入目录脚本。脚本可以注册一个或多个平台。导入后自动启用可用功能，测试可在导入后按需进行。
+
+1. 打开汽水示例脚本，点击 GitHub 的 **Raw**，将原始文件保存为 `qishui.js`。[汽水音乐示例脚本](examples/platform-plugins/qishui.js)
+2. 打开「系统管理 → 平台插件 → 导入脚本」，选择 `qishui.js`。导入后可在搜索页查看汽水单曲，在发现页浏览推荐、分类、榜单和漫游，也可搜索歌单。
+3. 如需播放，在「系统管理 → 音源管理」启用支持汽水音乐（`qs`）的 LX 音源。已配置的兼容音源可继续使用。
+
+官方 Docker 镜像会在启动时应用插件数据库迁移。源码部署按开发文档执行迁移。[平台插件开发指南](docs/platform-plugins.md) · [本地开发](docs/DEVELOPMENT.md)
 
 ## 快速部署
 
@@ -96,7 +107,7 @@ docker compose up -d
 
 ## 常见问题
 
-**需要自己准备音源吗？** 需要。支持导入 LX Music 自定义音源；配置成功后可搜索和获取播放地址，实际可用性取决于脚本及上游服务。
+**需要自己准备音源吗？** 播放和下载需要自行准备兼容的 LX Music 自定义音源。搜索和发现由内置平台接口及已启用的平台插件提供。
 
 **能导入哪些歌单？** 当前支持网易云 CSV 和 QQ 公开歌单链接/ID。网易云 CSV 可使用 [Music-Playlist-Exporter](https://github.com/redcatH/Music-Playlist-Exporter) 导出。[导入范围与要求](docs/USER-GUIDE.md#歌单导入)
 
@@ -113,6 +124,7 @@ docker compose up -d
 | 部署、升级、配置 HTTPS 或持久化目录 | [部署与升级](docs/DEPLOYMENT.md) |
 | 配音源、导入歌单、使用 AI 和分享 | [功能与音源指南](docs/USER-GUIDE.md) |
 | 测试与试听音源、更新订阅、备份音源脚本 | [音源测试与导入](docs/source-testing.md) |
+| 编写、导入和测试多平台目录脚本 | [平台插件开发指南](docs/platform-plugins.md) |
 | 接入 Subsonic 客户端或查看 API | [API 与 Subsonic](docs/API.md) |
 | 备份数据、清理缓存、排查播放和登录问题 | [运维与排障](docs/OPERATIONS.md) |
 | 从源码运行、了解架构、参与开发 | [本地开发](docs/DEVELOPMENT.md) · [贡献指南](CONTRIBUTING.md) |

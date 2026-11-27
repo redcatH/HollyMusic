@@ -36,7 +36,7 @@ lx-env-simulator/ 洛雪音源兼容层
 
 浏览器通过前端调用 `/api`；开发时 Vite 代理到 Next.js，生产环境由 nginx 托管 SPA 并反代 API。`@/*` 指向仓库根目录，`@@/*` 指向 `frontend/src/`。
 
-搜索、发现与多平台脚本包的接口、后台流程和接入验收见[平台插件设计](platform-plugins-design.md)。
+编写、导入和测试目录脚本见[平台插件开发指南](platform-plugins.md)。服务端注册、缓存和接入验收见[平台插件设计](platform-plugins-design.md)。
 
 ### 首页页面缓存
 
