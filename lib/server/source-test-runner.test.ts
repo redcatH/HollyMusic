@@ -74,3 +74,75 @@ describe('本地独立测试进程', () => {
     expect(signals.every(signal => signal.aborted)).toBe(true)
   })
 })
+
+// Every platform call is a fresh process, so each job below re-registers its package.
+function platformCall<T>(packageId: string, body: string) {
+  return runSourceTestJob<T>({
+    action: 'platformCall', platform: 'demo', capability: 'searchSongs', input: {}, origins: [],
+    content: `holly.register({apiVersion:1,id:'${packageId}',name:'测试包',version:'1.0.0',platforms:[
+      {id:'demo',name:'测试平台',origins:[],handlers:{searchSongs:(_input,{request,storage}) => (async () => { ${body} })()}}]})`,
+  }, undefined, 12000)
+}
+
+describe('平台插件请求与存储', () => {
+  it('自定义请求头经父进程转发，未提供 UA 时补默认值', async () => {
+    network.mockResolvedValue({ status: 200, headers: {}, data: Buffer.from('{"ok":true}') })
+    expect(await platformCall('headers-fixture', `
+      const data = await request('https://public.example/api', { headers: { Authorization: 'Bearer token', 'X-Extra': '1' } })
+      return data.ok`)).toBe(true)
+    const [url, options] = network.mock.calls[0] as [string, { headers: Record<string, string> }]
+    expect(url).toBe('https://public.example/api')
+    expect(options.headers).toMatchObject({ Authorization: 'Bearer token', 'X-Extra': '1' })
+    expect(options.headers['User-Agent']).toBeTruthy()
+  }, 30000)
+
+  it('文本模式下非 JSON 响应原样返回并放宽上限，JSON 模式下仍判为失败', async () => {
+    network.mockResolvedValue({ status: 200, headers: { 'content-type': 'text/html' }, data: Buffer.from('<html>不是 JSON</html>') })
+    expect(await platformCall('text-fixture', `
+      const page = await request('https://public.example/page', { responseType: 'text' })
+      let failed = false
+      try { await request('https://public.example/page') } catch { failed = true }
+      return { prefix: page.slice(0, 6), matched: page.includes('不是 JSON'), failed }`))
+      .toEqual({ prefix: '<html>', matched: true, failed: true })
+    expect(network.mock.calls[0]![1]).toEqual(expect.objectContaining({ maxBytes: 8 * 1024 * 1024 }))
+    expect(network.mock.calls[1]![1].maxBytes).toBeUndefined()
+  }, 30000)
+
+  it('上游 HTTP 错误码透出给插件，网络层失败时为 0', async () => {
+    network.mockResolvedValueOnce({ status: 404, headers: {}, data: Buffer.from('{"not":"found"}') })
+      .mockRejectedValueOnce(new Error('socket hang up'))
+    expect(await platformCall('status-fixture', `
+      const statuses = []
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try { await request('https://public.example/api') } catch (error) { statuses.push(error.status) }
+      }
+      return statuses`)).toEqual([404, 0])
+  }, 30000)
+
+  it('非法请求头和响应类型在沙箱内被拒绝，不发起网络请求', async () => {
+    expect(await platformCall('bad-options-fixture', `
+      const attempts = [
+        () => request('https://public.example/api', { headers: { 'bad key': 'x' } }),
+        () => request('https://public.example/api', { headers: { 'X-Num': 1 } }),
+        () => request('https://public.example/api', { responseType: 'blob' }),
+      ]
+      const rejected = []
+      for (const attempt of attempts) { try { await attempt(); rejected.push(false) } catch { rejected.push(true) } }
+      return rejected`)).toEqual([true, true, true])
+    expect(network).not.toHaveBeenCalled()
+  }, 30000)
+
+  it('插件存储跨调用保留并按包隔离，过期后读不到，超限的值被拒绝', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      expect(await platformCall('storage-fixture-a', `await storage.set('token', 'abc', { ttl: 60000 }); return storage.get('token')`)).toBe('abc')
+      expect(await platformCall('storage-fixture-a', `return storage.get('token')`)).toBe('abc')
+      expect(await platformCall('storage-fixture-b', `return storage.get('token')`)).toBeNull()
+      vi.setSystemTime(Date.now() + 60_001)
+      expect(await platformCall('storage-fixture-a', `return storage.get('token')`)).toBeNull()
+    } finally { vi.useRealTimers() }
+    expect(await platformCall('storage-fixture-a', `
+      try { await storage.set('big', 'x'.repeat(70000)); return false } catch { return true }`)).toBe(true)
+    expect(await platformCall('storage-fixture-a', `await storage.set('gone', 'value'); await storage.delete('gone'); return storage.get('gone')`)).toBeNull()
+  }, 60000)
+})

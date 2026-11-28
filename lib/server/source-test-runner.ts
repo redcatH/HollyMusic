@@ -19,7 +19,8 @@ export type SourceTestJob =
   | { action: 'platformInspect'; content: string }
   | { action: 'platformCall'; content: string; platform: string; capability: PluginCapability; input: PluginInput; origins: string[] }
 
-interface RunnerState { active: number; platformActive?: number; flags?: Promise<string[]>; children: Set<ChildProcessWithoutNullStreams>; exitHookBound?: boolean }
+interface PluginStorageEntry { value: string; expiresAt: number }
+interface RunnerState { active: number; platformActive?: number; flags?: Promise<string[]>; children: Set<ChildProcessWithoutNullStreams>; exitHookBound?: boolean; pluginStorage?: Map<string, PluginStorageEntry> }
 const globals = globalThis as typeof globalThis & { localSourceTestRunner?: RunnerState }
 const state = globals.localSourceTestRunner ??= { active: 0, children: new Set() }
 if (!state.exitHookBound) {
@@ -28,6 +29,42 @@ if (!state.exitHookBound) {
 }
 const MAX_INPUT_BYTES = 96 * 1024 * 1024
 const MAX_OUTPUT_BYTES = 8 * 1024 * 1024
+// Platform plugins may fetch a whole page or script as text before making JSON calls.
+const MAX_PLATFORM_OUTPUT_BYTES = 32 * 1024 * 1024
+const MAX_TEXT_BYTES = 8 * 1024 * 1024
+const MAX_PLUGIN_STORAGE_ENTRIES = 256
+const MAX_PLUGIN_STORAGE_VALUE_BYTES = 64 * 1024
+const MAX_PLUGIN_STORAGE_TTL_MS = 24 * 60 * 60 * 1000
+const DEFAULT_PLUGIN_STORAGE_TTL_MS = 60 * 60 * 1000
+
+/**
+ * In-memory key/value store for platform plugins, which run in a disposable process per call.
+ * Entries are scoped to platform + package so tokens or sessions survive across calls.
+ */
+function pluginStorage(message: Record<string, unknown>, platform: string): string | null {
+  const operation = message.operation && typeof message.operation === 'object' ? message.operation as Record<string, unknown> : {}
+  const type = operation.type
+  if (typeof message.packageId !== 'string' || !/^[a-z][a-z0-9-]{1,63}$/.test(message.packageId)
+    || typeof operation.key !== 'string' || !/^[\w.-]{1,128}$/.test(operation.key)) throw new Error('插件存储操作无效')
+  const scope = `${platform}:${message.packageId}:${operation.key}`
+  const entries = state.pluginStorage ??= new Map()
+  const now = Date.now()
+  for (const [key, entry] of entries) if (entry.expiresAt <= now) entries.delete(key)
+  if (type === 'get') return entries.get(scope)?.value ?? null
+  if (type === 'delete') { entries.delete(scope); return null }
+  if (type !== 'set' || typeof operation.value !== 'string' || Buffer.byteLength(operation.value) > MAX_PLUGIN_STORAGE_VALUE_BYTES) throw new Error('插件存储操作无效')
+  const requested = operation.ttl === undefined ? DEFAULT_PLUGIN_STORAGE_TTL_MS : Number(operation.ttl)
+  if (!Number.isFinite(requested) || requested <= 0) throw new Error('插件存储操作无效')
+  // Evict whatever expires first once the global cap is reached.
+  while (entries.size >= MAX_PLUGIN_STORAGE_ENTRIES) {
+    let oldest: string | undefined
+    for (const key of entries.keys()) if (oldest === undefined || entries.get(key)!.expiresAt < entries.get(oldest)!.expiresAt) oldest = key
+    if (oldest === undefined) break
+    entries.delete(oldest)
+  }
+  entries.set(scope, { value: operation.value, expiresAt: now + Math.min(requested, MAX_PLUGIN_STORAGE_TTL_MS) })
+  return null
+}
 
 async function executionFlags(): Promise<string[]> {
   if (!state.flags) {
@@ -96,6 +133,7 @@ export async function runSourceTestJob<T>(job: SourceTestJob, signal?: AbortSign
         else reject(outcome && 'error' in outcome ? outcome.error : new Error('测试子进程异常退出'))
       })
       child.stdin.on('error', () => { if (!settled) finish(new Error('测试进程通信中断')) })
+      const maxOutputBytes = platformJob ? MAX_PLATFORM_OUTPUT_BYTES : MAX_OUTPUT_BYTES
 
       const send = (id: number, response: Record<string, unknown>) => {
         if (!settled) child.stdin.write(JSON.stringify({ type: 'response', id, ...response }) + '\n')
@@ -116,6 +154,7 @@ export async function runSourceTestJob<T>(job: SourceTestJob, signal?: AbortSign
         try {
           const options = message.options && typeof message.options === 'object' ? message.options as Record<string, unknown> : {}
           const method = String(options.method || 'GET').toUpperCase()
+          const text = options.responseType === 'text'
           const headers = options.headers && typeof options.headers === 'object' ? { ...options.headers as Record<string, string> } : {}
           if (!Object.keys(headers).some(key => key.toLowerCase() === 'user-agent')) headers['User-Agent'] = UPSTREAM_USER_AGENT
           let body = options.body
@@ -126,12 +165,14 @@ export async function runSourceTestJob<T>(job: SourceTestJob, signal?: AbortSign
             body = JSON.stringify(body)
             headers['content-type'] = 'application/json'
           }
-          if (!['GET', 'POST', 'HEAD'].includes(method) || (body && Buffer.byteLength(String(body)) > 512 * 1024)) {
+          if (!['GET', 'POST', 'HEAD'].includes(method) || (body && Buffer.byteLength(String(body)) > 512 * 1024)
+            || (text && !platformJob)) {
             send(id, { error: '请求方法或请求体不受支持' })
             return
           }
           const response = await publicRequest(message.url, {
             method, body, headers, signal: network.signal, timeout: 10000,
+            ...(text ? { maxBytes: MAX_TEXT_BYTES } : {}),
             origins: job.action === 'platformCall' ? job.origins : job.action === 'platformInspect' ? [] : undefined,
           }) as { status: number; headers: Record<string, unknown>; data: Buffer }
           send(id, { status: response.status, headers: response.headers, data: response.data.toString('base64') })
@@ -144,7 +185,7 @@ export async function runSourceTestJob<T>(job: SourceTestJob, signal?: AbortSign
       child.stdout.on('data', (chunk: string) => {
         if (settled) return
         outputBytes += Buffer.byteLength(chunk)
-        if (outputBytes > MAX_OUTPUT_BYTES) { finish(new Error('测试输出超过限制')); return }
+        if (outputBytes > maxOutputBytes) { finish(new Error('测试输出超过限制')); return }
         output += chunk
         let index: number
         while (!settled && (index = output.indexOf('\n')) >= 0) {
@@ -159,7 +200,11 @@ export async function runSourceTestJob<T>(job: SourceTestJob, signal?: AbortSign
           if (message.type === 'result' && message.value !== undefined) finish(undefined, message.value as T)
           else if (message.type === 'error') finish(new Error('脚本初始化、取链或音频解析失败'))
           else if (message.type === 'request') void request(message)
-          else finish(new Error('测试响应无效'))
+          else if (message.type === 'storage' && job.action === 'platformCall' && Number.isSafeInteger(message.id)) {
+            // Keep draining the chunk: returning here would drop the lines that follow.
+            try { send(message.id as number, { value: pluginStorage(message, job.platform) }) }
+            catch { send(message.id as number, { error: '插件存储操作无效' }) }
+          } else finish(new Error('测试响应无效'))
         }
       })
       child.stdin.write(input + '\n')

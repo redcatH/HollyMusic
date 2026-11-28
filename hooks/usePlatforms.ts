@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getPlatformList } from '@/lib/api/platforms'
-import { BUILTIN_PLATFORMS } from '@/lib/platform-plugins'
+import { BUILTIN_PLATFORMS, rememberPlatformNames } from '@/lib/platform-plugins'
 
 export function usePlatforms() {
   const [items, setItems] = useState(BUILTIN_PLATFORMS)
@@ -11,7 +11,7 @@ export function usePlatforms() {
       controller = new AbortController()
       const signal = controller.signal
       void getPlatformList(signal).then(result => {
-        if (!signal.aborted) setItems(previous => JSON.stringify(previous) === JSON.stringify(result) ? previous : result)
+        if (!signal.aborted) { rememberPlatformNames(result); setItems(previous => JSON.stringify(previous) === JSON.stringify(result) ? previous : result) }
       }).catch(() => {})
     }
     refresh()

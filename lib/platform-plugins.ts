@@ -55,3 +55,8 @@ export const isCapability = (value: unknown): value is PluginCapability => typeo
 export const BUILTIN_PLATFORMS: PublicPlatform[] = BUILTIN_PLATFORM_IDS.map(id => ({
   id, name: PLATFORM_NAMES[id], capabilities: ['searchSongs', 'searchPlaylists', 'listPlaylistCategories', 'listPlaylists', 'getPlaylist', 'listCharts', 'getChart'],
 }))
+
+// Names reported by /api/platforms, so plugin platforms without a built-in short name can still be labelled.
+let knownNames: Record<string, string> = {}
+export const rememberPlatformNames = (items: PublicPlatform[]): void => { knownNames = Object.fromEntries(items.map(item => [item.id, item.name])) }
+export const knownPlatformName = (id: string): string | undefined => knownNames[id]

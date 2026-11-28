@@ -76,13 +76,14 @@ holly.register({
 - `qualities` 接受音质字符串，如 `['320k', 'flac']`，也可传 `{ type, size?, sizeBytes?, hash? }` 对象。支持 `128k`、`320k`、`flac`、`flac24bit`（可写 `hires`）、`master`、`atmos`、`atmos_plus`。仅填写上游已确认的档位，未知时省略。取流时会再结合已启用音源支持的档位。
 - 部分 LX 音源还需要 `hash`、`strMediaMid`、`albumMid`、`albumAudioId`、`copyrightId` 或 `upstreamSongId`。根据目标平台和音源填写对应的上游原值。[完整字段契约](../lib/server/platform-plugin-contract.ts)
 
-## 请求上游 JSON
+## 请求上游
 
 通过 `context.request(url, options?)` 发起请求。`origins` 声明该平台可访问的 HTTPS origin，例如 `https://api.example.com`，省略路径、末尾斜杠和端口。每个平台最多声明 12 个 origin，共用函数的请求权限随本次调用的平台变化。
 
 ```js
 const data = await request(
   `https://api.example.com/search?q=${encodeURIComponent(keyword)}&limit=${limit}`,
+  { headers: { Authorization: `Bearer ${await storage.get('token')}` } },
 )
 const page = await request('https://api.example.com/playlist', {
   method: 'POST',
@@ -90,7 +91,37 @@ const page = await request('https://api.example.com/playlist', {
 })
 ```
 
-默认使用 `GET`。`POST` 的对象请求体由宿主编码为 JSON。请求成功时返回解析后的 JSON，HTTP 错误、非 JSON 响应和被网络策略拒绝的请求会使 Promise 失败。每次能力执行最多发起 12 个请求，执行时限为 12 秒。插件脚本在隔离环境运行，依赖需写进单文件，使用宿主管理的请求接口。
+默认使用 `GET`。`POST` 的对象请求体由宿主编码为 JSON。请求成功时返回解析后的 JSON。HTTP 错误、非 JSON 响应和被网络策略拒绝的请求会使 Promise 失败，reject 的 `Error` 带 `status`：上游的 HTTP 状态码，请求未完成时为 `0`，可据此区分内容不存在与凭据失效。每次能力执行最多发起 12 个请求，执行时限为 12 秒。插件脚本在隔离环境运行，依赖需写进单文件，使用宿主管理的请求接口。
+
+| 选项 | 说明 |
+| --- | --- |
+| `headers` | 最多 16 个请求头，值须为字符串且不超过 8 KB。未提供 `User-Agent` 时宿主补浏览器 UA；逐跳头由宿主管辖 |
+| `responseType: 'text'` | 读取 HTML、脚本等非 JSON 响应，成功时返回字符串，单次上限 8 MB |
+
+### 跨调用存储
+
+每次能力执行都是一个独立进程，脚本里的变量不会保留。需要跨调用记住令牌或会话时，使用 `context.storage`，处理函数签名为 `(input, { platform, request, storage })`：
+
+| 方法 | 说明 |
+| --- | --- |
+| `storage.get(key)` | 返回字符串；不存在或已过期时返回 `null` |
+| `storage.set(key, value, { ttl })` | `value` 须为不超过 64 KB 的字符串；`ttl` 为毫秒，默认 1 小时，上限 24 小时 |
+| `storage.delete(key)` | 删除条目 |
+
+条目按平台与包隔离，保存在服务端内存中，重启后清空；每次能力执行最多 64 次操作。上游返回 401 或 403 时，删除缓存的凭据并重试一次：
+
+```js
+async function catalog(path, { request, storage }) {
+  const call = async () => request(`${API}/${path}`, { headers: { Authorization: `Bearer ${await token({ request, storage })}` } })
+  try { return await call() } catch (error) {
+    if (error.status !== 401 && error.status !== 403) throw error
+    await storage.delete('token')
+    return call()
+  }
+}
+```
+
+沙箱内只有标准内置对象，没有 `URL`、`URLSearchParams`、`atob`、定时器或 `fetch`；查询串用 `encodeURIComponent` 拼接。
 
 ## 导入与验证
 
@@ -105,6 +136,8 @@ const page = await request('https://api.example.com/playlist', {
 | --- | --- |
 | 找不到「平台插件」或页面提示数据库表不存在 | 确认运行 `v0.33.0-preview.4` 或更新的版本。官方 Docker 镜像启动时自动迁移，源码部署按开发指南运行迁移。 |
 | 测试提示请求失败 | 核对该平台的 `origins`、重定向目标、服务器网络和上游响应的 JSON 格式。 |
+| 读取页面或脚本失败 | 非 JSON 响应须声明 `responseType: 'text'`，页面与脚本所在域名都要列入 `origins`，单次响应不超过 8 MB。 |
+| 凭据反复失效或每次都重新获取 | 确认凭据通过 `context.storage` 保存并在 401、403 时清除；服务重启后缓存会清空，属正常现象。 |
 | 测试提示分页或条目标识无效 | 检查 `items` 长度、布尔值 `hasMore`、字符串 ID，以及详情方法返回的 `collection`。 |
 | 能搜索、找得到歌单，播放失败 | 确认音源管理启用了该平台，核对插件歌曲 ID 与音源要求的歌曲 ID，随后做一次音源测试。 |
 
