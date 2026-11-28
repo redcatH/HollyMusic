@@ -27,6 +27,63 @@ function flacHeader(sampleRate: number, channels: number, depth: number): Buffer
   return header
 }
 
+// ---- 最小 M4A：按 ISO BMFF 标准布局手工构造，字段取任意值，不依赖外部文件 ----
+const u8 = (n: number) => Buffer.from([n])
+const u16 = (n: number) => { const b = Buffer.alloc(2); b.writeUInt16BE(n); return b }
+const u24 = (n: number) => { const b = Buffer.alloc(3); b.writeUIntBE(n, 0, 3); return b }
+const u32 = (n: number) => { const b = Buffer.alloc(4); b.writeUInt32BE(n >>> 0); return b }
+const box = (type: string, ...payload: Buffer[]) => Buffer.concat([u32(8 + payload.reduce((sum, part) => sum + part.length, 0)), Buffer.from(type, 'latin1'), ...payload])
+const zeros = (n: number) => Buffer.alloc(n)
+const MATRIX = Buffer.concat([u32(0x10000), zeros(4), zeros(4), zeros(4), u32(0x10000), zeros(4), zeros(4), zeros(4), u32(0x40000000)])
+const PROBE = 128 * 1024
+const CHUNK = 64 * 1024
+
+/** AAC 音轨：samples 个采样、每个 400 字节，双声道 44.1 kHz，外带 1 MiB 媒体数据。 */
+function m4a(options: { samples?: number; moovFirst?: boolean } = {}) {
+  const { samples = 1000, moovFirst = true } = options
+  const mediaDuration = samples * 1024
+  const ftyp = box('ftyp', Buffer.from('M4A '), u32(0), Buffer.from('M4A isomiso2'))
+  const mvhd = box('mvhd', u8(0), u24(0), u32(0), u32(0), u32(44100), u32(mediaDuration), u32(0x10000), u16(0x100), zeros(10), MATRIX, zeros(24), u32(2))
+  const tkhd = box('tkhd', u8(0), u24(3), u32(0), u32(0), u32(1), u32(0), u32(mediaDuration), zeros(8), u16(0), u16(0), u16(0x100), u16(0), MATRIX, u32(0), u32(0))
+  const mdhd = box('mdhd', u8(0), u24(0), u32(0), u32(0), u32(44100), u32(mediaDuration), u16(0x55c4), u16(0))
+  const hdlr = box('hdlr', u32(0), Buffer.from('mhlr'), Buffer.from('soun'), zeros(12), Buffer.from('SoundHandler\0', 'latin1'))
+  const mp4a = Buffer.concat([u32(36), Buffer.from('mp4a'), zeros(6), u16(1), u16(0), u16(0), u32(0), u16(2), u16(16), u16(0), u16(0), u32(44100 << 16)])
+  const sizes = Buffer.alloc(samples * 4)
+  for (let i = 0; i < samples; i++) sizes.writeUInt32BE(400, i * 4)
+  const stbl = box('stbl',
+    box('stsd', u32(0), u32(1), mp4a),
+    box('stts', u32(0), u32(1), u32(samples), u32(1024)),
+    box('stsc', u32(0), u32(1), u32(1), u32(samples), u32(1)),
+    box('stsz', u32(0), u32(0), u32(samples), sizes),
+    box('stco', u32(0), u32(1), u32(0)))
+  const moov = box('moov', mvhd, box('trak', tkhd, box('mdia', mdhd, hdlr, box('minf',
+    box('smhd', u32(0), u16(0), u16(0)),
+    box('dinf', box('dref', u32(0), u32(1), Buffer.concat([u32(12), Buffer.from('url ', 'latin1'), u32(1)]))),
+    stbl))))
+  const mdat = box('mdat', zeros(1024 * 1024))
+  const layout = moovFirst ? [ftyp, moov, box('free'), mdat] : [ftyp, box('free'), mdat, moov]
+  // [起点, 终点)，便于断言追加读取落在哪里
+  const span = (part: Buffer): [number, number] => {
+    const start = layout.slice(0, layout.indexOf(part)).reduce((sum, item) => sum + item.length, 0)
+    return [start, start + part.length]
+  }
+  return { bytes: Buffer.concat(layout), moov: span(moov), mdat: span(mdat) }
+}
+
+/** 模拟支持 Range 的上游：按请求的区间返回文件切片。 */
+function serveRanges(file: Buffer) {
+  return async (_url: string, options: { headers: Record<string, string> }) => {
+    const [, start, end] = /bytes=(\d+)-(\d+)/.exec(options.headers.Range)!
+    const data = file.subarray(Number(start), Number(end) + 1)
+    return { status: 206, data, headers: { 'content-type': 'audio/mp4', 'content-range': `bytes ${start}-${Number(start) + data.length - 1}/${file.length}` } }
+  }
+}
+const requestedRanges = () => request.mock.calls.map(([, options]: [string, { headers: Record<string, string> }]) => options.headers.Range)
+const rangeOf = (header: string): [number, number] => {
+  const [, start, end] = /bytes=(\d+)-(\d+)/.exec(header)!
+  return [Number(start), Number(end)]
+}
+
 beforeEach(() => {
   vi.resetAllMocks()
   urlCache.clear()
@@ -91,5 +148,92 @@ describe('音频回源与回退', () => {
     const diagnostic = describePlaybackError(new Error('请求 https://example.com/path?token=private-url 失败，Authorization: Bearer private-header'))
     expect(diagnostic.message).toContain('失败')
     expect(diagnostic.message).not.toMatch(/example\.com|private-/)
+  })
+})
+
+describe('MP4 元数据按需读取', () => {
+  it('媒体数据超出采样时照常解析，不下载媒体数据', async () => {
+    request.mockImplementation(serveRanges(m4a().bytes))
+    expect(await verifyMusicAudio('https://example.com/a.m4a', '128k')).toEqual({ contentType: 'audio/mp4' })
+    expect(request).toHaveBeenCalledExactlyOnceWith('https://example.com/a.m4a', expect.objectContaining({
+      maxBytes: PROBE, headers: expect.objectContaining({ Range: `bytes=0-${PROBE - 1}` }),
+    }))
+  })
+
+  it('元数据排在媒体数据之后时跳过媒体数据取回', async () => {
+    const { bytes, moov, mdat } = m4a({ moovFirst: false })
+    request.mockImplementation(serveRanges(bytes))
+    expect(await verifyMusicAudio('https://example.com/a.m4a', '128k')).toEqual({ contentType: 'audio/mp4' })
+    const ranges = requestedRanges().map(rangeOf)
+    expect(ranges).toHaveLength(2)
+    const [start, end] = ranges[1]
+    // 只读元数据所在的那个块：媒体数据几乎全部被跳过
+    expect(start).toBeGreaterThanOrEqual(mdat[1] - CHUNK)
+    expect(start).toBeLessThan(moov[0])
+    expect(end).toBe(bytes.length - 1)
+    expect(end - start + 1).toBeLessThan(CHUNK + moov[1] - moov[0])
+  })
+
+  it('元数据超过采样大小时继续按块读取', async () => {
+    request.mockImplementation(serveRanges(m4a({ samples: 60_000 }).bytes))
+    expect(await verifyMusicAudio('https://example.com/a.m4a', '128k')).toEqual({ contentType: 'audio/mp4' })
+    expect(requestedRanges()).toEqual([`bytes=0-${PROBE - 1}`, `bytes=${PROBE}-${PROBE + CHUNK - 1}`, `bytes=${PROBE + CHUNK}-${PROBE + 2 * CHUNK - 1}`])
+  })
+
+  /** 模拟忽略 Range 的上游：一律回 200 与文件开头。 */
+  const wholeFile = (file: Buffer) => async () => ({ status: 200, data: file.subarray(0, PROBE), headers: { 'content-type': 'audio/mp4', 'content-length': String(file.length) } })
+
+  it('上游不支持分段读取时，采样内已有全部元数据的文件仍可解析', async () => {
+    const { bytes } = m4a()
+    request.mockImplementation(wholeFile(bytes))
+    expect(await verifyMusicAudio('https://example.com/a.m4a', '128k')).toEqual({ contentType: 'audio/mp4' })
+    expect(request).toHaveBeenCalledTimes(1)
+  })
+
+  it('上游不支持分段读取且元数据不在采样内时给出明确的错误', async () => {
+    const { bytes } = m4a({ moovFirst: false })
+    const ranges = serveRanges(bytes)
+    request.mockImplementation(async (url: string, options: { headers: Record<string, string> }) => options.headers.Range === `bytes=0-${PROBE - 1}`
+      ? ranges(url, options)
+      : wholeFile(bytes)())
+    await expect(verifyMusicAudio('https://example.com/a.m4a', '128k')).rejects.toMatchObject({
+      code: 'AUDIO_PROBE_RANGE_UNSUPPORTED',
+      details: { sampleFormat: 'ISO BMFF', totalBytes: bytes.length, upstreamStatus: 200, rangeStart: CHUNK * 16, rangeRequests: 1 },
+    })
+  })
+
+  it('元数据已读到后，尾部读取失败不影响结果', async () => {
+    // 媒体数据之后再放一个盒子，解析器需要补读它的头才能确认文件到此结束
+    const file = Buffer.concat([m4a().bytes, box('free')])
+    const ranges = serveRanges(file)
+    request.mockImplementation(async (url: string, options: { headers: Record<string, string> }) => options.headers.Range === `bytes=0-${PROBE - 1}`
+      ? ranges(url, options)
+      : wholeFile(file)())
+    expect(await verifyMusicAudio('https://example.com/a.m4a', '128k')).toEqual({ contentType: 'audio/mp4' })
+    expect(request).toHaveBeenCalledTimes(2)
+  })
+
+  it('文件总长未知时按采样解析，不把本段长度当成文件大小', async () => {
+    request.mockImplementation(async () => ({
+      status: 206, data: m4a().bytes.subarray(0, PROBE), headers: { 'content-type': 'audio/mp4', 'content-range': `bytes 0-${PROBE - 1}/*` },
+    }))
+    await expect(verifyMusicAudio('https://example.com/a.m4a', '128k')).rejects.toMatchObject({
+      code: 'AUDIO_PARSE_FAILED', details: { totalBytes: undefined },
+    })
+    expect(request).toHaveBeenCalledTimes(1)
+  })
+
+  it('码率与所选档位不符时仍然拒绝', async () => {
+    request.mockImplementation(serveRanges(m4a().bytes))
+    await expect(verifyMusicAudio('https://example.com/a.m4a', '320k')).rejects.toMatchObject({
+      code: 'AUDIO_FORMAT_MISMATCH',
+      details: { codec: 'MPEG-4/AAC', container: 'M4A/isom/iso2', sampleRate: 44100, numberOfChannels: 2, bitrate: expect.any(Number) },
+    })
+  })
+
+  it('非 MP4 格式仍只解析采样', async () => {
+    request.mockResolvedValue({ status: 206, data: flacHeader(96000, 2, 24), headers: {} })
+    await expect(verifyMusicAudio('https://example.com/a.flac', 'flac24bit')).resolves.toEqual({ contentType: 'audio/flac', audioSpec: '24 bit / 96 kHz / 2 ch' })
+    expect(request).toHaveBeenCalledTimes(1)
   })
 })

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { parseBuffer } from 'music-metadata'
+import { parseBuffer, parseFromTokenizer, type IAudioMetadata } from 'music-metadata'
 import { audioServe, type AudioUpstream } from '@/lib/audio-serve'
 import { isIncompleteTrial } from '@/lib/audio-integrity'
 import { urlCache } from '@/lib/cache-manager'
@@ -11,12 +11,15 @@ import { buildUpstreamHeaders } from '@/lib/server/download-utils'
 import { formatFlacSpec } from '@/lib/server/flac-info'
 import { getMusicAudioCacheKeyPrefix, getMusicAudioTrackKey } from '@/lib/server/music-audio-cache-key'
 import { describePlaybackError, PlaybackError } from '@/lib/server/playback-diagnostics'
+import { RangeTokenizer } from '@/lib/server/range-tokenizer'
 import { cacheNativeLyricForMusic } from '@/lib/services/lyrics'
 import { publicRequest } from '@/lib/source-testing/network.cjs'
 import type { MusicInfo, QualityType } from '@/lib/types/music'
 import { parseIntervalToSeconds } from '@/lib/types/player'
 
 const PROBE_BYTES = 128 * 1024
+const PROBE_TIMEOUT = 4_500
+const PARSE_OPTIONS = { duration: false, skipCovers: true } as const
 const FALLBACK_TTL_MS = 2 * 60_000
 const PLAYBACK_BUDGET_MS = 24_000
 
@@ -33,12 +36,50 @@ function sampleFormat(data: Buffer): string {
   return data.length ? 'unknown' : 'empty'
 }
 
+/** Content-Range 给出的文件总长；上游写 `bytes a-b/*` 时总长未知，不能拿本段长度冒充。 */
+function totalBytes(headers: Record<string, unknown>): number | undefined {
+  const range = String(headers['content-range'] ?? '')
+  const size = Number(/\/(\d+)$/.exec(range)?.[1] ?? (range ? undefined : headers['content-length']))
+  return Number.isSafeInteger(size) && size > 0 ? size : undefined
+}
+
+/** 按需补读远程文件的指定区间；上游忽略 Range 时回的是文件开头，不是请求的区间。 */
+async function readRange(url: string, start: number, length: number, signal?: AbortSignal): Promise<Uint8Array> {
+  const host = new URL(url).hostname
+  const { status, data, headers } = await publicRequest(url, {
+    maxBytes: length,
+    partial: true,
+    timeout: PROBE_TIMEOUT,
+    signal,
+    headers: { ...buildUpstreamHeaders(url), Range: `bytes=${start}-${start + length - 1}` },
+  }).catch((cause: unknown) => {
+    throw new PlaybackError('AUDIO_PROBE_NETWORK', '音频探测请求失败', { host, rangeStart: start }, cause)
+  })
+  const servedFrom = status === 206 ? Number(/^bytes\s+(\d+)-/i.exec(String(headers['content-range'] ?? ''))?.[1]) : NaN
+  if (servedFrom !== start || data.length !== length) {
+    const unsupported = status === 200
+    throw new PlaybackError(unsupported ? 'AUDIO_PROBE_RANGE_UNSUPPORTED' : 'AUDIO_PROBE_HTTP',
+      unsupported ? '上游不支持分段读取，无法取回音频元数据' : '上游未返回请求的音频区间',
+      { host, upstreamStatus: status, rangeStart: start, receivedBytes: data.length })
+  }
+  return data
+}
+
+async function parseSample(tokenizer: RangeTokenizer | null, data: Buffer, size?: number): Promise<IAudioMetadata> {
+  const metadata = tokenizer
+    ? await parseFromTokenizer(tokenizer, PARSE_OPTIONS)
+    : await parseBuffer(data, size ? { size } : undefined, PARSE_OPTIONS)
+  // music-metadata 把「读不到下一个盒子」当作文件结束；一条轨道都没读到时，读取失败的真正原因更有用。
+  if (tokenizer && tokenizer.readFailure !== null && !metadata.format.codec) throw tokenizer.readFailure
+  return metadata
+}
+
 export async function verifyMusicAudio(url: string, quality: QualityType, signal?: AbortSignal, intervalSec = 0): Promise<Omit<AudioUpstream, 'url'>> {
   const host = new URL(url).hostname
   const { status, data, headers } = await publicRequest(url, {
     maxBytes: PROBE_BYTES,
     partial: true,
-    timeout: 4_500,
+    timeout: PROBE_TIMEOUT,
     signal,
     headers: { ...buildUpstreamHeaders(url), Range: `bytes=0-${PROBE_BYTES - 1}` },
   }).catch((cause: unknown) => {
@@ -46,19 +87,26 @@ export async function verifyMusicAudio(url: string, quality: QualityType, signal
   })
 
   const range = String(headers['content-range'] ?? '')
-  const size = Number(/\/(\d+)$/.exec(range)?.[1] ?? headers['content-length'])
+  const size = totalBytes(headers)
   const contentType = /^[\w.+-]+\/[\w.+-]+/.exec(String(headers['content-type'] ?? ''))?.[0]
   const details = { host, upstreamStatus: status, contentType, sampleBytes: data.length, sampleFormat: sampleFormat(data),
     contentRange: /^bytes \d+-\d+\/(?:\d+|\*)$/.test(range) ? range : undefined,
-    totalBytes: Number.isSafeInteger(size) && size > 0 ? size : undefined,
+    totalBytes: size,
   }
   if (status !== 200 && status !== 206) {
     throw new PlaybackError('AUDIO_PROBE_HTTP', '上游音频不可用', details)
   }
-  const { format } = await parseBuffer(data, details.totalBytes ? { size: details.totalBytes } : undefined,
-    { duration: false, skipCovers: true }).catch((cause: unknown) => {
-    throw new PlaybackError('AUDIO_PARSE_FAILED', '音频采样解析失败', details, cause)
-  })
+  // MP4/M4A 的媒体数据盒子（mdat）往往远大于采样：交给解析器一个可按区间读取的数据源，
+  // 由它按盒子声明的大小跳过 mdat、只取回元数据。其余格式直接解析采样。
+  const tokenizer = size && details.sampleFormat === 'ISO BMFF'
+    ? new RangeTokenizer({ size, read: (start, length) => readRange(url, start, length, signal) }, { abortSignal: signal })
+    : null
+  tokenizer?.prefill(0, data)
+  const { format } = await parseSample(tokenizer, data, size).catch((cause: unknown) => {
+    const usage = tokenizer?.usage
+    if (cause instanceof PlaybackError) throw new PlaybackError(cause.code, cause.message, { ...details, ...usage, ...cause.details }, cause.cause)
+    throw new PlaybackError('AUDIO_PARSE_FAILED', '音频采样解析失败', { ...details, ...usage }, cause)
+  }).finally(() => tokenizer?.close())
   const { codec, container, sampleRate, bitsPerSample, numberOfChannels, bitrate } = format
   const mismatch = (message: string) => new PlaybackError('AUDIO_FORMAT_MISMATCH', message,
     { ...details, codec, container, sampleRate, bitsPerSample, numberOfChannels, bitrate })

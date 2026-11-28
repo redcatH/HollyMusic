@@ -6,7 +6,8 @@ const nextConfig: NextConfig = {
   output: "standalone",
 
   // 兼容引擎与本地测试子进程需要通过 Node 直接加载这些依赖。
-  serverExternalPackages: ['needle', 'tunnel', 'music-metadata'],
+  // strtok3 必须与 music-metadata 是同一份模块：后者用 instanceof 判断它抛出的「读到末尾」错误。
+  serverExternalPackages: ['needle', 'tunnel', 'music-metadata', 'strtok3'],
 
   // 强制把以下文件纳入 standalone 文件追踪（默认基于 import 静态分析会漏掉非 JS 资源）
   // - Prisma 客户端 + 查询引擎二进制（自定义 output 路径，.node 不是 JS import）
@@ -24,6 +25,7 @@ const nextConfig: NextConfig = {
       './lib/music-core/**/*',
       './lib/source-testing/*.cjs',
       './node_modules/music-metadata/**/*',
+      './node_modules/strtok3/**/*',
     ],
     '/rest/**': [
       './lib/generated/prisma/**/*',
